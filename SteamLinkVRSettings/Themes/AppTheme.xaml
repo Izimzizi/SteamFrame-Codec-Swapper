@@ -1,0 +1,26 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Steam-inspired dark accent colors -->
+    <Color x:Key="SteamBlue">#1A9FFF</Color>
+    <Color x:Key="SteamDarkBg">#0E0E10</Color>
+    <Color x:Key="SteamCardBg">#1A1A1D</Color>
+    <Color x:Key="SteamCardHover">#222226</Color>
+    <Color x:Key="SteamBorderColor">#2A2A2E</Color>
+    <Color x:Key="SteamAccentGreen">#5CBD76</Color>
+    <Color x:Key="SteamModified">#FFB347</Color>
+
+    <SolidColorBrush x:Key="SteamBlueBrush" Color="{StaticResource SteamBlue}" />
+    <SolidColorBrush x:Key="SteamDarkBgBrush" Color="{StaticResource SteamDarkBg}" />
+    <SolidColorBrush x:Key="SteamCardBgBrush" Color="{StaticResource SteamCardBg}" />
+    <SolidColorBrush x:Key="SteamCardHoverBrush" Color="{StaticResource SteamCardHover}" />
+    <SolidColorBrush x:Key="SteamBorderBrush" Color="{StaticResource SteamBorderColor}" />
+    <SolidColorBrush x:Key="SteamAccentGreenBrush" Color="{StaticResource SteamAccentGreen}" />
+    <SolidColorBrush x:Key="SteamModifiedBrush" Color="{StaticResource SteamModified}" />
+
+    <!-- Override window/page background -->
+    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="{StaticResource SteamDarkBg}" />
+    <SolidColorBrush x:Key="NavigationViewContentBackground" Color="{StaticResource SteamDarkBg}" />
+
+</ResourceDictionary>
