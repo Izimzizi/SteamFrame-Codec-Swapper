@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../SteamLinkVRSettings/Frame/BitratePatcher.cs" Link="BitratePatcher.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/PatchManifest.cs" Link="PatchManifest.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/AdaptivePatchScanner.cs" Link="AdaptivePatchScanner.cs" />
+    <EmbeddedResource Include="../../SteamLinkVRSettings/Assets/bitrate-patch.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <PackageReference Include="xunit.v3" Version="2.0.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+  </ItemGroup>
+</Project>

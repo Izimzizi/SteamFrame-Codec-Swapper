@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../SteamLinkVRSettings/Frame/RateTracker.cs" Link="RateTracker.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/SteamPaths.cs" Link="SteamPaths.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/FramePreferences.cs" Link="FramePreferences.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/FrameTransport.cs" Link="FrameTransport.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Services/SettingsService.cs" Link="SettingsService.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.cs" Link="OpenVrSettings.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Models/SettingItem.cs" Link="SettingItem.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Helpers/SettingDefinitions.cs" Link="SettingDefinitions.cs" />
+    <Compile Include="../../SteamLinkVRSettings/ViewModels/SettingsViewModel.cs" Link="SettingsViewModel.cs" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <Using Include="Xunit" />
+    <PackageReference Include="xunit.v3" Version="2.0.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+  </ItemGroup>
+</Project>

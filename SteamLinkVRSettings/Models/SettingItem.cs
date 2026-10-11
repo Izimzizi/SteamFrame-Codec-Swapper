@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -28,6 +29,18 @@ public partial class SettingItem : ObservableObject
     public ControlType ControlType { get; init; }
     public bool RequiresRestart { get; init; }
 
+    /// <summary>Debug/developer toggles that can break streaming; saving a change requires confirmation.</summary>
+    public bool IsExperimental { get; init; }
+
+    /// <summary>
+    /// Store slider values as floating point even with a whole-number step. SteamVR reads some keys
+    /// (e.g. targetBandwidth) as floats; every writer must use the same JSON/OpenVR type.
+    /// </summary>
+    public bool StoreAsFloat { get; init; }
+
+    /// <summary>Set when the stored value could not be interpreted; the control shows a fallback.</summary>
+    public string? LoadWarning { get; set; }
+
     // Slider constraints
     public double Minimum { get; init; }
     public double Maximum { get; init; }
@@ -56,14 +69,17 @@ public partial class SettingItem : ObservableObject
     // Typed accessors for XAML binding
     public double NumericValue
     {
-        get => Convert.ToDouble(CurrentValue ?? 0);
-        set
-        {
-            if (StepFrequency >= 1)
-                CurrentValue = (int)Math.Round(value);
-            else
-                CurrentValue = Math.Round(value, 1);
-        }
+        get => CurrentValue is null ? 0 : Convert.ToDouble(CurrentValue, CultureInfo.InvariantCulture);
+        set => CurrentValue = NormalizeNumber(value);
+    }
+
+    /// <summary>Applies this setting's storage type to a number.</summary>
+    public object NormalizeNumber(double value)
+    {
+        if (StepFrequency >= 1)
+            // Box each branch separately: a plain conditional would widen the int branch to double.
+            return StoreAsFloat ? (object)Math.Round(value) : (object)(int)Math.Round(value);
+        return Math.Round(value, 1);
     }
 
     public bool BoolValue
@@ -76,18 +92,40 @@ public partial class SettingItem : ObservableObject
     {
         get
         {
-            if (CurrentValue is null || Options.Count == 0) return 0;
-            var str = CurrentValue.ToString();
-            for (int i = 0; i < Options.Count; i++)
-            {
-                if (Options[i].Value.ToString() == str) return i;
-            }
-            return 0;
+            if (CurrentValue is null || Options.Count == 0) return -1;
+            return IndexOfOption(CurrentValue);
         }
         set
         {
             if (value >= 0 && value < Options.Count)
                 CurrentValue = Options[value].Value;
+        }
+    }
+
+    private int IndexOfOption(object value)
+    {
+        var text = Invariant(value);
+        for (int i = 0; i < Options.Count; i++)
+        {
+            if (Invariant(Options[i].Value) == text) return i;
+        }
+        return -1;
+    }
+
+    private static string? Invariant(object? value) => Convert.ToString(value, CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Values outside the predefined list (hand-edited or newer SteamVR values) get their own
+    /// "Custom" entry instead of being displayed as the first option.
+    /// </summary>
+    public void AddCustomOptionsIfNeeded()
+    {
+        if (ControlType != ControlType.Dropdown) return;
+        foreach (var value in new[] { CurrentValue, DefaultValue })
+        {
+            if (value is null || IndexOfOption(value) >= 0) continue;
+            var label = $"Custom ({Invariant(value)}{(string.IsNullOrEmpty(Unit) ? "" : " " + Unit)})";
+            Options.Add(new OptionItem { Label = label, Value = value });
         }
     }
 

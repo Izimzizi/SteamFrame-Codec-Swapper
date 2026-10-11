@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "file_length": 13927576,
+  "original_sha256": "5f6f063f1ece088491f572db8feb2f2433a5621d0adf7013de77b91604d146b5",
+  "patched_sha256": "82fd637f1d4b844ca349d2a98867cd0ba8f969a14de47c2a3192b875fb62425d",
+  "cap_mbps": 500,
+  "hevc_level": 186,
+  "changes": [
+    {
+      "file_offset": 12840716,
+      "old_hex": "00006843",
+      "new_hex": "0000fa43",
+      "reason": "Wireless-adapter-present bitrate cap"
+    },
+    {
+      "file_offset": 12840720,
+      "old_hex": "0000af43",
+      "new_hex": "0000fa43",
+      "reason": "General bitrate cap"
+    },
+    {
+      "file_offset": 10628676,
+      "old_hex": "b7000000",
+      "new_hex": "ba000000",
+      "reason": "HEVC reconfiguration default level 6.2"
+    },
+    {
+      "file_offset": 12782064,
+      "old_hex": "000000000000000000000000000000",
+      "new_hex": "c782a8000000ba000000e955a8ffff",
+      "reason": "Preset HEVC level 6.2 leaf tail call"
+    },
+    {
+      "file_offset": 10623885,
+      "old_hex": "e8c2962000",
+      "new_hex": "e85eee2000",
+      "reason": "Route preset copy through the level fix"
+    },
+    {
+      "file_offset": 592,
+      "old_hex": "ec05c300",
+      "new_hex": "ff05c300",
+      "reason": "Include the leaf tail call in .text virtual size"
+    }
+  ]
+}

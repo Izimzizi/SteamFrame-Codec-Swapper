@@ -1,11 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using SteamLinkVRSettings.Frame;
 
 namespace SteamLinkVRSettings.Services;
 
 public class SettingsService
 {
     private const string SectionName = "driver_vrlink";
+    private static readonly SemaphoreSlim SaveGate = new(1, 1);
 
     private static readonly JsonDocumentOptions DocOptions = new()
     {
@@ -18,14 +20,18 @@ public class SettingsService
         WriteIndented = true
     };
 
-    public string UserConfigPath { get; set; } =
-        @"C:\Program Files (x86)\Steam\config\steamvr.vrsettings";
+    public const string BackupSuffix = ".SteamLinkVRSettings.bak";
+    public const string OriginalBackupSuffix = ".SteamLinkVRSettings.original.bak";
 
-    public string DefaultsPath { get; set; } =
-        @"C:\Program Files (x86)\Steam\steamapps\common\SteamVR\drivers\vrlink\resources\settings\default.vrsettings";
+    public string UserConfigPath { get; set; } = SteamPaths.Current.Config;
 
+    public string DefaultsPath { get; set; } = SteamPaths.Current.Defaults;
+
+    /// <summary>Valve's defaults. A missing defaults file (SteamVR moved or not installed) yields no defaults rather than an error.</summary>
     public async Task<Dictionary<string, object?>> LoadDefaultsAsync()
     {
+        if (!File.Exists(DefaultsPath))
+            return [];
         var json = await ReadFileAsync(DefaultsPath);
         var node = JsonNode.Parse(json, documentOptions: DocOptions);
         var section = node?[SectionName]?.AsObject();
@@ -43,7 +49,18 @@ public class SettingsService
         return section is null ? [] : ExtractValues(section);
     }
 
-    public async Task SaveUserOverridesAsync(Dictionary<string, object?> settings)
+    /// <summary>
+    /// Writes <paramref name="settings"/> into the driver section and removes <paramref name="removeKeys"/>,
+    /// so removed settings fall back to Valve's current defaults.
+    /// </summary>
+    public async Task SaveUserOverridesAsync(Dictionary<string, object?> settings, IEnumerable<string>? removeKeys = null)
+    {
+        await SaveGate.WaitAsync();
+        try { await SaveCoreAsync(settings, removeKeys?.ToArray() ?? []); }
+        finally { SaveGate.Release(); }
+    }
+
+    private async Task SaveCoreAsync(Dictionary<string, object?> settings, string[] removeKeys)
     {
         JsonNode root;
         if (File.Exists(UserConfigPath))
@@ -64,13 +81,14 @@ public class SettingsService
             obj[SectionName] = section;
         }
 
-        // Preserve unknown keys already in the section
-        var existingKeys = section.Select(k => k.Key).ToHashSet();
-
         foreach (var kvp in settings)
         {
             section.Remove(kvp.Key);
             section.Add(kvp.Key, ToJsonNode(kvp.Value));
+        }
+        foreach (var key in removeKeys)
+        {
+            if (!settings.ContainsKey(key)) section.Remove(key);
         }
 
         await WriteFileAsync(UserConfigPath, root.ToJsonString(WriteOptions));
@@ -101,6 +119,7 @@ public class SettingsService
     private static object? GetTypedValue(JsonNode? node)
     {
         if (node is null) return null;
+        if (node is not JsonValue) return node.DeepClone();
         var element = node.GetValue<JsonElement>();
         return element.ValueKind switch
         {
@@ -120,6 +139,7 @@ public class SettingsService
         int i => JsonValue.Create(i),
         double d => JsonValue.Create(d),
         string s => JsonValue.Create(s),
+        JsonNode node => node.DeepClone(),
         _ => JsonValue.Create(value.ToString())
     };
 
@@ -136,6 +156,16 @@ public class SettingsService
         if (dir is not null && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
 
-        await File.WriteAllTextAsync(path, content);
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporary, content);
+            // Keep the user's pre-app configuration once, independent of the rolling previous-revision backup.
+            var original = path + OriginalBackupSuffix;
+            if (File.Exists(path) && !File.Exists(original)) File.Copy(path, original);
+            if (File.Exists(path)) File.Replace(temporary, path, path + BackupSuffix);
+            else File.Move(temporary, path);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 }

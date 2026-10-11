@@ -1,0 +1,5 @@
+/build/
+/tests/managed/bin/
+/tests/managed/obj/
+/tests/smoke/bin/
+/tests/smoke/obj/

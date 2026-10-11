@@ -17,10 +17,11 @@ public static class SettingDefinitions
                 {
                     Key = "targetBandwidth",
                     DisplayName = "Target Bandwidth",
-                    Description = "Maximum bandwidth target for video streaming",
+                    Description = "Requested video target. The driver may cap this; the tested override raises its ceiling to 500 Mbps. Actual bitrate varies with the scene.",
                     Unit = "Mbps",
                     ControlType = ControlType.Slider,
-                    Minimum = 25, Maximum = 1500, StepFrequency = 5
+                    Minimum = 25, Maximum = 500, StepFrequency = 5,
+                    StoreAsFloat = true
                 },
                 new SettingItem
                 {
@@ -77,15 +78,15 @@ public static class SettingDefinitions
                 new SettingItem
                 {
                     Key = "reqEncMode",
-                    DisplayName = "Encoder Mode",
-                    Description = "NVENC/AMF quality preset — higher = better quality, more latency",
+                    DisplayName = "Transport Encryption Mode",
+                    Description = "Transport mode override. Auto selects from the encryption setting; this does not select video encoder quality.",
                     ControlType = ControlType.Dropdown,
+                    RequiresRestart = true,
                     Options =
                     [
                         new OptionItem { Label = "Auto", Value = "auto" },
-                        new OptionItem { Label = "Low (fastest)", Value = "low" },
-                        new OptionItem { Label = "Mid (balanced)", Value = "mid" },
-                        new OptionItem { Label = "High (best quality)", Value = "high" }
+                        new OptionItem { Label = "AES", Value = "aes" },
+                        new OptionItem { Label = "MID", Value = "mid" }
                     ]
                 },
                 new SettingItem
@@ -138,7 +139,8 @@ public static class SettingDefinitions
                     Key = "forceBaselineVideoFEC",
                     DisplayName = "Force Baseline FEC",
                     Description = "Force baseline Forward Error Correction for the video stream",
-                    ControlType = ControlType.Toggle
+                    ControlType = ControlType.Toggle,
+                    RequiresRestart = true
                 },
                 new SettingItem
                 {
@@ -323,28 +325,32 @@ public static class SettingDefinitions
                     Key = "forceOpenMode",
                     DisplayName = "Force Open Mode",
                     Description = "Force the encoder into open mode",
-                    ControlType = ControlType.Toggle
+                    ControlType = ControlType.Toggle,
+                    IsExperimental = true
                 },
                 new SettingItem
                 {
                     Key = "watchForShaderChanges",
                     DisplayName = "Watch For Shader Changes",
                     Description = "Hot-reload shaders when files change on disk",
-                    ControlType = ControlType.Toggle
+                    ControlType = ControlType.Toggle,
+                    IsExperimental = true
                 },
                 new SettingItem
                 {
                     Key = "spoofAtStart",
                     DisplayName = "Spoof At Start",
                     Description = "Spoof a connected device at driver startup",
-                    ControlType = ControlType.Toggle
+                    ControlType = ControlType.Toggle,
+                    IsExperimental = true
                 },
                 new SettingItem
                 {
                     Key = "enable8814AP",
                     DisplayName = "Enable 8814 AP",
                     Description = "Enable Realtek 8814 Access Point mode for WiFi",
-                    ControlType = ControlType.Toggle
+                    ControlType = ControlType.Toggle,
+                    IsExperimental = true
                 }
             ]
         }

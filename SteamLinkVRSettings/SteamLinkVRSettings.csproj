@@ -11,6 +11,7 @@
     <WindowsPackageType>None</WindowsPackageType>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NativeHelperPath>$(MSBuildThisFileDirectory)..\Native\build\SteamFrameEncoderProbe.dll</NativeHelperPath>
     <RestoreConfigFile>$(MSBuildThisFileDirectory)..\NuGet.Config</RestoreConfigFile>
   </PropertyGroup>
 
@@ -21,4 +22,12 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\bitrate-patch.json" />
+    <Content Include="$(NativeHelperPath)" Link="Native\SteamFrameEncoderProbe.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('$(NativeHelperPath)')" />
+  </ItemGroup>
+  <!-- A plain IDE/dotnet build works without the native toolchain; only encoder monitoring is unavailable. -->
+  <Target Name="WarnMissingNativeHelper" BeforeTargets="Build" Condition="!Exists('$(NativeHelperPath)')">
+    <Warning Text="Native\build\SteamFrameEncoderProbe.dll was not found. Run Build.ps1 or Native\build.ps1 to enable encoder monitoring." />
+  </Target>
 </Project>

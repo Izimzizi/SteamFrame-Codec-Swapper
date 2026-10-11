@@ -6,52 +6,55 @@ using Microsoft.UI.Xaml.Media;
 using SteamLinkVRSettings.Controls;
 using SteamLinkVRSettings.Models;
 using SteamLinkVRSettings.ViewModels;
-using Windows.UI;
 using Color = Windows.UI.Color;
 
 namespace SteamLinkVRSettings.Views;
 
 public sealed partial class SettingsPage : Page
 {
+    private static readonly Color ModifiedColor = Color.FromArgb(255, 255, 179, 71);
     private readonly SettingsViewModel _vm = new();
 
     public SettingsPage()
     {
         InitializeComponent();
+        // Subscribe once; reloading rebuilds the controls but must not stack handlers.
+        _vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(SettingsViewModel.HasUnsavedChanges) or nameof(SettingsViewModel.UnsavedCount) or nameof(SettingsViewModel.ModifiedCount))
+                DispatcherQueue.TryEnqueue(UpdateChangeBanner);
+        };
+        StatusBar.ActionButton = null;
     }
 
-    private async void Page_Loaded(object sender, RoutedEventArgs e)
+    public bool HasUnsavedChanges => _vm.HasUnsavedChanges;
+
+    private async void Page_Loaded(object sender, RoutedEventArgs e) => await ReloadAsync(announce: false);
+
+    private async Task ReloadAsync(bool announce)
     {
+        LoadingOverlay.Visibility = Visibility.Visible;
         await _vm.LoadCommand.ExecuteAsync(null);
         BuildUI();
-        LoadingOverlay.Visibility = Visibility.Collapsed;
         BindHeader();
+        UpdateChangeBanner();
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+        if (_vm.ShowStatus) ShowViewModelStatus(_vm.IsStatusError ? InfoBarSeverity.Error : InfoBarSeverity.Warning);
+        else if (announce) ShowStatus("Settings reloaded from disk", InfoBarSeverity.Informational);
     }
 
     private void BindHeader()
     {
         HmdInfoText.Text = string.IsNullOrEmpty(_vm.HmdInfo) ? "" : $"HMD: {_vm.HmdInfo}";
         GpuInfoText.Text = string.IsNullOrEmpty(_vm.GpuInfo) ? "" : $"GPU: {_vm.GpuInfo}";
+    }
 
-        _vm.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName == nameof(_vm.HasUnsavedChanges))
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    SaveButton.IsEnabled = _vm.HasUnsavedChanges;
-                    UnsavedBar.IsOpen = _vm.HasUnsavedChanges;
-                    UnsavedBar.Message = $"You have unsaved changes ({_vm.ModifiedCount} modified from defaults)";
-                });
-            }
-            else if (args.PropertyName == nameof(_vm.ModifiedCount))
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    UnsavedText.Text = $"{_vm.ModifiedCount} settings differ from defaults";
-                });
-            }
-        };
+    private void UpdateChangeBanner()
+    {
+        SaveButton.IsEnabled = _vm.HasUnsavedChanges;
+        UnsavedBar.IsOpen = _vm.HasUnsavedChanges;
+        UnsavedBar.Message = $"{_vm.UnsavedCount} unsaved change(s).";
+        UnsavedText.Text = $"{_vm.ModifiedCount} setting(s) differ from SteamVR defaults.";
     }
 
     private void BuildUI()
@@ -70,10 +73,7 @@ public sealed partial class SettingsPage : Page
             };
 
             foreach (var setting in category.Settings)
-            {
-                var card = CreateSettingCard(setting);
-                expander.Items.Add(card);
-            }
+                expander.Items.Add(CreateSettingCard(setting));
 
             SettingsPanel.Children.Add(expander);
         }
@@ -87,54 +87,16 @@ public sealed partial class SettingsPage : Page
             Description = BuildDescription(setting),
         };
 
-        // Modified indicator dot
-        var indicator = new Microsoft.UI.Xaml.Shapes.Ellipse
+        // Modified-from-default marker in the header icon slot.
+        var headerIcon = new FontIcon { FontSize = 10 };
+        void UpdateHeaderIcon()
         {
-            Width = 8, Height = 8,
-            Fill = new SolidColorBrush(Color.FromArgb(255, 255, 179, 71)),
-            Margin = new Thickness(0, 0, 4, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Opacity = setting.IsModified ? 1.0 : 0.0
-        };
-
-        setting.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SettingItem.IsModified))
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    indicator.Opacity = setting.IsModified ? 1.0 : 0.0;
-                });
-            }
-        };
-
-        // Use a FontIcon as the HeaderIcon with the indicator dot overlayed
-        var headerIcon = new FontIcon
-        {
-            Glyph = setting.IsModified ? "\uEA3B" : "\uE73E",
-            FontSize = 10,
-            Foreground = setting.IsModified
-                ? new SolidColorBrush(Color.FromArgb(255, 255, 179, 71))
-                : new SolidColorBrush(Colors.Transparent)
-        };
-
-        setting.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SettingItem.IsModified))
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    headerIcon.Glyph = setting.IsModified ? "\uEA3B" : "\uE73E";
-                    headerIcon.Foreground = setting.IsModified
-                        ? new SolidColorBrush(Color.FromArgb(255, 255, 179, 71))
-                        : new SolidColorBrush(Colors.Transparent);
-                });
-            }
-        };
-
+            headerIcon.Glyph = setting.IsModified ? "" : "";
+            headerIcon.Foreground = new SolidColorBrush(setting.IsModified ? ModifiedColor : Colors.Transparent);
+        }
+        UpdateHeaderIcon();
         card.HeaderIcon = headerIcon;
 
-        // Content control
         var contentPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -152,10 +114,7 @@ public sealed partial class SettingsPage : Page
                     OffContent = "Off",
                     MinWidth = 0
                 };
-                toggle.Toggled += (_, _) =>
-                {
-                    setting.BoolValue = toggle.IsOn;
-                };
+                toggle.Toggled += (_, _) => setting.BoolValue = toggle.IsOn;
                 setting.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName == nameof(SettingItem.BoolValue))
@@ -169,14 +128,14 @@ public sealed partial class SettingsPage : Page
                 {
                     Text = FormatSliderValue(setting),
                     MinWidth = 70,
-                    TextAlignment = Microsoft.UI.Xaml.TextAlignment.Right,
+                    TextAlignment = TextAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
                 };
                 var slider = new NoWheelSlider
                 {
-                    Minimum = setting.Minimum,
-                    Maximum = setting.Maximum,
+                    Minimum = Math.Min(setting.Minimum, setting.NumericValue),
+                    Maximum = Math.Max(setting.Maximum, setting.NumericValue),
                     StepFrequency = setting.StepFrequency,
                     Value = setting.NumericValue,
                     Width = 250,
@@ -249,27 +208,28 @@ public sealed partial class SettingsPage : Page
                 break;
         }
 
-        // Reset button
         var resetBtn = new Button
         {
-            Content = new FontIcon { Glyph = "\uE777", FontSize = 12 },
+            Content = new FontIcon { Glyph = "", FontSize = 12 },
             Padding = new Thickness(6),
             VerticalAlignment = VerticalAlignment.Center,
-            Visibility = setting.IsModified ? Visibility.Visible : Visibility.Collapsed
+            Visibility = setting.IsModified && setting.DefaultValue is not null ? Visibility.Visible : Visibility.Collapsed
         };
-        ToolTipService.SetToolTip(resetBtn, $"Reset to default ({setting.DefaultValue})");
+        ToolTipService.SetToolTip(resetBtn, $"Reset to SteamVR default ({FormatDefault(setting)})");
         resetBtn.Click += (_, _) => setting.ResetToDefaultCommand.Execute(null);
+        contentPanel.Children.Add(resetBtn);
+
         setting.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SettingItem.IsModified))
             {
                 DispatcherQueue.TryEnqueue(() =>
                 {
-                    resetBtn.Visibility = setting.IsModified ? Visibility.Visible : Visibility.Collapsed;
+                    UpdateHeaderIcon();
+                    resetBtn.Visibility = setting.IsModified && setting.DefaultValue is not null ? Visibility.Visible : Visibility.Collapsed;
                 });
             }
         };
-        contentPanel.Children.Add(resetBtn);
 
         card.Content = contentPanel;
         return card;
@@ -278,9 +238,20 @@ public sealed partial class SettingsPage : Page
     private static string BuildDescription(SettingItem setting)
     {
         var desc = setting.Description;
-        if (setting.RequiresRestart)
-            desc += " (requires SteamVR restart)";
+        if (setting.IsExperimental) desc = "Experimental: " + desc + ". Can disrupt streaming.";
+        if (setting.RequiresRestart) desc += " (requires SteamVR restart)";
+        if (setting.LoadWarning is not null) desc += "\n⚠ " + setting.LoadWarning;
         return desc;
+    }
+
+    private static string FormatDefault(SettingItem setting)
+    {
+        if (setting.DefaultValue is null) return "unknown";
+        if (setting.ControlType == ControlType.Dropdown)
+            return setting.Options.FirstOrDefault(o => Equals(Convert.ToString(o.Value, System.Globalization.CultureInfo.InvariantCulture),
+                Convert.ToString(setting.DefaultValue, System.Globalization.CultureInfo.InvariantCulture)))?.Label ?? setting.DefaultValue.ToString()!;
+        if (setting.ControlType == ControlType.Toggle) return setting.DefaultValue is true ? "On" : "Off";
+        return $"{setting.DefaultValue} {setting.Unit}".Trim();
     }
 
     private static string FormatSliderValue(SettingItem setting)
@@ -290,28 +261,49 @@ public sealed partial class SettingsPage : Page
         return $"{setting.NumericValue:F1} {setting.Unit}".Trim();
     }
 
-    private async void SaveButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>Saves, asking for confirmation first when experimental settings changed. Returns true when saved.</summary>
+    public async Task<bool> SaveAsync()
     {
+        var experimental = _vm.ChangedExperimentalSettings;
+        if (experimental.Count > 0)
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Save experimental settings?",
+                Content = "These developer options can disrupt or break streaming:\n\n• " +
+                    string.Join("\n• ", experimental.Select(s => s.DisplayName)) +
+                    "\n\nYou can reset them to SteamVR defaults later.",
+                PrimaryButtonText = "Save",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
+        }
+
         await _vm.SaveCommand.ExecuteAsync(null);
-        StatusBar.Severity = _vm.IsStatusError ? InfoBarSeverity.Error : InfoBarSeverity.Success;
-        StatusBar.Message = _vm.StatusMessage;
+        ShowViewModelStatus(_vm.IsStatusError ? InfoBarSeverity.Error : InfoBarSeverity.Success);
+        return !_vm.IsStatusError;
+    }
+
+    private void ShowViewModelStatus(InfoBarSeverity severity)
+    {
+        ShowStatus(_vm.StatusMessage, severity);
+        if (_vm.NeedsElevation && !Elevation.IsElevated)
+            StatusBar.ActionButton = Elevation.CreateRestartButton(XamlRoot);
+    }
+
+    private void ShowStatus(string message, InfoBarSeverity severity)
+    {
+        StatusBar.ActionButton = null;
+        StatusBar.Message = message;
+        StatusBar.Severity = severity;
         StatusBar.IsOpen = true;
     }
 
-    private void ResetAllButton_Click(object sender, RoutedEventArgs e)
-    {
-        _vm.ResetAllToDefaultsCommand.Execute(null);
-    }
+    private async void SaveButton_Click(object sender, RoutedEventArgs e) => await SaveAsync();
 
-    private async void ReloadButton_Click(object sender, RoutedEventArgs e)
-    {
-        LoadingOverlay.Visibility = Visibility.Visible;
-        await _vm.LoadCommand.ExecuteAsync(null);
-        BuildUI();
-        BindHeader();
-        LoadingOverlay.Visibility = Visibility.Collapsed;
-        StatusBar.Severity = InfoBarSeverity.Informational;
-        StatusBar.Message = "Settings reloaded from disk";
-        StatusBar.IsOpen = true;
-    }
+    private void ResetAllButton_Click(object sender, RoutedEventArgs e) => _vm.ResetAllToDefaultsCommand.Execute(null);
+
+    private async void ReloadButton_Click(object sender, RoutedEventArgs e) => await ReloadAsync(announce: true);
 }
