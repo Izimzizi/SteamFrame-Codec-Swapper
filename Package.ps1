@@ -48,6 +48,7 @@ try {
     New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\minhook\LICENSE.txt') -Destination (Join-Path $licenseRoot 'MinHook-HDE.txt')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\NVIDIA-LICENSE.txt') -Destination $licenseRoot
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Destination (Join-Path $licenseRoot 'SteamLinkVRSettings-MIT.txt')
     if (Test-Path -LiteralPath $portableRoot) {
         $previousRoot = Join-Path $artifactRoot ('.previous-' + [guid]::NewGuid().ToString('N'))
         Assert-ArtifactPath $portableRoot
