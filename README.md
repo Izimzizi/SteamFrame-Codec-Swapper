@@ -8,6 +8,8 @@ the SteamVR driver's bitrate ceiling with a fully reversible patch.
 It also includes a full editor for every Steam Link VR (`driver_vrlink`) setting,
 including the ones SteamVR doesn't show in its own UI.
 
+![Live dashboard measuring a Steam Frame stream: encoded bitrate, requested target, video path and a 60-second graph](docs/images/live-dashboard.png)
+
 > **Platform:** Windows 11 x64 · SteamVR with the Steam Link VR driver · NVIDIA GPU
 > for encoder measurements and foveation bias (AMD AMF can be enabled, but isn't measured)
 
