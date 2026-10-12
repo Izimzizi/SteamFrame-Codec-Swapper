@@ -166,6 +166,7 @@ public sealed partial class FramePage
 
     private async void ApplyAdvanced_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
+        await EnsureCodecStableAsync();
         var request = ReadAdvancedEncoderInputs(); var revision = _encoderAdvancedRevision;
         // Explicit Apply can retry a previously rejected experiment with the
         // same values after the user fixes its context (for example, selects VBR).
@@ -219,6 +220,7 @@ public sealed partial class FramePage
     }
     private async Task<string> ApplyAdvancedEncoderAsync(AdvancedEncoding request, bool running)
     {
+        if (running) await EnsureCodecStableAsync();
         if (!running) return " Encoder request saved; start SteamVR and apply it during a supported NVENC session.";
         var before = await _probe.GetSnapshotAsync();
         if (!before.Installed) before = await _probe.StartAsync();
@@ -251,6 +253,7 @@ public sealed partial class FramePage
     }
     private async void RestoreAdvanced_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
+        await EnsureCodecStableAsync();
         var revision = _encoderAdvancedRevision; var rows = _driverRows.ToDictionary(p => p.Key, p => p.Value.Revision);
         var running = await Task.Run(() => OpenVrSettings.IsRunning);
         var keys = AdvancedDriverSettings.Definitions.Select(d => d.Key).ToArray();
@@ -274,11 +277,13 @@ public sealed partial class FramePage
         }
         AdvancedCapabilityStatus.Text = _advancedAvailable ? "Updated helper available. Initialization-only fields need a new encoder session. If pending, restart Frame/PC SteamVR as needed; keep this app open with Reapply enabled and let requests arm before Frame reconnect." +
             (snapshot.AdvancedEncoding!.CapabilitiesQueried ? $" Queried NVENC capabilities: dynamic bitrate {snapshot.AdvancedEncoding.DynamicBitrateSupported}, custom VBV {snapshot.AdvancedEncoding.CustomVbvSupported}, temporal AQ {snapshot.AdvancedEncoding.TemporalAqSupported}." : " NVENC capability query pending.")
+            : snapshot.PairedCodecTrialPresent ? "The paired codec trial controls the encoder. App encoder overrides are disabled while it is loaded."
             : "Advanced encoder controls require the updated helper and a supported NVENC stream. Start the monitor; restart SteamVR after a helper update. Driver controls remain available.";
         var advanced = snapshot.AdvancedEncoding;
         if (advanced is null)
         {
-            AdvancedRequestedReadback.Text = "Requested advanced encoding: unavailable (updated helper required)";
+            AdvancedRequestedReadback.Text = snapshot.PairedCodecTrialPresent ? "App advanced encoder overrides: disabled for the paired codec trial."
+                : "Requested advanced encoding: unavailable (updated helper required)";
             AdvancedAcceptedReadback.Text = "Last successfully submitted configuration: unavailable";
             AdvancedLiveReadback.Text = "Advanced encoder configuration: unavailable";
         }

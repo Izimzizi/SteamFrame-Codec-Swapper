@@ -1,5 +1,7 @@
 namespace SteamLinkVRSettings.Frame;
 
+public enum StreamCodec { Hevc, Av1, H264 }
+
 /// <summary>NVENC output metadata only. EncodedBytes excludes transport/FEC/duplicate links.</summary>
 public sealed record EncoderSnapshot
 {
@@ -34,6 +36,12 @@ public sealed record EncoderSnapshot
     public EncoderCallbackTiming? CallbackTiming { get; init; }
     public uint LastNvencStatus { get; init; }
     public string Codec { get; init; } = "Unknown";
+    /// <summary>Codec metadata was verified with encoded output, not a setting or loaded DLL name.</summary>
+    public bool CodecObserved { get; init; }
+    public string CodecSource { get; init; } = "";
+    public bool CodecReadFailed { get; init; }
+    /// <summary>The already-loaded paired codec trial owns the encoder; ordinary app hooks must stay disabled.</summary>
+    public bool PairedCodecTrialPresent { get; init; }
     public uint? BitDepth { get; init; }
     public string Message { get; init; } = "Encoder monitoring has not started.";
 }

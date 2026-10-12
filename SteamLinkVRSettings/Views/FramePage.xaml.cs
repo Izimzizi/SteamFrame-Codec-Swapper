@@ -89,6 +89,7 @@ public sealed partial class FramePage : Page
         RateControlInput.SelectedIndex = Enum.IsDefined(_preferences.RateControl) ? (int)_preferences.RateControl : 0;
         MultiPassInput.SelectedIndex = Enum.IsDefined(_preferences.MultiPass) ? (int)_preferences.MultiPass : 0;
         InitializeAdvancedControls();
+        InitializeCodecControls();
         _syncingBandwidth = false;
         _syncingPower = false;
     }
@@ -100,11 +101,12 @@ public sealed partial class FramePage : Page
         _lifetime = new();
         var lifetime = _lifetime;
         await LoadControlsAsync();
+        await LoadSteamVrVideoAsync();
         if (_disposed || lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
         if (!_initialized)
         {
             _initialized = true;
-            if (_powerLease.RecoveryPending)
+            if (_powerLease.RecoveryPending && !CodecHooksPaused(await _codecController.ReadStatusAsync()))
                 await ActionAsync(async () => { try { await _powerLease.RestoreAsync(); return "Recovered the app's previous temporary power settings."; } finally { UpdatePowerLease(); } }, reportSuccess: false);
             await ActionAsync(InspectPatchAsync, reportSuccess: false);
             if (_disposed || lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
@@ -123,7 +125,11 @@ public sealed partial class FramePage : Page
         await _actions.WaitAsync();
         try
         {
-            try { await _powerLease.RestoreAsync(); }
+            try
+            {
+                if (!CodecHooksPaused(await _codecController.ReadStatusAsync())) await _powerLease.RestoreAsync();
+                else if (_powerLease.RecoveryPending) PowerLeaseStatus.Text = "Power restoration pending until the codec reconnect finishes; original values remain saved.";
+            }
             catch (Exception error) when (_powerLease.RecoveryPending)
             {
                 // A running vrserver may still reject OpenVR initialization when
@@ -155,6 +161,7 @@ public sealed partial class FramePage : Page
         var enabled = KeepAwakeInput.IsOn;
         await ActionAsync(async () =>
         {
+            await EnsureCodecStableAsync();
             if (enabled) await _powerLease.EnableAsync(); else await _powerLease.RestoreAsync();
             return enabled ? "Temporary unattended-test power settings enabled." : "Original SteamVR power settings restored; newer differing values preserved.";
         });
@@ -217,10 +224,18 @@ public sealed partial class FramePage : Page
         {
             var at = Now;
             var runningTask = Task.Run(() => OpenVrSettings.IsRunning);
-            var nativeTask = _probe.GetSnapshotAsync();
+            // A paired switch installs its backend into the fresh process before ordinary hooks may start.
+            var codecService = await _codecController.ReadStatusAsync(lifetime.Token);
+            if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
+            RenderCodecService(codecService);
+            var codecPaused = CodecHooksPaused(codecService);
+            var nativeTask = codecPaused ? Task.FromResult(new EncoderSnapshot { Message = "Codec session is reconnecting; encoder monitoring is paused." }) : _probe.GetSnapshotAsync();
             var trafficTask = Task.Run(() => _traffic.Sample());
             var healthTask = _streamHealth.PollAsync(lifetime.Token);
-            var compositorTask = _compositorTiming.PollAsync(lifetime.Token);
+            var compositorTask = codecPaused
+                ? Task.FromResult(_compositorTiming.Current with { Available = false, ObservedAt = DateTimeOffset.Now,
+                    Message = "Codec session is reconnecting; PC compositor timing is paused." })
+                : _compositorTiming.PollAsync(lifetime.Token);
             var traceTask = at >= _nextTraceRead ? Task.Run(() => _frameTrace.ReadLatest(), lifetime.Token) : null;
             if (traceTask != null) _nextTraceRead = at + 5;
             // Remote monitoring must not stall the one-second video graph if Wi-Fi disappears.
@@ -241,7 +256,7 @@ public sealed partial class FramePage : Page
             }
             await Task.WhenAll(runningTask, nativeTask, trafficTask, healthTask, compositorTask, (Task?)traceTask ?? Task.CompletedTask);
             _vrRunning = await runningTask;
-            if (_vrRunning && _powerLease.RecoveryPending && !_powerLease.Enabled && at >= _nextPowerRecovery)
+            if (!codecPaused && _vrRunning && _powerLease.RecoveryPending && !_powerLease.Enabled && at >= _nextPowerRecovery)
             {
                 _nextPowerRecovery = at + 30;
                 try { await _powerLease.RestoreAsync(); }
@@ -292,16 +307,25 @@ public sealed partial class FramePage : Page
                     $"Worst encode {Stage(trace.Encode)}, send-to-receive {Stage(trace.Transport)}, decode {Stage(trace.Decode)}. " +
                     $"{trace.LateSubmissionFrames} headset submissions >1 ms late; {trace.MissingIlluminationFeedback} without submission feedback.\n{trace.Message}";
 
-            RuntimeText.Text = snapshot.ProcessId > 0 ? "SteamVR running" : "SteamVR stopped";
+            RuntimeText.Text = _vrRunning ? "SteamVR running" : "SteamVR stopped";
             UpdatePatchButtons();
-            if (_vrRunning && at >= _nextRuntimeRead)
+            if (codecPaused)
+            {
+                _target = null;
+                TargetReadback.Text = "— Mbps";
+                TargetMode.Text = "Codec session reconnecting; live settings read paused";
+                SupersampleFilteringReadback.Text = "Codec session reconnecting; SteamVR video readback paused.";
+            }
+            else if (_vrRunning && at >= _nextRuntimeRead)
             {
                 _nextRuntimeRead = at + 3;
                 try
                 {
                     var live = await Task.Run(() => OpenVrSettings.Read(_paths));
+                    var supersample = await Task.Run(() => OpenVrSettings.ReadSupersampleFiltering(_paths));
                     if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
                     _target = live.Target;
+                    ShowSupersampleValue(supersample, "Live SteamVR readback");
                     TargetReadback.Text = $"{live.Target:0} Mbps";
                     TargetMode.Text = live.Automatic ? "Live • automatic" : "Live • manual";
                     // External/live changes should become the next Apply value,
@@ -327,7 +351,7 @@ public sealed partial class FramePage : Page
                 TargetReadback.Text = "— Mbps";
                 TargetMode.Text = "Start SteamVR to read the live target";
             }
-            if (_preferences.ReapplyAfterRestart && snapshot.ProcessId > 0 && _configuredPid != snapshot.ProcessId && at >= _nextAutoApply)
+            if (_preferences.ReapplyAfterRestart && !codecPaused && !snapshot.PairedCodecTrialPresent && snapshot.ProcessId > 0 && _configuredPid != snapshot.ProcessId && at >= _nextAutoApply && !CodecHooksPaused(await _codecController.ReadStatusAsync(lifetime.Token)))
             {
                 _nextAutoApply = at + 10;
                 snapshot = await _probe.StartAsync();
@@ -360,10 +384,18 @@ public sealed partial class FramePage : Page
                 : (Mbps: (double?)null, Fps: (double?)null);
             if (!snapshot.Installed || !snapshot.Active) { _rate.Reset(); _quantizers.Reset(); }
             VideoRate.Text = measured.Mbps is double mbps ? mbps.ToString("0.0") : "—";
-            VideoDetail.Text = measured.Fps is double fps ? $"{fps:0.0} frames/s • {snapshot.Codec}" : snapshot.Installed ? "Waiting for encoded frames…" : "Start the live monitor during an NVENC stream.";
+            VideoDetail.Text = measured.Fps is double fps ? $"{fps:0.0} frames/s" : snapshot.Installed ? "Waiting for encoded frames…" : "Start the live monitor during an NVENC stream.";
+            var codec = StreamCodecStatus.From(snapshot);
+            CodecReadback.Text = "Codec: " + codec.Value;
+            CodecDetail.Text = codec.Detail;
+            CodecCurrentReadback.Text = "Current encoder: " + codec.Value + " • " + codec.Detail;
+            if (codecPaused) MarkCodecReconnect();
+            CodecReadback.Foreground = new SolidColorBrush(codec.Verified ? Color.FromArgb(255, 92, 189, 118) : Color.FromArgb(255, 200, 200, 208));
             ProbeStatus.Text = snapshot.Message + (snapshot.Installed ? $"  Encode errors: {snapshot.EncodeErrors}; output errors: {snapshot.LockErrors}; frames measured: {snapshot.EncodedFrames}." : "");
-            QualityReadback.Text = snapshot.Enabled ? $"Custom foveation: gaze {snapshot.CenterOffset:+0;-0;0}, periphery {snapshot.PeripheralOffset:+0;-0;0} • {snapshot.ModifiedFrames} frames changed" : snapshot.Installed ? snapshot.QualitySupported ? "Foveation: Valve defaults" : "Video monitoring available; this driver's foveation layout is incompatible." : "Foveation status available when the monitor is running";
-            if (!_bandwidthEdited && snapshot.Installed && !ContainsFocus(RateControlInput) && !ContainsFocus(MultiPassInput) &&
+            QualityReadback.Text = snapshot.PairedCodecTrialPresent ? "Foveation override: disabled for the paired codec trial." : snapshot.Enabled ? $"Custom foveation: gaze {snapshot.CenterOffset:+0;-0;0}, periphery {snapshot.PeripheralOffset:+0;-0;0} • {snapshot.ModifiedFrames} frames changed" : snapshot.Installed ? snapshot.QualitySupported ? "Foveation: Valve defaults" : "Video monitoring available; this driver's foveation layout is incompatible." : "Foveation status available when the monitor is running";
+            QualityInput.IsEnabled = GazeInput.IsEnabled = PeripheralInput.IsEnabled =
+                RateControlInput.IsEnabled = MultiPassInput.IsEnabled = !snapshot.PairedCodecTrialPresent;
+            if (!_bandwidthEdited && !snapshot.PairedCodecTrialPresent && snapshot.Installed && !ContainsFocus(RateControlInput) && !ContainsFocus(MultiPassInput) &&
                 !ContainsFocus(QualityInput) && !ContainsFocus(GazeInput) && !ContainsFocus(PeripheralInput))
             {
                 _syncingBandwidth = true;
@@ -381,9 +413,13 @@ public sealed partial class FramePage : Page
             }
             RenderEncodingReadbacks(snapshot);
             RenderAdvancedReadbacks(snapshot);
-            try { await RefreshAdvancedDriverAsync(); }
+            try
+            {
+                if (!codecPaused) await RefreshAdvancedDriverAsync();
+                else foreach (var row in _driverRows.Values) row.Readback!.Text = "Codec reconnecting; OpenVR readback paused.";
+            }
             catch (Exception error) { foreach (var row in _driverRows.Values) row.Readback!.Text = "Advanced settings read unavailable: " + error.Message; }
-            if (!_actionPending)
+            if (!_actionPending && !codecPaused)
             {
                 MonitorButton.IsEnabled = !snapshot.Installed;
                 StopMonitorButton.IsEnabled = snapshot.Installed;
@@ -402,6 +438,10 @@ public sealed partial class FramePage : Page
         {
             if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
             VideoRate.Text = "—";
+            CodecReadback.Text = "Codec: Unknown";
+            CodecDetail.Text = "Current encoder evidence is unavailable.";
+            CodecCurrentReadback.Text = "Current encoder: Unknown • current evidence unavailable";
+            CodecReadback.Foreground = new SolidColorBrush(Color.FromArgb(255, 200, 200, 208));
             ProbeStatus.Text = "Monitor unavailable: " + ex.Message;
             _rate.Reset();
         }
@@ -411,11 +451,12 @@ public sealed partial class FramePage : Page
     private void RenderEncodingReadbacks(EncoderSnapshot snapshot)
     {
         var policy = snapshot.EncodingPolicy;
-        PolicyRequestedReadback.Text = policy is null ? "Requested NVENC policy: unavailable (updated helper required)" : "Requested NVENC policy: " + policy.Requested.Description;
+        PolicyRequestedReadback.Text = snapshot.PairedCodecTrialPresent ? "The paired codec trial controls the encoder policy; app overrides are disabled."
+            : policy is null ? "Requested NVENC policy: unavailable (updated helper required)" : "Requested NVENC policy: " + policy.Requested.Description;
         PolicyAppliedReadback.Text = policy is not { Observed: true } ? "Accepted NVENC configuration: waiting for a verified initialize/reconfigure call" :
             $"Last accepted: {policy.RateControlName} / {policy.MultiPassName} / preset {policy.Preset} • {policy.AverageBitrate / 1_000_000.0:0.0} Mbps encoder target\n" +
             $"{policy.Width} × {policy.Height} at {(policy.FrameRateDen > 0 ? policy.FrameRateNum / (double)policy.FrameRateDen : 0):0.0} fps • bit depth {(snapshot.BitDepth is uint depth ? depth.ToString() : "unavailable")} • VBV {policy.VbvSize / 1_000_000.0:0.00} Mbit / initial {policy.VbvDelay / 1_000_000.0:0.00} Mbit • padding {(policy.Filler ? "enabled" : "disabled")}\n" +
-            (policy.Requested == policy.Applied ? "Requested policy accepted." : "Policy change pending; reconnect if it does not apply.") +
+            (snapshot.PairedCodecTrialPresent ? "Paired codec adapter configuration observed." : policy.Requested == policy.Applied ? "Requested policy accepted." : "Policy change pending; reconnect if it does not apply.") +
             $" Calls {policy.Calls}, errors {policy.Errors}, rejected ABI calls {policy.RejectedCalls}." + (snapshot.Active ? "" : " Stream currently inactive.");
         var qp = snapshot.Active ? _quantizers.Sample(snapshot.Generation, snapshot.QuantizerSamples, snapshot.QuantizerSum) : null;
         QuantizerReadback.Text = $"Whole-frame QP: {(qp is double value ? value.ToString("0.00") + " interval mean" : "waiting for new samples")} • last frame {(snapshot.QuantizerSamples > 0 ? snapshot.LastFrameQp?.ToString() : "unavailable")} • {snapshot.LastFrameBytes / 1024.0:0.0} KiB/frame";
@@ -426,6 +467,7 @@ public sealed partial class FramePage : Page
 
     private async Task<EncoderSnapshot> ApplyPolicyAsync(EncodingPolicy policy)
     {
+        await EnsureCodecStableAsync();
         var result = await _probe.SetEncodingPolicyAsync(policy);
         if (!result.Installed || result.EncodingPolicy?.Requested != policy) return result;
         await Task.Run(() => OpenVrSettings.RefreshEncoder(_paths));
@@ -452,6 +494,7 @@ public sealed partial class FramePage : Page
 
     private async void StartMonitor_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
+        await EnsureCodecStableAsync();
         var status = await _probe.StartAsync();
         if (!status.Installed)
         {
@@ -466,6 +509,7 @@ public sealed partial class FramePage : Page
     });
     private async void StopMonitor_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
+        await EnsureCodecStableAsync();
         // Prevent automatic reapplication while restoration is pending.
         _preferences.ReapplyAfterRestart = false;
         ReapplyInput.IsChecked = false;
@@ -488,10 +532,12 @@ public sealed partial class FramePage : Page
         await _preferences.SaveAsync();
         _rate.Reset();
         _quantizers.Reset();
-        return "Live monitor stopped; Valve's original foveation and encoder policy restored for this session.";
+        return before.PairedCodecTrialPresent ? "Paired codec monitoring stopped. The paired codec trial remains active."
+            : "Live monitor stopped; Valve's original foveation and encoder policy restored for this session.";
     });
     private async void Apply_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
+        await EnsureCodecStableAsync();
         if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value < 25 || BitrateInput.Value > 500) throw new ArgumentException("Choose a bitrate between 25 and 500 Mbps.");
         if (!FoveationOffsets.IsValid(GazeInput.Value, FoveationOffsets.MaximumGaze, FoveationOffsets.MinimumGaze) || !FoveationOffsets.IsValid(PeripheralInput.Value, FoveationOffsets.MaximumPeripheral))
             throw new ArgumentException("Use whole-number offsets: gaze −20 to +12, outside gaze −12 to +31.");
@@ -542,7 +588,8 @@ public sealed partial class FramePage : Page
         else await new SettingsService().SaveUserOverridesAsync(values);
         var before = await _probe.GetSnapshotAsync();
         string qualityMessage = "";
-        if (running && (requestedQuality || !requestedPolicy.IsDefault || before.Installed))
+        if (before.PairedCodecTrialPresent) qualityMessage = " App encoder and foveation overrides remain disabled during the paired codec trial.";
+        else if (running && (requestedQuality || !requestedPolicy.IsDefault || before.Installed))
         {
             if (!before.Installed) before = await _probe.StartAsync();
             if (!before.Installed) qualityMessage = " Foveation pending: " + before.Message;
@@ -612,6 +659,7 @@ public sealed partial class FramePage : Page
     {
         if (_actionPending || _disposed) return;
         _actionPending = true;
+        RefreshCodecButtons();
         ApplyButton.IsEnabled = MonitorButton.IsEnabled = StopMonitorButton.IsEnabled = PatchButton.IsEnabled = RestoreButton.IsEnabled = RecoverButton.IsEnabled = false;
         AdvancedApplyButton.IsEnabled = AdvancedRestoreButton.IsEnabled = false;
         await _actions.WaitAsync();
@@ -621,6 +669,7 @@ public sealed partial class FramePage : Page
         {
             _actions.Release();
             _actionPending = false;
+            RefreshCodecButtons();
             ApplyButton.IsEnabled = MonitorButton.IsEnabled = StopMonitorButton.IsEnabled = RecoverButton.IsEnabled = true;
             AdvancedApplyButton.IsEnabled = AdvancedRestoreButton.IsEnabled = true;
             UpdatePatchButtons();

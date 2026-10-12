@@ -57,6 +57,20 @@ internal static class CoreHarness
                 var root = Parse(await File.ReadAllTextAsync(service.UserConfigPath));
                 Check(root["driver_vrlink"]!["newObject"] is JsonObject && root["driver_vrlink"]!["newArray"] is JsonArray, "unknown JSON shapes changed");
             });
+            await Test("SteamVR video override uses its section and preserves driver controls", async () =>
+            {
+                var driver = Service("video-section");
+                const string original = """{"steamvr":{"allowSupersampleFiltering":true,"other":7},"driver_vrlink":{"targetBandwidth":200},"LastKnown":{"model":"Frame"}}""";
+                await File.WriteAllTextAsync(driver.UserConfigPath, original);
+                var video = new SettingsService { UserConfigPath = driver.UserConfigPath, DefaultsPath = driver.DefaultsPath, Section = OpenVrSettings.SteamVrVideoSection };
+                await video.SaveUserOverridesAsync(new() { [OpenVrSettings.SupersampleFilteringKey] = false });
+                var before = Parse(original); var after = Parse(await File.ReadAllTextAsync(driver.UserConfigPath));
+                Check(!after["steamvr"]!["allowSupersampleFiltering"]!.GetValue<bool>(), "video toggle was not saved");
+                Check(JsonNode.DeepEquals(before["driver_vrlink"], after["driver_vrlink"]), "video toggle changed driver controls");
+                Check(JsonNode.DeepEquals(before["LastKnown"], after["LastKnown"]), "video toggle changed headset metadata");
+                Check((await video.LoadUserOverridesAsync())[OpenVrSettings.SupersampleFilteringKey] is false, "saved video readback was incorrect");
+                Check(!(await driver.LoadUserOverridesAsync()).ContainsKey(OpenVrSettings.SupersampleFilteringKey), "video toggle leaked into the driver section");
+            });
             await Test("atomic save backs up the exact previous bytes and replaces the complete document", async () =>
             {
                 var service = Service("backup");

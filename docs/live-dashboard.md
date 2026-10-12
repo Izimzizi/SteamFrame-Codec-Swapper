@@ -21,6 +21,7 @@ If **Start live monitor** keeps failing while SteamVR is running, the status bar
 | Readout | Source and meaning |
 | --- | --- |
 | Encoded video / frames per second | Successful NVENC output sizes from cumulative counters and a monotonic clock. No video payload is read or saved. |
+| Codec | HEVC, AV1 or H.264 verified from encoder metadata and recent encoded output. A requested codec or loaded adapter alone is not confirmation. The status shows Waiting when output stops, Unknown when monitoring stops or evidence is unavailable, and Unavailable when SteamVR exits. |
 | Requested target | Read live from running SteamVR. Shows unavailable when SteamVR is stopped. |
 | Active adapter send / stream adapters | Windows counters for the Valve wireless dongle and USB NCM adapters. Includes overhead, FEC and other traffic, so it is not the encoded video bitrate. The graph only uses an adapter that uniquely matches a headset-confirmed active link. |
 | Video path / headset links | The Frame's own active-link status over paired wireless SSH, or ADB when no wireless host is set. Distinguishes dedicated wireless, local network and USB. |
@@ -34,6 +35,32 @@ If **Start live monitor** keeps failing while SteamVR is running, the status bar
 
 The graph keeps 60 seconds. Missing, stopped, unsupported or stale samples appear as gaps,
 never as zero. Links and adapters are never summed, because traffic can be duplicated across them.
+
+An already-loaded paired AV1 trial is monitored through its guarded statistics interface;
+the app does not install HEVC hooks alongside it or reapply saved encoder/foveation overrides.
+Its first cumulative counter sample is a baseline. AV1 is shown as active only after fresh
+output advances, and the readout clears after SteamVR restarts or a statistics read fails.
+Stopping AV1 monitoring leaves the codec trial running and labels its codec as last verified.
+
+## Switching codecs
+
+Under **Stream controls**, select HEVC, AV1 or H.264, choose the codec-session target and
+90/120 Hz, then click **Switch codec**. The selection is the requested mode; **Current encoder**
+and the dashboard's codec readout confirm encoder identity and fresh output separately.
+Switching restarts SteamVR and reconnects the stream. Keep the Frame awake, Wi-Fi enabled,
+and the dedicated dongle connected.
+
+Starting a new codec session uses the private Frame user-password field. The password is
+sent only through the owned supervisor's input pipe and is never written to preferences,
+configuration files, requests or logs. An existing live codec session switches without
+another authentication. Its heartbeat and process identity must validate before the app
+sends a request; stale or incompatible sessions cannot start duplicate switches.
+
+AV1 and H.264 use the paired runtime and disable ordinary encoder/foveation overrides.
+H.264 currently uses a smaller packed image, 1024 × 4096, compared with AV1's 1536 × 6144.
+Targets remain requests rather than guaranteed output rates. **Restore HEVC and end session**
+requests the supervised rollback. Closing the app leaves the session running; the supervisor
+ends it after its session limit and restores HEVC.
 
 ## Streaming issue capture
 

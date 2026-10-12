@@ -26,6 +26,7 @@ public class SettingsService
     public string UserConfigPath { get; set; } = SteamPaths.Current.Config;
 
     public string DefaultsPath { get; set; } = SteamPaths.Current.Defaults;
+    public string Section { get; init; } = SectionName;
 
     /// <summary>Valve's defaults. A missing defaults file (SteamVR moved or not installed) yields no defaults rather than an error.</summary>
     public async Task<Dictionary<string, object?>> LoadDefaultsAsync()
@@ -34,7 +35,7 @@ public class SettingsService
             return [];
         var json = await ReadFileAsync(DefaultsPath);
         var node = JsonNode.Parse(json, documentOptions: DocOptions);
-        var section = node?[SectionName]?.AsObject();
+        var section = node?[Section]?.AsObject();
         return section is null ? [] : ExtractValues(section);
     }
 
@@ -45,7 +46,7 @@ public class SettingsService
 
         var json = await ReadFileAsync(UserConfigPath);
         var node = JsonNode.Parse(json, documentOptions: DocOptions);
-        var section = node?[SectionName]?.AsObject();
+        var section = node?[Section]?.AsObject();
         return section is null ? [] : ExtractValues(section);
     }
 
@@ -74,11 +75,11 @@ public class SettingsService
         }
 
         var obj = root.AsObject();
-        var section = obj[SectionName]?.AsObject();
+        var section = obj[Section]?.AsObject();
         if (section is null)
         {
             section = new JsonObject();
-            obj[SectionName] = section;
+            obj[Section] = section;
         }
 
         foreach (var kvp in settings)

@@ -1,0 +1,17 @@
+# Experimental AV1/H.264 backend
+
+This lab includes a paired SteamVR AV1 prototype, independent of the production NVENC 11.1 helper. `steamvr_trial.cpp` intercepts the public NVENC factory only for the SteamVR VRLink driver and translates its legacy table to AV1. Installed driver files are unchanged. See [implementation status](../../docs/av1-implementation-status.md) for tested results and limits.
+
+The v1.2 supervised companion also selects H.264 and can restore stock HEVC. The UI offers 25–200 Mbps requests at 90/120 Hz, but actual packet bitrate and sustained fresh-frame rate must be measured independently. Current packed maxima are 1536×6144 for AV1 and 1024×4096 for H.264. The PC adapter and Frame client/decoder are selected together; unsupported Frame fingerprints fail closed. See [codec setup](../../docs/codec-modes.md).
+
+Run `build.ps1` from Windows PowerShell with Visual Studio C++ and a Windows SDK installed. Output goes to `artifacts/AV1Lab/backend/`. Alternatively use this directory as a standalone CMake project.
+
+`av1_backend.h` is a versioned C ABI over the public NVENC 12.1 API. The session owns its device, output buffer and up to 16 registered textures. Serialize operations and destroy the session after callers stop using borrowed packet data. `Av1Packet.data` remains valid until the next session operation. The input texture must remain GPU-synchronized before submitting. Rate targets are budgets, not guaranteed emitted bitrate.
+
+`backend_test.exe WIDTH HEIGHT FRAMES [file|dongle] [BIT_DEPTH] [AVERAGE_MBPS] [LEVEL_INDEX] [TILE_COLUMNS] [TILE_ROWS]` draws a moving GPU pattern, paces submissions at 120 fps, checks rejection guards, changes bitrate and forces keyframes. The optional dongle mode uses a dedicated test receiver, not VRLink. It binds to the paired PC's dongle IP. `surface_test.exe nv12|p010 [LEVEL_INDEX] [AVERAGE_MBPS] [FRAMES]` validates planar GPU inputs without pacing. `legacy_picture_test.exe` verifies SDK 11.1 field extraction and memory preservation. ABI probes compile the headers separately. Config ABI version 2 includes explicit uniform tile controls; unknown struct sizes/versions are rejected.
+
+The SDK 11.1 picture's QP-map offset differs from SDK 12.1. Never copy the whole legacy picture prefix and then read its fields through a modern struct. `legacy_picture.cpp` only extracts the legacy fields explicitly; `legacy_api_bridge.cpp` separately translates the HEVC-facing QP map to the selected codec's units/geometry, preserving the protected timing-marker region. AV1's 32→64-pixel map reduction and numerical scaling remain provisional rather than a calibrated quality equivalence.
+
+`legacy_api_bridge.cpp` adds the SDK 11.1 function-table adapter over actual SDK 12.1 AV1 sessions. `legacy_gpu_test.exe [async]` exercises preserved inputs, memory canaries, resources, completion events and reconfiguration. Both modes encode and independently decode on PC. The paired launcher injects the adapter into SteamVR; the original host driver remains unchanged. Provisional QP scaling and broader API coverage still require quality and compatibility validation.
+
+For the packed Frame trial use AV1 Main, level index 17, high tier, 90 or 120 fps, no B frames/lookahead/padding, P2 ULL and a single-frame VBV. Small high-rate trials can reject explicit levels or emit unconstrained level 31 with AUTO. Inspect sequence headers before using a clip as a hardware-decoder acceptance test. Both actual timing and decoder acceptance remain required before production integration.

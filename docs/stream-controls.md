@@ -14,6 +14,11 @@ The **Stream controls** tab sets how SteamVR encodes and sends video to the Fram
 | Automatic stream width | `automaticStreamFormatWidth` | Allows Valve to choose the width. |
 | NVENC rate control | Public NVENC parameter hook | Experimental Valve default, VBR or CBR without filler/padding. Requires the updated live monitor. |
 | NVENC encoding passes | Public NVENC parameter hook | Experimental Valve default, single pass or quarter-resolution multipass. Extra work may add latency or stutter. |
+| Advanced Supersample Filtering | `steamvr/allowSupersampleFiltering` | Toggle Valve's filtering setting with live readback, or save it for the next SteamVR session. |
+
+The **Advanced Supersample Filtering** toggle applies when changed and shows the
+value SteamVR accepted. When SteamVR is stopped, it saves the override atomically.
+The codec session must finish reconnecting before changing it.
 
 The target is a request, not a guaranteed minimum. Variable bitrate can drop well below
 it in simple scenes. CBR aims at the target; it does not guarantee a useful minimum.

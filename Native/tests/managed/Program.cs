@@ -6,7 +6,7 @@ using SteamLinkVRSettings.Frame;
 
 if (args.Length != 1) throw new ArgumentException("Pass the built native helper path.");
 var readExports = typeof(EncoderProbe).GetMethod("ReadExports", BindingFlags.NonPublic | BindingFlags.Static)!;
-var exports = (Dictionary<string, uint>)readExports.Invoke(null, [Path.GetFullPath(args[0])])!;
+var exports = (Dictionary<string, uint>)readExports.Invoke(null, [Path.GetFullPath(args[0]), null])!;
 if (exports.Count < 5 || !exports.ContainsKey("WriteStatus")) throw new Exception("Missing native exports.");
 // Produce metadata in this isolated test process, without StartProbe/NVENC/SteamVR,
 // then verify the optional advanced/timing JSON contract is readable by the app.
@@ -32,7 +32,7 @@ var malformed = Path.Combine(Path.GetTempPath(), $"encoder-probe-invalid-{Guid.N
 try
 {
     File.WriteAllBytes(malformed, new byte[256]);
-    try { readExports.Invoke(null, [malformed]); throw new Exception("Invalid helper accepted."); }
+    try { readExports.Invoke(null, [malformed, null]); throw new Exception("Invalid helper accepted."); }
     catch (TargetInvocationException error) when (error.InnerException is InvalidOperationException) { }
 }
 finally { File.Delete(malformed); }
@@ -49,10 +49,11 @@ foreach (var offsets in new[] { (0, 13), (0, 24), (-20, 31), (12, -12) })
 }
 var before = Process.GetProcessesByName("vrserver").Select(p => p.Id).Order().ToArray();
 var helperBefore = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameEncoderProbe.dll", StringComparison.OrdinalIgnoreCase)));
+var av1Before = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameAV1Backend.dll", StringComparison.OrdinalIgnoreCase)));
 var snapshot = await probe.GetSnapshotAsync();
 var after = Process.GetProcessesByName("vrserver").Select(p => p.Id).Order().ToArray();
 var helperAfter = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameEncoderProbe.dll", StringComparison.OrdinalIgnoreCase)));
-if (!before.SequenceEqual(after) || helperBefore != helperAfter || snapshot.Installed && !helperBefore) throw new Exception("Idle polling started monitoring or SteamVR.");
+if (!before.SequenceEqual(after) || helperBefore != helperAfter || snapshot.Installed && !helperBefore && !av1Before) throw new Exception("Idle polling started monitoring or SteamVR.");
 if (before.Length == 0)
 {
     var start = await probe.StartAsync();

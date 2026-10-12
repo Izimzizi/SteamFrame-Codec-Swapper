@@ -7,6 +7,10 @@ try {
     $taskMsbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
     if (-not $taskMsbuild) { throw 'Visual Studio MSBuild is required.' }
     $artifactRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'artifacts'))
+    $codecSource = Join-Path $artifactRoot 'CodecLab'
+    if (-not (Test-Path -LiteralPath $codecSource -PathType Container)) {
+        throw 'The supervised CodecLab runtime must be staged in artifacts\CodecLab before creating a release package.'
+    }
     function Assert-ArtifactPath([string]$TaskPath) {
         $taskResolvedPath = [System.IO.Path]::GetFullPath($TaskPath)
         if (-not $taskResolvedPath.StartsWith($artifactRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -17,6 +21,35 @@ try {
         }
     }
     $portableRoot = Join-Path $artifactRoot 'SteamLinkVRSettings-SteamFrame-win-x64'
+    function Assert-PortableIdle {
+        $codecStatusPath = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SteamLinkVRSettings\CodecSession\status.json'
+        if (Test-Path -LiteralPath $codecStatusPath -PathType Leaf) {
+            try {
+                $codecStatus = Get-Content -LiteralPath $codecStatusPath -Raw | ConvertFrom-Json
+                $codecOwner = Get-Process -Id $codecStatus.owner_pid -ErrorAction SilentlyContinue
+                if ($codecOwner) {
+                    $codecOwnerEpoch = [DateTimeOffset]::new($codecOwner.StartTime.ToUniversalTime()).ToUnixTimeMilliseconds() / 1000.0
+                    if ([Math]::Abs($codecOwnerEpoch - [double]$codecStatus.owner_created_epoch) -le 2) {
+                        throw 'End the supervised codec session before packaging; its recovery files must remain available until it exits.'
+                    }
+                }
+            } catch [System.ArgumentException] { } # A process that has just exited holds no files.
+        }
+        $portablePrefix = $portableRoot + [IO.Path]::DirectorySeparatorChar
+        foreach ($packageProcess in Get-Process -Name SteamLinkVRSettings,python,vrserver -ErrorAction SilentlyContinue) {
+            if ($packageProcess.Path -and $packageProcess.Path.StartsWith($portablePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Close the portable app and codec runtime before packaging.'
+            }
+            if ($packageProcess.ProcessName -eq 'vrserver') {
+                foreach ($loadedModule in $packageProcess.Modules) {
+                    if ($loadedModule.FileName.StartsWith($portablePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                        throw 'Restart SteamVR with stock HEVC before packaging; a portable native helper is still loaded.'
+                    }
+                }
+            }
+        }
+    }
+    Assert-PortableIdle
     $stageRoot = Join-Path $artifactRoot ('.publish-' + [guid]::NewGuid().ToString('N'))
     $packageBuildRoot = Join-Path $artifactRoot ('.package-build-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
@@ -41,10 +74,36 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $stageRoot $requiredXaml))) { throw "Missing compiled UI resource: $requiredXaml" }
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $stageRoot
+    # Ship only the supervised codec runtime and exact guarded trial assets.
+    # Development fixtures, local configs and backend build products are excluded.
+    if (Test-Path -LiteralPath $codecSource) {
+        $codecDestination = Join-Path $stageRoot 'CodecLab'
+        Assert-ArtifactPath $codecSource
+        Assert-ArtifactPath $codecDestination
+        New-Item -ItemType Directory -Path $codecDestination -Force | Out-Null
+        foreach ($codecScript in @('codec_supervisor.py', 'root_session.py', 'frame_rate_remote.py', 'frame_cef_stdio.py', 'start_stream.js', 'stop_stream.js', 'README.txt')) {
+            $codecFile = Join-Path $codecSource $codecScript
+            if (-not (Test-Path -LiteralPath $codecFile -PathType Leaf)) { throw "Missing codec runtime file: $codecScript" }
+            Copy-Item -LiteralPath $codecFile -Destination $codecDestination
+        }
+        foreach ($codecFolder in @('runtime', 'Assets')) {
+            $codecDirectory = Join-Path $codecSource $codecFolder
+            if (-not (Test-Path -LiteralPath $codecDirectory -PathType Container)) { throw "Missing codec runtime directory: $codecFolder" }
+            Assert-ArtifactPath $codecDirectory
+            Copy-Item -LiteralPath $codecDirectory -Destination $codecDestination -Recurse
+        }
+        $codecBackend = Join-Path $codecDestination 'Backend'
+        New-Item -ItemType Directory -Path $codecBackend -Force | Out-Null
+        foreach ($codecBinary in @('SteamFrameAV1Backend.dll', 'trial_control.exe')) {
+            $codecBinarySource = Join-Path $codecSource "Backend\$codecBinary"
+            if (-not (Test-Path -LiteralPath $codecBinarySource -PathType Leaf)) { throw "Missing codec backend: $codecBinary" }
+            Copy-Item -LiteralPath $codecBinarySource -Destination $codecBackend
+        }
+    }
     # Ship the release guides, keeping development investigations out of the package.
     $guideRoot = Join-Path $stageRoot 'docs'
     New-Item -ItemType Directory -Path $guideRoot -Force | Out-Null
-    foreach ($guide in @('advanced-controls.md', 'building.md', 'connection-setup.md', 'driver-patcher.md', 'live-dashboard.md', 'settings-editor.md', 'stream-controls.md')) {
+    foreach ($guide in @('advanced-controls.md', 'building.md', 'codec-modes.md', 'connection-setup.md', 'driver-patcher.md', 'live-dashboard.md', 'settings-editor.md', 'stream-controls.md')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "docs\$guide") -Destination $guideRoot
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs\images') -Destination (Join-Path $guideRoot 'images') -Recurse
@@ -53,16 +112,20 @@ try {
     New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\minhook\LICENSE.txt') -Destination (Join-Path $licenseRoot 'MinHook-HDE.txt')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\NVIDIA-LICENSE.txt') -Destination $licenseRoot
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\NVIDIA-LICENSE12.txt') -Destination $licenseRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Destination (Join-Path $licenseRoot 'SteamLinkVRSettings-MIT.txt')
     if (Test-Path -LiteralPath $portableRoot) {
         $previousRoot = Join-Path $artifactRoot ('.previous-' + [guid]::NewGuid().ToString('N'))
         Assert-ArtifactPath $portableRoot
         Assert-ArtifactPath $previousRoot
-        Move-Item -LiteralPath $portableRoot -Destination $previousRoot
+        Assert-PortableIdle
+        # Directory.Move performs one same-volume rename. PowerShell Move-Item
+        # can move children before encountering a locked runtime subdirectory.
+        [IO.Directory]::Move($portableRoot, $previousRoot)
     }
     Assert-ArtifactPath $stageRoot
     Assert-ArtifactPath $portableRoot
-    Move-Item -LiteralPath $stageRoot -Destination $portableRoot
+    [IO.Directory]::Move($stageRoot, $portableRoot)
     $zip = Join-Path $artifactRoot 'SteamLinkVRSettings-SteamFrame-win-x64.zip'
     Compress-Archive -LiteralPath $portableRoot -DestinationPath $zip -Force
     Write-Output "Portable app: $portableRoot"

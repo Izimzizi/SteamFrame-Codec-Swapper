@@ -39,8 +39,43 @@ see a warning, and encoder monitoring stays unavailable until `Native\build.ps1`
 
 Produces a self-contained portable folder and ZIP under `artifacts\`:
 `SteamLinkVRSettings-SteamFrame-win-x64\` and `SteamLinkVRSettings-SteamFrame-win-x64.zip`.
-The package includes the .NET and Windows App SDK runtimes, the README and third-party licenses.
-Use `-SkipBuild` to package an existing build.
+The package includes the .NET and Windows App SDK runtimes, the README, user guides
+and third-party licenses. The codec-enabled release also requires a staged
+`artifacts\CodecLab` companion. Use `-SkipBuild` to package an existing build.
+
+## Codec-enabled package staging
+
+Build the independent native codec adapter with:
+
+```powershell
+.\Native\AV1Lab\build.ps1 -OutputDirectory artifacts\CodecLab\Backend
+```
+
+The bundled Frame decoder is an exact, previously accepted kernel build. Its
+corresponding source, source provenance, GPL license and direct kernel build
+instructions ship as `CodecLab\Assets\decoder-source.zip`. See the
+[decoder build recipe](../Frame/AV1/decoder-build.md) for the matching header
+package. Rebuilt modules can have a different fingerprint; they need hardware
+acceptance/rollback testing before updating the root helper's pinned hash.
+
+With the accepted module under `artifacts\CodecLab\Assets` (or beside its source)
+and its corresponding sources under `artifacts\AV1Lab\iris-7.0-frame-candidate`,
+stage the package using CPython 3.13:
+
+```powershell
+python Frame\AV1\stage_codec_package.py
+.\Package.ps1 -SkipBuild
+```
+
+Use `--decoder-module PATH` if the accepted module is elsewhere.
+The optional `--backend PATH` argument selects final tested native build products;
+the default is `artifacts\CodecLab\Backend`. The staging script copies only source-controlled companion helpers and the
+accepted decoder assets, includes corresponding source, and checks the isolated
+PC runtime's imports. It does not load a decoder, authenticate to the Frame or
+launch SteamVR. A clean checkout therefore needs the tested module/source assets
+in addition to the native build products to produce the codec-enabled release;
+it never substitutes a stale or unverified module. The portable release already
+contains those assets, so end users do not need this build toolchain.
 
 ## Tests
 

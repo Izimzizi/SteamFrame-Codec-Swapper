@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.0 — Experimental AV1 and H.264 sessions
+
+- Added a codec dropdown for HEVC, AV1 and H.264, with a 25–200 Mbps request and
+  90/120 Hz selection, private Frame password entry and an explicit HEVC restore action.
+- Added an Advanced Supersample Filtering toggle with live SteamVR readback and
+  safe saved-setting fallback when SteamVR is stopped.
+- Bundled the supervised codec companion, isolated PC runtime, PC NVENC adapter and
+  exact-build AV1 decoder with corresponding source. Supported users can apply the
+  temporary Frame/client changes through the app rather than building them manually.
+- Added verified active-codec readouts from fresh encoder output, including waiting,
+  stopped and unknown states. The selected dropdown and old session state are not
+  treated as proof of the codec in use.
+- Kept the ordinary HEVC monitor hooks separate from the paired AV1/H.264 adapter.
+- Guarded headset changes by kernel, module, client and firmware fingerprints, and
+  authenticated service ownership by process identity and heartbeat.
+- Added automatic stock HEVC restoration on session stop/expiry. Installed Frame
+  kernel, firmware, original client and boot module files are retained.
+- Documented the supported exact Frame build, SSH pairing, administrator
+  authentication, bitrate/FPS limits, H.264's smaller image and experimental status.
+
 ## 1.1.0 — Advanced streaming controls
 
 - Added advanced encoder controls for fractional VBR quality target, maximum QP,

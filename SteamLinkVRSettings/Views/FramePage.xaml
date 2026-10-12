@@ -34,6 +34,8 @@
                                     <TextBlock Text="Mbps" FontSize="18" VerticalAlignment="Bottom" Margin="0,0,0,10"/>
                                 </StackPanel>
                                 <TextBlock x:Name="VideoDetail" Text="Start the live monitor during a stream." Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="CodecReadback" Text="Codec: Unknown" FontSize="18" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="CodecDetail" Text="Waiting for verified encoder output." Style="{StaticResource Hint}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="8" Margin="0,5,0,0">
                                 <TextBlock Text="Requested target" Style="{StaticResource Hint}"/>
@@ -114,6 +116,31 @@
             <PivotItem Header="Stream controls">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="22" Padding="0,14,12,20" MaxWidth="960" HorizontalAlignment="Left">
+                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Streaming codec" FontSize="22" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="CodecCurrentReadback" Text="Current encoder: checking…" TextWrapping="Wrap"/>
+                                <ComboBox x:Name="CodecSelectionInput" Header="Requested codec" SelectedIndex="0" SelectionChanged="CodecSelection_Changed" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="HEVC"/><ComboBoxItem Content="AV1"/><ComboBoxItem Content="H.264"/>
+                                </ComboBox>
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <controls:NoWheelNumberBox x:Name="CodecSessionTargetInput" Header="Codec session target (Mbps)" Minimum="25" Maximum="200" SmallChange="5" Value="100" SpinButtonPlacementMode="Compact"/>
+                                    <ComboBox x:Name="CodecRefreshInput" Grid.Column="1" Header="Display refresh rate" SelectedIndex="0" HorizontalAlignment="Stretch">
+                                        <ComboBoxItem Content="90 Hz"/><ComboBoxItem Content="120 Hz"/>
+                                    </ComboBox>
+                                </Grid>
+                                <TextBlock Text="Switching reconnects the stream and restarts SteamVR. Keep the Frame awake and Wi-Fi enabled; use the dedicated dongle. H.264 currently uses a smaller packed image (1024 × 4096) than AV1 (1536 × 6144). The dashboard confirms the codec and actual output after reconnecting." Style="{StaticResource Hint}"/>
+                                <PasswordBox x:Name="CodecPasswordInput" Header="Frame user password" PlaceholderText="Enter privately to start a codec session" PasswordRevealMode="Hidden" Visibility="Collapsed"/>
+                                <TextBlock x:Name="CodecAuthenticationHint" Text="The password authenticates this codec session and is not saved. An existing live session needs no password to switch." Style="{StaticResource Hint}" Visibility="Collapsed"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button x:Name="SwitchCodecButton" Content="Switch codec" Style="{StaticResource AccentButtonStyle}" Click="SwitchCodec_Click"/>
+                                    <Button x:Name="CloseCodecButton" Content="Restore HEVC and end session" Click="CloseCodec_Click"/>
+                                    <ProgressRing x:Name="CodecSwitchProgress" IsActive="False" Width="24" Height="24"/>
+                                </StackPanel>
+                                <TextBlock x:Name="CodecSessionStatus" Text="Checking codec service…" Style="{StaticResource Hint}"/>
+                            </StackPanel>
+                        </Border>
                         <StackPanel Spacing="10">
                             <TextBlock Text="Bitrate" FontSize="22" FontWeight="SemiBold"/>
                             <Grid ColumnSpacing="20">
@@ -131,6 +158,8 @@
                         <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
                         <StackPanel Spacing="10">
                             <TextBlock Text="Resolution and encoding" FontSize="22" FontWeight="SemiBold"/>
+                            <ToggleSwitch x:Name="SupersampleFilteringInput" Header="Advanced Supersample Filtering" OnContent="Request enabled" OffContent="Request disabled" Toggled="SupersampleFiltering_Toggled"/>
+                            <TextBlock x:Name="SupersampleFilteringReadback" Text="Checking SteamVR video setting…" Style="{StaticResource Hint}"/>
                             <controls:NoWheelNumberBox x:Name="StreamWidthInput" Header="Stream format width (pixels)" Minimum="512" Maximum="4096" SmallChange="128" LargeChange="256" Value="1536" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
                             <ToggleSwitch x:Name="AutomaticWidthInput" Header="Automatic stream width" OnContent="Valve chooses the width" OffContent="Request the width above" Toggled="Bandwidth_Toggled"/>
                             <TextBlock Text="A larger width can preserve center detail but increases encoder and decoder work. Width changes may require reconnecting. The dashboard reports actual NVENC dimensions, which may differ from this foveated stream-format setting." Style="{StaticResource Hint}"/>

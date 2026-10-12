@@ -26,6 +26,12 @@ int main() {
     *reinterpret_cast<void**>(encoder.data() + 39656) = targets[1];
     *reinterpret_cast<void**>(encoder.data() + 39664) = targets[2];
     currentEncoder = reinterpret_cast<uintptr_t>(encoder.data());
+    NV_ENC_CONFIG config{}; config.version = NV_ENC_CONFIG_VER;
+    NV_ENC_INITIALIZE_PARAMS params{}; params.version = NV_ENC_INITIALIZE_PARAMS_VER;
+    params.encodeConfig = &config; params.encodeGUID = NV_ENC_CODEC_HEVC_GUID;
+    recordPolicy(valve, params, 0, NV_ENC_SUCCESS, {}, true);
+    *reinterpret_cast<NV_ENC_CONFIG**>(encoder.data() + 624) = &config;
+    qualitySupported.store(true);
     NV_ENC_PIC_PARAMS picture{};
     picture.version = NV_ENC_PIC_PARAMS_VER;
     picture.outputBitstream = output.outputBitstream;
@@ -33,6 +39,9 @@ int main() {
     hookLock(unrelated, &output);
     if (stats.encodedBytes || stats.encodedFrames || stats.frames != 1) return 2;
     hookLock(valve, &output); hookLock(valve, &output);
+    if (strcmp(stats.codec, "HEVC") || strcmp(stats.codecSource, "NVENC accepted codec GUID and encoded output")) return 20;
+    // A generic profile must not replace the accepted HEVC codec GUID on encode.
+    if (strcmp(codecName(&config), "Unknown") || strcmp(codecGuidName(NV_ENC_CODEC_H264_GUID), "H.264")) return 21;
     if (stats.encodedBytes != 4096 || stats.encodedFrames != 1 || stats.lastEncodedTime <= 0 ||
         stats.quantizerSamples!=1 || stats.quantizerSum!=24 || stats.lastFrameQp!=24 || stats.lastFrameBytes!=4096) return 3;
     // A new submission is countable even if the caller repeats its frame identifiers.

@@ -70,6 +70,8 @@ struct Session {
     GUID queryCodec{}, queryOriginalPreset{}, initializedCodec{};
     NV_ENC_TUNING_INFO queryTuning{};
     NV_ENC_CONFIG initializedBaselinePreset{}, initializedDesiredPreset{};
+    const char* codec = "Unknown";
+    const char* codecSource = "";
 };
 std::unordered_map<void*, Session> sessions;
 struct Stats {
@@ -89,7 +91,8 @@ struct Stats {
     uint32_t bitDepth = 8;
     bool filler{};
     const char* preset = "Unknown";
-    const char* codec = "NVENC";
+    const char* codec = "Unknown";
+    const char* codecSource = "";
     uint32_t appliedAdvancedFlags{}, pendingAdvancedFlags{}, rejectedAdvancedFlags{}, lastAdvancedError{};
     NV_ENC_RC_PARAMS effectiveRc{};
     bool capsQueried{}, dynamicBitrate{}, customVbv{}, temporalAq{};
@@ -110,11 +113,16 @@ uint64_t creationTime() {
 }
 template<class T> T field(uintptr_t base, size_t offset) { return *reinterpret_cast<T*>(base + offset); }
 const char* codecName(const NV_ENC_CONFIG* config) {
-    if (!config) return "NVENC";
+    if (!config) return "Unknown";
     const auto& profile = config->profileGUID;
     if (IsEqualGUID(profile, NV_ENC_HEVC_PROFILE_MAIN_GUID) || IsEqualGUID(profile, NV_ENC_HEVC_PROFILE_MAIN10_GUID) || IsEqualGUID(profile, NV_ENC_HEVC_PROFILE_FREXT_GUID)) return "HEVC";
     if (IsEqualGUID(profile, NV_ENC_H264_PROFILE_BASELINE_GUID) || IsEqualGUID(profile, NV_ENC_H264_PROFILE_MAIN_GUID) || IsEqualGUID(profile, NV_ENC_H264_PROFILE_HIGH_GUID) || IsEqualGUID(profile, NV_ENC_H264_PROFILE_HIGH_444_GUID) || IsEqualGUID(profile, NV_ENC_H264_PROFILE_STEREO_GUID) || IsEqualGUID(profile, NV_ENC_H264_PROFILE_PROGRESSIVE_HIGH_GUID) || IsEqualGUID(profile, NV_ENC_H264_PROFILE_CONSTRAINED_HIGH_GUID)) return "H.264";
-    return "NVENC";
+    return "Unknown";
+}
+const char* codecGuidName(const GUID& codec) {
+    if (IsEqualGUID(codec, NV_ENC_CODEC_HEVC_GUID)) return "HEVC";
+    if (IsEqualGUID(codec, NV_ENC_CODEC_H264_GUID)) return "H.264";
+    return "Unknown"; // The SDK 11 helper cannot identify an AV1 session.
 }
 void recordPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t policy, NVENCSTATUS result,
                   const AdvancedEncoding& advanced = {}, bool initialization = false) {
@@ -124,6 +132,8 @@ void recordPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t
     auto found = sessions.find(handle);
     if (found == sessions.end() && sessions.size() < 32) found = sessions.try_emplace(handle).first;
     if (found != sessions.end()) {
+        found->second.codec = codecGuidName(params.encodeGUID);
+        found->second.codecSource = "NVENC accepted codec GUID and encoded output";
         if (initialization) {
             found->second.initializedAdvanced = advanced; found->second.initializedAdvanced.flags &= AdvancedInitialization;
             found->second.initializedCodec = params.encodeGUID;
@@ -151,7 +161,8 @@ void recordPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t
     const bool cbr = config.rcParams.rateControlMode == NV_ENC_PARAMS_RC_CBR;
     stats.filler = hevc ? config.encodeCodecConfig.hevcConfig.enableFillerDataInsertion || (cbr && config.encodeCodecConfig.hevcConfig.outputPictureTimingSEI)
         : config.encodeCodecConfig.h264Config.enableFillerDataInsertion || (cbr && config.encodeCodecConfig.h264Config.outputPictureTimingSEI);
-    stats.codec = hevc ? "HEVC" : "H.264";
+    stats.codec = codecGuidName(params.encodeGUID);
+    stats.codecSource = "NVENC accepted codec GUID and encoded output";
     stats.preset = PresetName(params.presetGUID);
     stats.appliedAdvancedFlags = advanced.flags; stats.effectiveRc = config.rcParams;
 }
@@ -347,7 +358,13 @@ NVENCSTATUS NVENCAPI hookEncode(void* handle, NV_ENC_PIC_PARAMS* picture) {
                 (buffers.size() < 256 || buffers.find(picture->outputBitstream) != buffers.end()))
                 { auto& stamp = buffers[picture->outputBitstream]; stamp.submitted = submission = ++stats.submission; stamp.submittedAt = qpcSeconds(); }
         }
-        if (config) stats.codec = codecName(config);
+        const auto found = sessions.find(handle);
+        // A verified codec GUID takes precedence over automatic/generic profile GUIDs.
+        // The profile is a fallback for a probe attached after encoder initialization.
+        if (config && found != sessions.end() && !found->second.codecSource[0]) {
+            found->second.codec = codecName(config);
+            found->second.codecSource = "NVENC codec profile and encoded output";
+        }
     }
     const bool modified = valid && (settings & 0x10000);
     if (modified) picture->qpDeltaMap = mapCopy.data();
@@ -398,6 +415,8 @@ NVENCSTATUS NVENCAPI hookLock(void* handle, NV_ENC_LOCK_BITSTREAM* output) {
     if (stamp.submitted && stamp.submitted != stamp.counted) {
         // Size metadata only. Never access bitstreamBufferPtr or copy video payload.
         stats.encodedBytes += output->bitstreamSizeInBytes;
+        stats.codec = session->second.codec;
+        stats.codecSource = session->second.codecSource;
         ++stats.encodedFrames;
         stats.lastFrameBytes = output->bitstreamSizeInBytes;
         if (output->frameAvgQP <= 63) {
@@ -430,6 +449,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartProbe(void*) {
     std::lock_guard<std::mutex> control(controlMutex);
     if (installed.load()) return 0;
     if (GetModuleHandleW(L"SteamFrameQuality.dll")) return 1011;
+    if (GetModuleHandleW(L"SteamFrameAV1Backend.dll")) return 1016;
     if (!initialized) {
         if (!retainedDriver && !GetModuleHandleExW(0, L"driver_vrlink.dll", &retainedDriver)) return 1001;
         wchar_t path[32768]{};
@@ -541,12 +561,12 @@ extern "C" __declspec(dllexport) DWORD WINAPI WriteStatus(void* parameter) {
         copy.frameRateNum, copy.frameRateDen, copy.filler ? "true" : "false", copy.preset, copy.policyCalls, copy.policyErrors, copy.rejectedPolicyCalls);
     const auto& rc = copy.effectiveRc;
     const int advancedWritten = fprintf(file,
-        "\"bit_depth\":%u,\"advanced_supported\":true,\"requested_advanced\":{\"flags\":%u,\"cq256\":%u,\"max_qp\":%u,\"peak_bitrate\":%u,\"vbv_bits\":%u,\"vbv_delay_bits\":%u,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"spatial_aq\":%u,\"aq_strength\":%u,\"temporal_aq\":%u,\"preset\":%u},"
+        "\"codec_source\":\"%s\",\"bit_depth\":%u,\"advanced_supported\":true,\"requested_advanced\":{\"flags\":%u,\"cq256\":%u,\"max_qp\":%u,\"peak_bitrate\":%u,\"vbv_bits\":%u,\"vbv_delay_bits\":%u,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"spatial_aq\":%u,\"aq_strength\":%u,\"temporal_aq\":%u,\"preset\":%u},"
         "\"applied_advanced_flags\":%u,\"pending_advanced_flags\":%u,\"rejected_advanced_flags\":%u,\"last_advanced_error\":%u,"
         "\"effective\":{\"cq256\":%u,\"max_qp_enabled\":%s,\"max_qp_i\":%u,\"max_qp_p\":%u,\"max_qp_b\":%u,\"spatial_aq\":%s,\"aq_strength\":%u,\"temporal_aq\":%s,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d},"
         "\"advanced_capabilities\":{\"queried\":%s,\"dynamic_bitrate\":%s,\"custom_vbv\":%s,\"temporal_aq\":%s},"
         "\"timing\":{\"reconfigure_calls\":%llu,\"reconfigure_total_us\":%llu,\"reconfigure_max_us\":%llu,\"reconfigure_over_2ms\":%llu,\"encode_calls\":%llu,\"encode_total_us\":%llu,\"encode_max_us\":%llu,\"encode_over_2ms\":%llu,\"completion_calls\":%llu,\"completion_total_us\":%llu,\"completion_max_us\":%llu,\"completion_over_2ms\":%llu}}\n",
-        copy.bitDepth, request.flags, request.cq256, request.maxQp, request.peakBitrate, request.vbvBits, request.vbvDelayBits,
+        copy.codecSource, copy.bitDepth, request.flags, request.cq256, request.maxQp, request.peakBitrate, request.vbvBits, request.vbvDelayBits,
         request.cbQpOffset, request.crQpOffset, request.spatialAq, request.aqStrength, request.temporalAq, request.preset,
         copy.appliedAdvancedFlags, copy.pendingAdvancedFlags, copy.rejectedAdvancedFlags, copy.lastAdvancedError,
         (static_cast<uint32_t>(rc.targetQuality) << 8) | rc.targetQualityLSB, rc.enableMaxQP ? "true" : "false",

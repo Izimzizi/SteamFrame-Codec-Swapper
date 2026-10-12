@@ -13,7 +13,7 @@ namespace SteamLinkVRSettings.Frame;
 /// Explicitly starts a layout-guarded helper in vrserver. Polling never injects, starts
 /// SteamVR, changes networking, or unloads live trampolines. No process arguments are read.
 /// </summary>
-public sealed class EncoderProbe
+public sealed partial class EncoderProbe
 {
     private const string HelperName = "SteamFrameEncoderProbe.dll";
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -35,10 +35,13 @@ public sealed class EncoderProbe
     public Task<EncoderSnapshot> GetSnapshotAsync() => RunAsync(() =>
     {
         using var process = DiscoverProcess();
-        if (process is null) return new() { Message = "SteamVR is not running." };
+        if (process is null) { ResetAv1State(); return new() { Message = "SteamVR is not running." }; }
         var modules = ReadModules(process);
         var driver = modules.FirstOrDefault(m => m.Name.Equals("driver_vrlink.dll", StringComparison.OrdinalIgnoreCase));
-        if (driver is null) return new() { ProcessId = process.Id, Message = "Steam Link VR driver is not loaded." };
+        if (driver is null) { ResetAv1State(); return new() { ProcessId = process.Id, Message = "Steam Link VR driver is not loaded." }; }
+        var av1 = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameAV1Backend.dll", StringComparison.OrdinalIgnoreCase));
+        if (av1 is not null) return ReadAv1Snapshot(process, av1);
+        ResetAv1State();
         if (_session is null || _session.ProcessId != process.Id || _session.CreationTime != ProcessCreationTime(process))
         {
             _session = null;
@@ -85,6 +88,8 @@ public sealed class EncoderProbe
         if (process is null) return new() { Message = "Start SteamVR before starting encoder monitoring." };
         if (!Environment.Is64BitProcess) return new() { ProcessId = process.Id, Message = "Encoder monitoring requires the x64 application." };
         var modules = ReadModules(process);
+        var av1 = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameAV1Backend.dll", StringComparison.OrdinalIgnoreCase));
+        if (av1 is not null) { _av1Stopped = false; return ReadAv1Snapshot(process, av1); }
         var driver = modules.FirstOrDefault(m => m.Name.Equals("driver_vrlink.dll", StringComparison.OrdinalIgnoreCase));
         if (driver is null || !IsSupportedDriver(driver.Path)) return new() { ProcessId = process.Id,
             Message = "This driver has an incompatible encoder layout; monitoring was not installed." };
@@ -165,6 +170,12 @@ public sealed class EncoderProbe
 
     public Task<EncoderSnapshot> StopAsync() => RunAsync(() =>
     {
+        if (_av1ProcessId != 0 && _session is null)
+        {
+            _av1Stopped = true;
+            _av1Activity.Reset(); // Frames accumulated while paused are not fresh output evidence.
+            return _lastAv1Snapshot with { Installed = false, Active = false, Message = "Paired codec monitoring stopped. Use the codec switcher to restore HEVC." };
+        }
         if (_session is null) return new() { Message = "Encoder monitoring is stopped." };
         EnsureSessionResponsive();
         using var process = Process.GetProcessById(_session.ProcessId);
@@ -224,7 +235,8 @@ public sealed class EncoderProbe
                 catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException or ArgumentException or JsonException or TimeoutException or OverflowException or KeyNotFoundException or BadImageFormatException or DllNotFoundException or EntryPointNotFoundException)
                 {
                     if (error is TimeoutException) _sessionFaulted = true;
-                    return _lastSnapshot with { Active = false, Message = error.Message };
+                    return _lastSnapshot with { Active = false, Codec = "Unknown", CodecObserved = false,
+                        CodecSource = "", CodecReadFailed = true, BitDepth = null, Message = error.Message };
                 }
             }).ConfigureAwait(false);
         }
@@ -303,7 +315,7 @@ public sealed class EncoderProbe
             throw new InvalidOperationException("Discarded a stale or incompatible encoder snapshot.");
         var active = json.GetProperty("active").GetBoolean();
         var installed = json.GetProperty("installed").GetBoolean();
-        var codec = json.GetProperty("codec").GetString() ?? "NVENC";
+        var codec = StreamCodecStatus.Normalize(json.GetProperty("codec").GetString());
         return new()
         {
             ProcessId = process.Id, Supported = true, Installed = installed,
@@ -323,6 +335,9 @@ public sealed class EncoderProbe
             EncodingPolicy = ReadEncodingPolicy(json),
             AdvancedEncoding = ReadAdvancedEncoding(json), CallbackTiming = ReadCallbackTiming(json),
             LastNvencStatus = json.GetProperty("last_nvenc_status").GetUInt32(), Codec = codec,
+            CodecObserved = codec != "Unknown" && json.GetProperty("encoded_frames").GetUInt64() > 0,
+            CodecSource = json.TryGetProperty("codec_source", out var source) ? source.GetString() ?? ""
+                : "NVENC codec metadata and encoded output",
             BitDepth = json.TryGetProperty("bit_depth", out var bitDepth) ? bitDepth.GetUInt32() : null,
             RejectedApiCalls = json.TryGetProperty("rejected_api_calls", out var rejected) ? rejected.GetUInt64() : 0,
             Message = !installed ? "Encoder monitoring is stopped." : active ? $"Measuring actual {codec} video output; transport overhead is excluded."
@@ -440,11 +455,12 @@ public sealed class EncoderProbe
         1013 => "NVENC policy was rejected or monitoring is stopped.",
         1014 => "Valve's encoder policy has not been restored yet. Reconnect the stream, then select Stop again; restoration hooks remain active.",
         1015 => "Advanced encoder settings were rejected. Check the ranges and buffer/delay relationship; the updated monitor must be running.",
+        1016 => "A paired codec trial is loaded. Ordinary encoder hooks cannot run alongside it.",
         _ => $"Native encoder probe returned error {error}."
     };
 
     // Read the PE export table without loading native code into the settings application.
-    private static Dictionary<string, uint> ReadExports(string path)
+    private static Dictionary<string, uint> ReadExports(string path, string[]? required = null)
     {
         var bytes = File.ReadAllBytes(path);
         ushort U16(int offset) => BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset, 2));
@@ -483,7 +499,7 @@ public sealed class EncoderProbe
                 throw new InvalidOperationException("Forwarded exports are not supported in the encoder helper.");
             found[name] = rva;
         }
-        foreach (var name in new[] { "GetProbeVersion", "InspectDriver", "StartProbe", "SetQuality", "SetEncodingPolicy", "WriteStatus", "StopProbe" })
+        foreach (var name in required ?? ["GetProbeVersion", "InspectDriver", "StartProbe", "SetQuality", "SetEncodingPolicy", "WriteStatus", "StopProbe"])
             if (!found.ContainsKey(name)) throw new InvalidOperationException($"The native helper is missing the {name} export.");
         return found;
     }
