@@ -1,4 +1,4 @@
-param([switch]$SkipBuild)
+param([switch]$SkipBuild, [ValidatePattern('^SteamLinkVRSettings-[A-Za-z0-9-]+$')][string]$PortableFolder = 'SteamLinkVRSettings-SteamFrame-win-x64')
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
@@ -20,8 +20,9 @@ try {
             throw "Package directories must not be reparse points: $taskResolvedPath"
         }
     }
-    $portableRoot = Join-Path $artifactRoot 'SteamLinkVRSettings-SteamFrame-win-x64'
+    $portableRoot = Join-Path $artifactRoot $PortableFolder
     function Assert-PortableIdle {
+        $portablePrefix = $portableRoot + [IO.Path]::DirectorySeparatorChar
         $codecStatusPath = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SteamLinkVRSettings\CodecSession\status.json'
         if (Test-Path -LiteralPath $codecStatusPath -PathType Leaf) {
             try {
@@ -29,7 +30,7 @@ try {
                 $codecOwner = Get-Process -Id $codecStatus.owner_pid -ErrorAction SilentlyContinue
                 if ($codecOwner) {
                     $codecOwnerEpoch = [DateTimeOffset]::new($codecOwner.StartTime.ToUniversalTime()).ToUnixTimeMilliseconds() / 1000.0
-                    if ([Math]::Abs($codecOwnerEpoch - [double]$codecStatus.owner_created_epoch) -le 2) {
+                    if ([Math]::Abs($codecOwnerEpoch - [double]$codecStatus.owner_created_epoch) -le 2 -and $codecOwner.Path -and $codecOwner.Path.StartsWith($portablePrefix, [StringComparison]::OrdinalIgnoreCase)) {
                         throw 'End the supervised codec session before packaging; its recovery files must remain available until it exits.'
                     }
                 }
@@ -126,7 +127,7 @@ try {
     Assert-ArtifactPath $stageRoot
     Assert-ArtifactPath $portableRoot
     [IO.Directory]::Move($stageRoot, $portableRoot)
-    $zip = Join-Path $artifactRoot 'SteamLinkVRSettings-SteamFrame-win-x64.zip'
+    $zip = Join-Path $artifactRoot ($PortableFolder + '.zip')
     Compress-Archive -LiteralPath $portableRoot -DestinationPath $zip -Force
     Write-Output "Portable app: $portableRoot"
     Write-Output "ZIP: $zip"

@@ -34,9 +34,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI Av1InstallTrial(void* argument){
  // The HEVC-only monitor detours the same API and cannot translate modern AV1.
  if(GetModuleHandleW(L"SteamFrameEncoderProbe.dll")||GetModuleHandleW(L"SteamFrameQuality.dll"))return 18;
  driver=GetModuleHandleW(L"driver_vrlink.dll");if(!driver)return 11;
+ if(Av1ConfigureLegacyCodec(requested.codec))return 19;
  if(Av1ConfigureLegacyBudget(requested.average_bps,requested.peak_bps,requested.fixed_target))return 19;
  if(Av1ConfigureLegacyRate(requested.fps))return 19;
- if(Av1ConfigureLegacyCodec(requested.codec))return 19;
  budget=requested;
  // Populate the real modern API before detouring its factory (no recursion).
  NV_ENCODE_API_FUNCTION_LIST prepare{};prepare.version=NV_ENCODE_API_FUNCTION_LIST_VER;

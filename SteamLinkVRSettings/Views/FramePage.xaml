@@ -1,288 +1,349 @@
-<Page x:Class="SteamLinkVRSettings.Views.FramePage"
-      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:controls="using:SteamLinkVRSettings.Controls"
-      Background="{StaticResource SteamDarkBgBrush}" Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+<Page xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:controls="using:SteamLinkVRSettings.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="{StaticResource SteamDarkBgBrush}" FontFamily="Segoe UI Variable Text" Loaded="Page_Loaded" Unloaded="Page_Unloaded" x:Class="SteamLinkVRSettings.Views.FramePage">
     <Page.Resources>
+        <Style TargetType="ScrollViewer">
+            <Setter Property="HorizontalScrollMode" Value="Disabled" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
         <Style x:Key="Hint" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextFillColorSecondaryBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="FontSize" Value="13" />
+            <Setter Property="MaxWidth" Value="720" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
         </Style>
     </Page.Resources>
-    <Grid Padding="32,16,32,24" RowSpacing="12">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <StackPanel Spacing="3">
-                <TextBlock Text="Steam Frame" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Text="Tune the stream. See what reaches the encoder and which links are active." Style="{StaticResource Hint}"/>
+    <Grid Padding="24,18,24,16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="12">
+                <TextBlock Text="Overview" FontSize="26" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display" x:Name="SectionHeading" />
+                <TextBlock Text="Your live stream, at a glance." Style="{StaticResource Hint}" x:Name="SectionDescription" />
             </StackPanel>
-            <TextBlock x:Name="RuntimeText" Grid.Column="1" Text="Checking SteamVR…" VerticalAlignment="Center" Style="{StaticResource Hint}" Margin="16,0,0,0"/>
+            <Border Grid.Column="1" Background="{StaticResource SteamCardBgBrush}" CornerRadius="4" Padding="10,6" VerticalAlignment="Top">
+                <TextBlock x:Name="RuntimeText" Text="Checking SteamVR…" VerticalAlignment="Center" Style="{StaticResource Hint}" Margin="0" FontSize="12" MaxWidth="140" TextWrapping="Wrap" />
+            </Border>
         </Grid>
         <InfoBar x:Name="ActionStatus" Grid.Row="1" IsOpen="False" IsClosable="True" />
-        <Pivot Grid.Row="2">
-            <PivotItem Header="Live dashboard">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" Padding="0,12,12,16">
-                        <Grid ColumnSpacing="32">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Encoded video" FontSize="15"/>
+        <Grid Grid.Row="2">
+            <ScrollViewer Visibility="Visible" VerticalScrollBarVisibility="Auto" x:Name="OverviewView">
+                <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
+                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="16">
+                        <Grid ColumnSpacing="32" x:Name="OverviewMetrics" SizeChanged="OverviewMetrics_SizeChanged">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4" x:Name="VideoMetric">
+                                <TextBlock Text="Encoded video" FontSize="15" />
                                 <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <TextBlock x:Name="VideoRate" Text="—" FontSize="48" FontWeight="SemiBold" Foreground="{StaticResource SteamBlueBrush}"/>
-                                    <TextBlock Text="Mbps" FontSize="18" VerticalAlignment="Bottom" Margin="0,0,0,10"/>
+                                    <TextBlock x:Name="VideoRate" Text="—" FontSize="38" FontWeight="SemiBold" Foreground="{StaticResource SteamBlueBrush}" />
+                                    <TextBlock Text="Mbps" FontSize="18" VerticalAlignment="Bottom" Margin="0,0,0,10" />
                                 </StackPanel>
-                                <TextBlock x:Name="VideoDetail" Text="Start the live monitor during a stream." Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="CodecReadback" Text="Codec: Unknown" FontSize="18" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="CodecDetail" Text="Waiting for verified encoder output." Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="VideoDetail" Text="Start the live monitor during a stream." Style="{StaticResource Hint}" />
+                                <TextBlock x:Name="CodecReadback" Text="Codec: Unknown" FontSize="15" FontWeight="SemiBold" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="8" Margin="0,5,0,0">
-                                <TextBlock Text="Requested target" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="TargetReadback" Text="— Mbps" FontSize="24"/>
-                                <TextBlock x:Name="TargetMode" Text="" Style="{StaticResource Hint}"/>
+                            <StackPanel Grid.Column="1" Spacing="8" Margin="0,5,0,0" x:Name="TargetMetric">
+                                <TextBlock Text="Requested target" Style="{StaticResource Hint}" />
+                                <TextBlock x:Name="TargetReadback" Text="— Mbps" FontSize="24" />
+                                <TextBlock x:Name="TargetMode" Text="" Style="{StaticResource Hint}" />
                             </StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="8" Margin="0,5,0,0" MinWidth="170">
-                                <TextBlock Text="Video path" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="WiredReadback" Text="Unknown" FontSize="24"/>
-                                <TextBlock x:Name="WifiReadback" Text="Wi-Fi: unknown" Style="{StaticResource Hint}"/>
+                            <StackPanel Grid.Column="2" Spacing="8" Margin="0,5,0,0" MinWidth="170" x:Name="PathMetric">
+                                <TextBlock Text="Video path" Style="{StaticResource Hint}" />
+                                <TextBlock x:Name="WiredReadback" Text="Unknown" FontSize="24" MaxWidth="210" TextWrapping="Wrap" HorizontalAlignment="Left" />
+                                <TextBlock x:Name="WifiReadback" Text="Wi-Fi: unknown" Style="{StaticResource Hint}" />
                             </StackPanel>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                         </Grid>
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="10">
-                                <Grid>
-                                    <TextBlock Text="Last 60 seconds"/>
-                                    <TextBlock x:Name="GraphScale" Text="0–500 Mbps" HorizontalAlignment="Right" Style="{StaticResource Hint}"/>
-                                </Grid>
-                                <Canvas x:Name="RateGraph" Height="210" SizeChanged="Graph_SizeChanged"/>
-                                <StackPanel Orientation="Horizontal" Spacing="24">
-                                    <TextBlock Text="● Encoded video" Foreground="{StaticResource SteamBlueBrush}"/>
-                                    <TextBlock Text="● Active adapter send" Foreground="{StaticResource SteamAccentGreenBrush}"/>
-                                    <TextBlock Text="— Requested target" Style="{StaticResource Hint}"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button x:Name="MonitorButton" Content="Start live monitor" Style="{StaticResource AccentButtonStyle}" Click="StartMonitor_Click"/>
-                            <Button x:Name="StopMonitorButton" Content="Stop live monitor" Click="StopMonitor_Click"/>
+                    </Border>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Last 60 seconds" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock x:Name="GraphScale" Text="0–500 Mbps" HorizontalAlignment="Right" Style="{StaticResource Hint}" Grid.Column="1" />
+                    </Grid>
+                    <Canvas x:Name="RateGraph" Height="175" SizeChanged="Graph_SizeChanged" />
+                    <TextBlock Text="Blue: encoded video   Green: active connection traffic   Dashed: requested target" Style="{StaticResource Hint}" />
+                    <StackPanel Spacing="12" Orientation="Horizontal">
+                        <Button x:Name="MonitorButton" Content="Start monitoring" Style="{StaticResource SteamActionButtonStyle}" Click="StartMonitor_Click" />
+                        <Button x:Name="StopMonitorButton" Content="Stop monitoring" Click="StopMonitor_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="HealthCounts" Style="{StaticResource Hint}" />
+                    <HyperlinkButton Content="View streaming diagnostics" Tag="diagnostics" Click="OpenSection_Click" HorizontalAlignment="Left" Padding="0" />
+                    <Expander Header="Connection details" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock x:Name="LinkReadback" Text="Checking headset…" TextWrapping="Wrap" />
+                            <TextBlock x:Name="LinkStatus" Text="" Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="UsbTraffic" Text="Checking adapters…" TextWrapping="Wrap" />
+                            <TextBlock Text="Connection traffic includes error correction and overhead, so it can be higher than video bitrate." Style="{StaticResource Hint}" />
                         </StackPanel>
-                        <TextBlock x:Name="ProbeStatus" Text="The monitor measures compressed NVENC frames before network overhead and checks encoder compatibility automatically." Style="{StaticResource Hint}"/>
-                        <TextBlock x:Name="QualityReadback" Text="Foveation: Valve defaults" Style="{StaticResource Hint}"/>
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Encoder quality and policy" FontSize="18" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="PolicyRequestedReadback" Text="Requested policy: Valve defaults" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="PolicyAppliedReadback" Text="Accepted NVENC configuration: waiting for a verified initialize/reconfigure call" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="QuantizerReadback" Text="Whole-frame QP: unavailable" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="CenterMapReadback" Text="Gaze map deltas: unavailable" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="AdvancedLiveReadback" Text="Advanced encoder configuration: updated helper required" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="CallbackTimingReadback" Text="Encoder API duration: unavailable" Style="{StaticResource Hint}"/>
-                                <TextBlock Text="QP here describes the whole encoded frame; lower usually means less quantization. Gaze tile deltas are a relative bias, not an absolute center QP. Requested settings are confirmed only after NVENC accepts a configuration." Style="{StaticResource Hint}"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="8">
-                                <Grid>
-                                    <TextBlock Text="Streaming issue capture" FontSize="18" FontWeight="SemiBold"/>
-                                    <Button Content="Open capture folder" HorizontalAlignment="Right" Click="OpenCaptureFolder_Click"/>
-                                </Grid>
-                                <TextBlock x:Name="HealthSummary" Text="Watching for new streaming issues…" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="HealthCounts" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="CompositorStatus" Text="Checking PC presentation timing…" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="CompositorDetail" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="ReceiverStatus" Text="Checking the Frame receiver over wireless…" Style="{StaticResource Hint}"/>
-                                <TextBlock x:Name="ReceiverCounts" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="HealthEvents" Text="New recovery requests, network delays and encoder stalls appear here." IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="HealthTrace" Text="Per-frame timing appears when SteamVR saves a recovery trace." IsTextSelectionEnabled="True" Style="{StaticResource Hint}"/>
-                                <TextBlock Text="Live report runs while this dashboard is open. PC presentation, streaming logs and paired wireless receiver events are saved with timestamps. PC drops are separate from headset/decoder drops. Retries can request the same packet again; missing feedback and frame-history gaps are unknown, not confirmed drops." Style="{StaticResource Hint}"/>
-                            </StackPanel>
-                        </Border>
-                        <Grid ColumnSpacing="24">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Stream adapters" FontSize="18" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="UsbTraffic" Text="Checking adapters…" TextWrapping="Wrap"/>
-                                <TextBlock Text="Dongle and USB counters include protocol overhead, FEC and other adapter traffic. The graph uses the adapter matching the headset's active link; multiple links are not summed." Style="{StaticResource Hint}"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="8">
-                                <TextBlock Text="Headset links" FontSize="18" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="LinkReadback" Text="Checking headset…" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="LinkStatus" Text="" Style="{StaticResource Hint}"/>
-                            </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+            <Grid Visibility="Collapsed" RowSpacing="10" x:Name="StreamView">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="12" Padding="0,0,8,12" HorizontalAlignment="Stretch">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox PlaceholderText="Choose a complete preset" SelectionChanged="PresetSelection_Changed" HorizontalAlignment="Stretch" x:Name="PresetSelection" />
+                            <Button Content="Save preset…" Click="SavePreset_Click" Grid.Column="1" />
                         </Grid>
-                    </StackPanel>
-                </ScrollViewer>
-            </PivotItem>
-            <PivotItem Header="Stream controls">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="22" Padding="0,14,12,20" MaxWidth="960" HorizontalAlignment="Left">
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="Streaming codec" FontSize="22" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="CodecCurrentReadback" Text="Current encoder: checking…" TextWrapping="Wrap"/>
-                                <ComboBox x:Name="CodecSelectionInput" Header="Requested codec" SelectedIndex="0" SelectionChanged="CodecSelection_Changed" HorizontalAlignment="Stretch">
-                                    <ComboBoxItem Content="HEVC"/><ComboBoxItem Content="AV1"/><ComboBoxItem Content="H.264"/>
-                                </ComboBox>
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                    <controls:NoWheelNumberBox x:Name="CodecSessionTargetInput" Header="Codec session target (Mbps)" Minimum="25" Maximum="200" SmallChange="5" Value="100" SpinButtonPlacementMode="Compact"/>
-                                    <ComboBox x:Name="CodecRefreshInput" Grid.Column="1" Header="Display refresh rate" SelectedIndex="0" HorizontalAlignment="Stretch">
-                                        <ComboBoxItem Content="90 Hz"/><ComboBoxItem Content="120 Hz"/>
-                                    </ComboBox>
-                                </Grid>
-                                <TextBlock Text="Switching reconnects the stream and restarts SteamVR. Keep the Frame awake and Wi-Fi enabled; use the dedicated dongle. H.264 currently uses a smaller packed image (1024 × 4096) than AV1 (1536 × 6144). The dashboard confirms the codec and actual output after reconnecting." Style="{StaticResource Hint}"/>
-                                <PasswordBox x:Name="CodecPasswordInput" Header="Frame user password" PlaceholderText="Enter privately to start a codec session" PasswordRevealMode="Hidden" Visibility="Collapsed"/>
-                                <TextBlock x:Name="CodecAuthenticationHint" Text="The password authenticates this codec session and is not saved. An existing live session needs no password to switch." Style="{StaticResource Hint}" Visibility="Collapsed"/>
-                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <Button x:Name="SwitchCodecButton" Content="Switch codec" Style="{StaticResource AccentButtonStyle}" Click="SwitchCodec_Click"/>
-                                    <Button x:Name="CloseCodecButton" Content="Restore HEVC and end session" Click="CloseCodec_Click"/>
-                                    <ProgressRing x:Name="CodecSwitchProgress" IsActive="False" Width="24" Height="24"/>
-                                </StackPanel>
-                                <TextBlock x:Name="CodecSessionStatus" Text="Checking codec service…" Style="{StaticResource Hint}"/>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Spacing="10">
-                            <TextBlock Text="Bitrate" FontSize="22" FontWeight="SemiBold"/>
-                            <Grid ColumnSpacing="20">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Video target"/>
-                                    <TextBlock Text="Request 25–500 Mbps. The override is required above the stock ceiling; available bandwidth and scene detail still affect the actual rate." Style="{StaticResource Hint}"/>
-                                </StackPanel>
-                                <controls:NoWheelNumberBox x:Name="BitrateInput" Grid.Column="1" Minimum="25" Maximum="500" SmallChange="5" LargeChange="25" Value="300" SpinButtonPlacementMode="Compact" Header="Mbps" ValueChanged="Bandwidth_ValueChanged"/>
-                            </Grid>
-                            <ToggleSwitch x:Name="AutomaticInput" Header="Automatic bandwidth" OnContent="SteamVR chooses the target" OffContent="Use the manual target" Toggled="Bandwidth_Toggled"/>
-                            <ToggleSwitch x:Name="AmfInput" Header="Allow AMD AMF encoder" OnContent="Available on compatible AMD hardware" OffContent="AMF disabled" Toggled="Bandwidth_Toggled"/>
-                            <TextBlock Text="Encoder selection takes effect after reconnecting or restarting SteamVR. The video monitor and gaze bias currently support NVENC." Style="{StaticResource Hint}"/>
-                        </StackPanel>
-                        <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
-                        <StackPanel Spacing="10">
-                            <TextBlock Text="Resolution and encoding" FontSize="22" FontWeight="SemiBold"/>
-                            <ToggleSwitch x:Name="SupersampleFilteringInput" Header="Advanced Supersample Filtering" OnContent="Request enabled" OffContent="Request disabled" Toggled="SupersampleFiltering_Toggled"/>
-                            <TextBlock x:Name="SupersampleFilteringReadback" Text="Checking SteamVR video setting…" Style="{StaticResource Hint}"/>
-                            <controls:NoWheelNumberBox x:Name="StreamWidthInput" Header="Stream format width (pixels)" Minimum="512" Maximum="4096" SmallChange="128" LargeChange="256" Value="1536" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
-                            <ToggleSwitch x:Name="AutomaticWidthInput" Header="Automatic stream width" OnContent="Valve chooses the width" OffContent="Request the width above" Toggled="Bandwidth_Toggled"/>
-                            <TextBlock Text="A larger width can preserve center detail but increases encoder and decoder work. Width changes may require reconnecting. The dashboard reports actual NVENC dimensions, which may differ from this foveated stream-format setting." Style="{StaticResource Hint}"/>
-                            <ComboBox x:Name="RateControlInput" Header="NVENC rate control (experimental)" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Valve default"/>
-                                <ComboBoxItem Content="VBR"/>
-                                <ComboBoxItem Content="CBR without filler or padding"/>
+                        <TextBlock Text="Presets load into the editor. Apply when you are ready." Style="{StaticResource Hint}" x:Name="PresetSummary" />
+                        <HyperlinkButton x:Name="ReloadPresetButton" Content="Reload selected preset" Click="ReloadPreset_Click" HorizontalAlignment="Left" Padding="0" Visibility="Collapsed" />
+                        <TextBlock x:Name="CodecCurrentReadback" Text="Current encoder: checking…" TextWrapping="Wrap" Style="{StaticResource Hint}" />
+                        <ComboBox x:Name="CodecSelectionInput" Header="Video codec" SelectedIndex="0" SelectionChanged="CodecSelection_Changed" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="HEVC" />
+                            <ComboBoxItem Content="AV1" />
+                            <ComboBoxItem Content="H.264" />
+                        </ComboBox>
+                        <Grid ColumnSpacing="16" RowSpacing="12" SizeChanged="StreamMainFields_SizeChanged" x:Name="StreamMainFields">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <controls:NoWheelNumberBox x:Name="BitrateInput" Minimum="25" Maximum="500" SmallChange="5" LargeChange="25" Value="100" SpinButtonPlacementMode="Compact" Header="Video bitrate target (Mbps)" ValueChanged="Bandwidth_ValueChanged" />
+                            <ComboBox x:Name="CodecRefreshInput" Grid.Column="1" Header="Display refresh rate" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="CodecRefresh_Changed">
+                                <ComboBoxItem Content="90 Hz" />
+                                <ComboBoxItem Content="120 Hz" />
                             </ComboBox>
-                            <ComboBox x:Name="MultiPassInput" Header="NVENC encoding passes (experimental)" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Valve default"/>
-                                <ComboBoxItem Content="Single pass"/>
-                                <ComboBoxItem Content="Quarter-resolution multipass"/>
-                            </ComboBox>
-                            <TextBlock Text="CBR aims at the target and may still use less in simple scenes. Padding would only inflate traffic, so it is disabled. Multipass may improve encoding efficiency but can add latency or stutter. These controls preserve Valve's preset, frame rate, GOP, lookahead and decoder-buffer settings." Style="{StaticResource Hint}"/>
-                            <TextBlock Text="Applying a policy briefly refreshes the current bitrate target to request reconfiguration. An inactive or incompatible stream may require reconnecting. Updating the helper requires a SteamVR restart; the app never replaces a helper in a running process." Style="{StaticResource Hint}"/>
-                        </StackPanel>
-                        <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
-                        <StackPanel Spacing="10">
-                            <TextBlock Text="Gaze and peripheral quality" FontSize="22" FontWeight="SemiBold"/>
-                            <TextBlock Text="Bias Valve's existing gaze-tracked foveation map. Negative values improve quality; positive values reduce detail and free encoding budget. This is a quality preference, not a guaranteed minimum bitrate." Style="{StaticResource Hint}"/>
-                            <ToggleSwitch x:Name="QualityInput" Header="Custom foveation bias" OnContent="Apply the offsets below" OffContent="Keep Valve's quality map" Toggled="Bandwidth_Toggled"/>
-                            <Grid ColumnSpacing="20">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <controls:NoWheelNumberBox x:Name="GazeInput" Header="Where you are looking (QP offset)" Minimum="-20" Maximum="12" SmallChange="1" Value="-4" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
-                                <controls:NoWheelNumberBox x:Name="PeripheralInput" Grid.Column="1" Header="Outside your gaze (QP offset)" Minimum="-12" Maximum="31" SmallChange="1" Value="8" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" x:Name="CodecModeHint" />
+                        <ToggleSwitch x:Name="AutomaticInput" Header="Automatic bitrate" OnContent="SteamVR adjusts the bitrate" OffContent="Use the target above" Toggled="Bandwidth_Toggled" />
+                        <TextBlock x:Name="CodecSessionStatus" Text="Checking codec service…" Style="{StaticResource Hint}" />
+                        <PasswordBox x:Name="CodecPasswordInput" Header="Frame user password" PlaceholderText="Enter privately to start a codec session" PasswordRevealMode="Hidden" Visibility="Collapsed" />
+                        <TextBlock x:Name="CodecAuthenticationHint" Text="The password authenticates this codec session and is not saved. An existing live session needs no password to switch." Style="{StaticResource Hint}" Visibility="Collapsed" />
+                        <Border Height="1" Background="{StaticResource SteamBorderBrush}" />
+                        <TextBlock Text="Picture quality" FontSize="18" FontWeight="SemiBold" />
+                        <ToggleSwitch x:Name="SupersampleFilteringInput" Header="Advanced Supersample Filtering" OnContent="Enabled" OffContent="Disabled" Toggled="SupersampleFiltering_Toggled" />
+                        <TextBlock x:Name="SupersampleFilteringReadback" Text="Checking SteamVR video setting…" Style="{StaticResource Hint}" />
+                        <TextBlock Text="Use Apply below to activate this setup, including filtering." Style="{StaticResource Hint}" />
+                        <StackPanel Spacing="12" x:Name="HevcPictureOptions">
+                            <controls:NoWheelNumberBox x:Name="StreamWidthInput" Header="Stream width (pixels)" Minimum="512" Maximum="4096" SmallChange="128" LargeChange="256" Value="1536" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged" />
+                            <ToggleSwitch x:Name="AutomaticWidthInput" Header="Automatic image width" OnContent="Valve chooses the width" OffContent="Request the width above" Toggled="Bandwidth_Toggled" />
+                            <ToggleSwitch x:Name="QualityInput" Header="Custom gaze quality" OnContent="Apply the offsets below" OffContent="Keep Valve's quality map" Toggled="Bandwidth_Toggled" />
+                            <Grid ColumnSpacing="16" RowSpacing="12" SizeChanged="GazeFields_SizeChanged" x:Name="GazeFields">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <controls:NoWheelNumberBox x:Name="GazeInput" Header="Center quality offset" Minimum="-20" Maximum="12" SmallChange="1" Value="-4" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged" />
+                                <controls:NoWheelNumberBox x:Name="PeripheralInput" Grid.Column="1" Header="Outside-gaze quality offset" Minimum="-12" Maximum="31" SmallChange="1" Value="8" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged" />
                             </Grid>
-                            <TextBlock Text="Peripheral offsets above +12 are aggressive. +31 is the strongest available bias and can make peripheral detail very coarse; gaze quality uses its separate offset." Style="{StaticResource Hint}"/>
-                            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Quality focus: −4 / +8" Click="QualityPreset_Click"/><Button Content="Valve defaults" Click="QualityDefault_Click"/></StackPanel>
-                            <CheckBox x:Name="ReapplyInput" Content="Restart the monitor and reapply my foveation, encoding policy and advanced requests after SteamVR restarts, while this app is open" Checked="Bandwidth_Toggled" Unchecked="Bandwidth_Toggled"/>
-                        </StackPanel>
-                        <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
-                        <StackPanel Spacing="10">
-                            <TextBlock Text="Streaming links" FontSize="22" FontWeight="SemiBold"/>
-                            <ToggleSwitch x:Name="MultipleLinksInput" Header="Allow additional streaming links" OnContent="Valve may use available links together" OffContent="Use the first link only" IsOn="False" Toggled="Bandwidth_Toggled"/>
-                            <TextBlock Text="Keep Wi-Fi enabled for discovery and the dedicated wireless dongle. This permits available dongle, local-network or USB links; it does not guarantee combined throughput. The dashboard confirms which links the headset reports active, with per-link latency and loss." Style="{StaticResource Hint}"/>
-                        </StackPanel>
-                        <Button x:Name="ApplyButton" Content="Apply stream controls" Style="{StaticResource AccentButtonStyle}" Click="Apply_Click"/>
-                        <TextBlock Text="With SteamVR running, controls are written through its live settings API. With SteamVR stopped, they are saved for the next session. Foveation bias requires an active supported NVENC session." Style="{StaticResource Hint}"/>
-                        <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Temporary diagnostics" FontSize="22" FontWeight="SemiBold"/>
-                            <ToggleSwitch x:Name="KeepAwakeInput" Header="Keep SteamVR awake for an unattended test" OnContent="Temporary one-hour screen timeout; compositor keeps running" OffContent="Original power settings" Toggled="KeepAwake_Toggled"/>
-                            <TextBlock Text="Use while the Frame is powered on for a test. This changes only SteamVR's standby pause and screen timeout; it does not control the headset's Wi-Fi or privacy sensors. Original values are saved before changing them and restored on disable or app close. If SteamVR is stopped or the app crashes, the saved lease is recovered when the app and SteamVR are next running. Newer differing power settings are preserved." Style="{StaticResource Hint}"/>
-                            <TextBlock x:Name="PowerLeaseStatus" Text="No temporary power lease" Style="{StaticResource Hint}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
-            </PivotItem>
-            <PivotItem Header="Advanced controls">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" Padding="0,14,12,20" MaxWidth="1080" HorizontalAlignment="Left">
-                        <TextBlock Text="Advanced stream experiments" FontSize="22" FontWeight="SemiBold"/>
-                        <TextBlock Text="Override only the values you want to test. Unchecked values preserve Valve's defaults. Accepted API settings and encoder configurations appear below; compare actual picture quality, frame timing and receiver events before keeping a change." Style="{StaticResource Hint}"/>
-                        <TextBlock x:Name="AdvancedCapabilityStatus" Text="Checking the native helper…" TextWrapping="Wrap"/>
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="Encoder quality and buffering" FontSize="20" FontWeight="SemiBold"/>
-                                <TextBlock Text="CQ, max QP, peak bitrate and VBV are live experiments. Chroma offsets, AQ and preset changes require reconnecting. CQ uses VBR; none of these settings guarantees center quality or a minimum useful bitrate." Style="{StaticResource Hint}"/>
-                                <TextBlock Text="A Frame reconnect can preserve the host encoder session. If initialization-only changes stay pending, enable Reapply after restart and apply Stream controls. Use Restart SteamVR on the Frame as needed, then restart PC SteamVR with this app open. Wait for the monitor/requests to arm before reconnecting the Frame." Style="{StaticResource Hint}"/>
-                                <StackPanel x:Name="AdvancedEncoderHost" Spacing="16"/>
+                            <TextBlock Text="Negative offsets improve detail. Positive offsets reduce detail; outside-gaze values above +12 are aggressive." Style="{StaticResource Hint}" />
+                            <StackPanel Spacing="12" Orientation="Horizontal">
+                                <Button Content="Quality focus" Click="QualityPreset_Click" />
+                                <Button Content="Valve gaze defaults" Click="QualityDefault_Click" />
                             </StackPanel>
-                        </Border>
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="Driver resolution and sending" FontSize="20" FontWeight="SemiBold"/>
-                                <TextBlock Text="OpenVR readback confirms the requested setting. A consumer may apply it after reconnecting. An unset key is shown as a driver fallback, never as an observed zero." Style="{StaticResource Hint}"/>
-                                <StackPanel x:Name="AdvancedDriverHost" Spacing="16"/>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button x:Name="AdvancedApplyButton" Content="Apply advanced controls" Style="{StaticResource AccentButtonStyle}" Click="ApplyAdvanced_Click"/>
-                            <Button x:Name="AdvancedRestoreButton" Content="Restore advanced Valve defaults" Click="RestoreAdvanced_Click"/>
                         </StackPanel>
-                        <TextBlock x:Name="AdvancedRequestedReadback" Text="Requested advanced encoding: Valve defaults" IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="AdvancedAcceptedReadback" Text="Last successfully submitted configuration: not yet observed" IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
-                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Capabilities still under research" FontSize="20" FontWeight="SemiBold"/>
-                                <TextBlock Text="Foveation geometry: gaze/periphery QP bias is supported in Stream controls; changing region radius or transition packing needs matching host and receiver support." Style="{StaticResource Hint}"/>
-                                <TextBlock Text="Split-frame encoding: the installed driver uses an older NVENC ABI and actual engine participation has not been established. No split-frame override is applied." Style="{StaticResource Hint}"/>
-                                <TextBlock Text="Decoder buffers and display delay: no safe accepted runtime control has been established. Buffer count is not queued-frame latency; the client already requests zero display delay." Style="{StaticResource Hint}"/>
+                        <Expander Header="More stream options" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="12" Padding="0,12,0,0">
+                                <ToggleSwitch x:Name="AmfInput" Header="Allow AMD encoder" OnContent="Available on compatible AMD hardware" OffContent="AMF disabled" Toggled="Bandwidth_Toggled" />
+                                <ToggleSwitch x:Name="MultipleLinksInput" Header="Allow additional video connections" OnContent="Valve may use available links together" OffContent="Use the first link only" IsOn="False" Toggled="Bandwidth_Toggled" />
+                                <TextBlock Text="Keep headset Wi-Fi enabled for discovery. The dongle carries video on its dedicated link. Additional links do not guarantee more bandwidth." Style="{StaticResource Hint}" />
                             </StackPanel>
-                        </Border>
+                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
-            </PivotItem>
-            <PivotItem Header="Driver patcher">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" Padding="0,14,12,20" MaxWidth="850" HorizontalAlignment="Left">
-                        <TextBlock Text="Bitrate ceiling override" FontSize="22" FontWeight="SemiBold"/>
-                        <TextBlock Text="Raise a compatible driver's ceiling to 500 Mbps and select HEVC level 6.2. This lets higher requested targets be accepted. It does not add filler data or guarantee that every scene produces that bitrate." Style="{StaticResource Hint}"/>
-                        <TextBox x:Name="DriverPathInput" Header="SteamVR driver file"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Inspect driver" Click="InspectPatch_Click"/><Button x:Name="PatchButton" Content="Install 500 Mbps override" Style="{StaticResource AccentButtonStyle}" Click="InstallPatch_Click"/><Button x:Name="RestoreButton" Content="Restore original driver" Click="RestorePatch_Click"/></StackPanel>
-                        <TextBlock x:Name="PatchStatus" Text="Checking installed driver…" FontSize="18" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="PatchDetails" Text="" Style="{StaticResource Hint}" IsTextSelectionEnabled="True"/>
-                        <TextBlock Text="Close SteamVR before installing or restoring. The patcher verifies the driver's code and complete file hash, keeps an original backup and refuses layouts it cannot validate. SteamVR updates can replace the patch; inspect the driver again after an update." Style="{StaticResource Hint}"/>
-                        <TextBlock Text="Driver updates are checked automatically. The patcher locates and verifies the bitrate and HEVC code, and refuses ambiguous or incompatible layouts. Valve's driver is not redistributed." Style="{StaticResource Hint}"/>
+                <Border Grid.Row="1" BorderBrush="{StaticResource SteamBorderBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Review the controls, then apply." Style="{StaticResource Hint}" VerticalAlignment="Center" x:Name="StreamChangeStatus" />
+                        <StackPanel Spacing="12" Orientation="Horizontal" Grid.Column="1">
+                            <ProgressRing x:Name="CodecSwitchProgress" IsActive="False" Width="24" Height="24" />
+                            <Button x:Name="ApplyButton" Content="Apply stream settings" Style="{StaticResource SteamActionButtonStyle}" Click="Apply_Click" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+            <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="DiagnosticsView">
+                <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Streaming report" FontSize="18" FontWeight="SemiBold" />
+                        <Button Content="Open report folder" Click="OpenCaptureFolder_Click" Grid.Column="1" />
+                    </Grid>
+                    <TextBlock x:Name="HealthSummary" Text="Watching for new streaming issues…" TextWrapping="Wrap" />
+                    <TextBlock x:Name="ReceiverStatus" Text="Checking the Frame receiver over wireless…" Style="{StaticResource Hint}" />
+                    <TextBlock x:Name="ReceiverCounts" TextWrapping="Wrap" />
+                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="4" Padding="14">
+                        <TextBlock x:Name="HealthEvents" Text="New recovery requests, network delays and encoder stalls appear here." IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                    </Border>
+                    <TextBlock Text="Retries can repeat packets. PC presentation drops and receiver errors are separate; neither is a complete headset drop count." Style="{StaticResource Hint}" />
+                    <Expander Header="PC frame timing" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock x:Name="CompositorStatus" Text="Checking PC presentation timing…" TextWrapping="Wrap" />
+                            <TextBlock x:Name="CompositorDetail" Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="HealthTrace" Text="Per-frame timing appears when SteamVR saves a recovery trace." IsTextSelectionEnabled="True" Style="{StaticResource Hint}" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="Encoder details" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock x:Name="CodecDetail" Text="Waiting for verified encoder output." Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="ProbeStatus" Text="The monitor measures compressed NVENC frames before network overhead and checks encoder compatibility automatically." Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="QualityReadback" Text="Foveation: Valve defaults" Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="PolicyRequestedReadback" Text="Requested policy: Valve defaults" TextWrapping="Wrap" />
+                            <TextBlock x:Name="PolicyAppliedReadback" Text="Accepted NVENC configuration: waiting for a verified initialize/reconfigure call" TextWrapping="Wrap" />
+                            <TextBlock x:Name="QuantizerReadback" Text="Whole-frame QP: unavailable" Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="CenterMapReadback" Text="Gaze map deltas: unavailable" Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="AdvancedLiveReadback" Text="Advanced encoder configuration: updated helper required" TextWrapping="Wrap" />
+                            <TextBlock x:Name="CallbackTimingReadback" Text="Encoder API duration: unavailable" Style="{StaticResource Hint}" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="Unattended testing" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <ToggleSwitch x:Name="KeepAwakeInput" Header="Keep SteamVR awake" OnContent="Temporary one-hour screen timeout; compositor keeps running" OffContent="Original power settings" Toggled="KeepAwake_Toggled" />
+                            <TextBlock Text="Original power settings are restored when disabled or when this app closes." Style="{StaticResource Hint}" />
+                            <TextBlock x:Name="PowerLeaseStatus" Text="No temporary power lease" Style="{StaticResource Hint}" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="AdvancedView">
+                <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
+                    <TextBlock x:Name="AdvancedCapabilityStatus" Text="Checking the native helper…" TextWrapping="Wrap" />
+                    <Expander Header="Encoding method" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <ComboBox x:Name="RateControlInput" Header="Rate control" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="Valve default" />
+                                <ComboBoxItem Content="VBR" />
+                                <ComboBoxItem Content="CBR without filler or padding" />
+                            </ComboBox>
+                            <ComboBox x:Name="MultiPassInput" Header="Encoding passes" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="Valve default" />
+                                <ComboBoxItem Content="Single pass" />
+                                <ComboBoxItem Content="Quarter-resolution multipass" />
+                            </ComboBox>
+                            <TextBlock Text="Extra encoding work can increase latency. Bitrate targets describe useful video, without filler traffic." Style="{StaticResource Hint}" />
+                            <CheckBox x:Name="ReapplyInput" Content="Reapply my HEVC encoder and gaze settings after SteamVR restarts" Checked="Bandwidth_Toggled" Unchecked="Bandwidth_Toggled" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="Encoder quality and buffering" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock Text="Enable Override only for values you want to change. Preset, chroma and adaptive-quantization changes need a new encoder session." Style="{StaticResource Hint}" />
+                            <StackPanel x:Name="AdvancedEncoderHost" Spacing="16" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="Driver experiments" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock Text="Resolution bounds, scheduling, sharpening and network behavior." Style="{StaticResource Hint}" />
+                            <StackPanel x:Name="AdvancedDriverHost" Spacing="16" />
+                        </StackPanel>
+                    </Expander>
+                    <StackPanel Spacing="12" Orientation="Horizontal">
+                        <Button x:Name="AdvancedApplyButton" Content="Apply advanced settings" Style="{StaticResource SteamActionButtonStyle}" Click="ApplyAdvanced_Click" />
+                        <Button x:Name="AdvancedRestoreButton" Content="Reset advanced settings" Click="RestoreAdvanced_Click" />
                     </StackPanel>
-                </ScrollViewer>
-            </PivotItem>
-            <PivotItem Header="Connection setup">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="16" Padding="0,14,12,20" MaxWidth="850" HorizontalAlignment="Left">
-                        <TextBlock Text="Wireless monitoring" FontSize="22" FontWeight="SemiBold"/>
-                        <TextBlock Text="Pair the Frame with SteamOS Devkit and keep it awake. Its trusted wireless SSH connection supplies receiver recovery events. Wi-Fi stays enabled." Style="{StaticResource Hint}"/>
-                        <TextBox x:Name="SshHostInput" Header="Frame's paired wireless SSH hostname or IP"/>
-                        <TextBox x:Name="SshKeyInput" Header="Paired SteamOS Devkit SSH key file"/>
-                        <TextBox x:Name="SshKnownHostsInput" Header="Trusted SSH known-hosts file"/>
-                        <Button Content="Save wireless setup" Click="SaveConnection_Click"/>
-                        <Border Height="1" Background="{StaticResource SteamBorderBrush}" Margin="0,6"/>
-                        <TextBlock Text="Optional ADB status connection" FontSize="22" FontWeight="SemiBold"/>
-                        <TextBlock Text="Enable Developer Mode on the Frame and authorize this PC. ADB provides a local connection to Steam's status debugger." Style="{StaticResource Hint}"/>
-                        <TextBox x:Name="AdbPathInput" Header="ADB executable" PlaceholderText="Path to platform-tools\adb.exe"/>
-                        <TextBox x:Name="SerialInput" Header="Frame ADB serial (optional when one device is connected)"/>
-                        <Button Content="Save connection setup" Click="SaveConnection_Click"/>
-                        <Border Height="1" Background="{StaticResource SteamBorderBrush}" Margin="0,6"/>
-                        <TextBlock Text="Recover a stalled USB connection" FontSize="22" FontWeight="SemiBold"/>
-                        <TextBlock Text="Pair the headset with SteamOS Devkit first. Recovery uses an existing trusted wireless SSH connection to request a restart of its USB daemon. Wi-Fi stays enabled; reconnect the stream after the cable returns." Style="{StaticResource Hint}"/>
-                        <Button x:Name="RecoverButton" Content="Restart Frame USB connection" Click="RecoverUsb_Click"/>
-                        <TextBlock Text="Recovery requires our previously installed USB daemon fix and its verified firmware. It restarts the stalled connection; the underlying USB stall remains unresolved. Unknown SSH hosts must be paired outside this app." Style="{StaticResource Hint}"/>
+                    <Expander Header="Accepted configuration" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock x:Name="AdvancedRequestedReadback" Text="Requested advanced encoding: Valve defaults" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                            <TextBlock x:Name="AdvancedAcceptedReadback" Text="Last successfully submitted configuration: not yet observed" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="ConnectionView">
+                <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
+                    <TextBlock Text="Pair once. Use the dongle for streaming." FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="Enable Developer Mode and pair this PC with SteamOS Devkit. Keep the Frame awake and its Wi-Fi enabled." Style="{StaticResource Hint}" />
+                    <HyperlinkButton Content="Open the pairing guide" NavigateUri="https://github.com/elliotttate/SteamLinkVRSettings-SteamFrame/blob/main/docs/connection-setup.md" HorizontalAlignment="Left" Padding="0" />
+                    <TextBox x:Name="SshHostInput" Header="Frame address" PlaceholderText="10.35.78.1 for the dedicated dongle" />
+                    <Button Content="Use dongle address" Click="UseDongleAddress_Click" HorizontalAlignment="Left" />
+                    <Expander Header="Trusted SSH files" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBox x:Name="SshKeyInput" Header="SteamOS Devkit private-key file" />
+                            <TextBox x:Name="SshKnownHostsInput" Header="Known-hosts file" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="Optional ADB connection" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBox x:Name="AdbPathInput" Header="ADB executable" PlaceholderText="Path to platform-tools\adb.exe" />
+                            <TextBox x:Name="SerialInput" Header="Frame ADB serial (optional when one device is connected)" />
+                        </StackPanel>
+                    </Expander>
+                    <Button Content="Save and test connection" Click="SaveConnection_Click" HorizontalAlignment="Left" Style="{StaticResource SteamActionButtonStyle}" />
+                    <TextBlock Text="Save your pairing details to test the connection." Style="{StaticResource Hint}" x:Name="ConnectionTestStatus" />
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="ToolsView">
+                <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
+                    <TextBlock Text="HEVC bitrate override" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="AV1 and H.264 apply their codec patches automatically from Stream settings. The override below raises HEVC's bitrate ceiling." Style="{StaticResource Hint}" />
+                    <TextBlock Text="Allows compatible drivers to accept targets up to 500 Mbps. Actual bitrate depends on the scene and connection. Close SteamVR before changing the patch." Style="{StaticResource Hint}" />
+                    <TextBlock x:Name="PatchStatus" Text="Checking installed driver…" FontSize="18" TextWrapping="Wrap" />
+                    <StackPanel Spacing="12" Orientation="Horizontal">
+                        <Button x:Name="PatchButton" Content="Install 500 Mbps override" Style="{StaticResource SteamActionButtonStyle}" Click="InstallPatch_Click" />
+                        <Button x:Name="RestoreButton" Content="Restore original driver" Click="RestorePatch_Click" />
                     </StackPanel>
-                </ScrollViewer>
-            </PivotItem>
-        </Pivot>
+                    <Expander Header="Driver file and verification" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBox x:Name="DriverPathInput" Header="SteamVR driver file" />
+                            <Button Content="Check driver" Click="InspectPatch_Click" HorizontalAlignment="Left" />
+                            <TextBlock x:Name="PatchDetails" Text="" Style="{StaticResource Hint}" IsTextSelectionEnabled="True" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="USB recovery" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="12" Padding="0,12,0,0">
+                            <TextBlock Text="For the experimental USB setup with the previously installed daemon fix. Wireless streaming uses the dongle instead." Style="{StaticResource Hint}" />
+                            <Button x:Name="RecoverButton" Content="Restart Frame USB connection" Click="RecoverUsb_Click" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="StockView">
+                <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
+                    <TextBlock Text="A clean starting point" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="Restore Valve streaming defaults, use HEVC, and remove custom gaze and encoder overrides. A verified bitrate patch is restored to the original driver too." Style="{StaticResource Hint}" />
+                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Checking current tuning…" TextWrapping="Wrap" x:Name="StockStatus" />
+                            <TextBlock Text="Your current tuning is saved first. Pairing details and unrelated SteamVR settings are kept." Style="{StaticResource Hint}" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="Restoring closes SteamVR and may close a running game. Reconnect the Frame after SteamVR restarts." Style="{StaticResource Hint}" />
+                    <Button Content="Restore stock and restart SteamVR" Click="RestoreStock_Click" HorizontalAlignment="Left" x:Name="StockRestoreButton" Style="{StaticResource SteamActionButtonStyle}" />
+                    <Border Height="1" Background="{StaticResource SteamBorderBrush}" />
+                    <TextBlock Text="Return to your tuning" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="No previous tuning profile saved yet." Style="{StaticResource Hint}" x:Name="StockSnapshotStatus" />
+                    <Button Content="Load previous tuning" Click="LoadPreviousProfile_Click" IsEnabled="False" HorizontalAlignment="Left" x:Name="PreviousProfileButton" />
+                    <TextBlock Text="Loads the saved profile into the editor. Review it, then apply. Experimental codecs may need your Frame password again." Style="{StaticResource Hint}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </Page>

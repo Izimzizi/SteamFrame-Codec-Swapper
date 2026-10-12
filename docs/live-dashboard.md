@@ -1,11 +1,11 @@
 # Live dashboard and diagnostics
 
-The **Live dashboard** shows what actually reaches the encoder and the network, and
+The **Overview** shows what actually reaches the encoder and the network, and
 records streaming faults with timestamps.
 
 ## Starting the monitor
 
-Click **Start live monitor** during an NVIDIA-encoded stream. Encoded bitrate appears after
+Click **Start monitoring** during an NVIDIA-encoded stream. Encoded bitrate appears after
 two samples. **Stop live monitor** restores Valve's encoder policy and foveation before stopping.
 
 The monitor is opt-in: opening the app never loads anything into SteamVR. It checks the
@@ -13,7 +13,7 @@ running driver's encoder layout first and refuses incompatible builds. If an ide
 helper is already loaded, the dashboard reuses it without restarting it or changing your
 quality offsets. See [Encoder probe internals](../Native/README.md) for how it works.
 
-If **Start live monitor** keeps failing while SteamVR is running, the status bar offers
+If **Start monitoring** keeps failing while SteamVR is running, the status bar offers
 **Restart as administrator**.
 
 ## Readouts
@@ -44,8 +44,8 @@ Stopping AV1 monitoring leaves the codec trial running and labels its codec as l
 
 ## Switching codecs
 
-Under **Stream controls**, select HEVC, AV1 or H.264, choose the codec-session target and
-90/120 Hz, then click **Switch codec**. The selection is the requested mode; **Current encoder**
+Under **Stream settings**, select HEVC, AV1 or H.264, choose the codec-session target and
+90/120 Hz, then click **Apply and reconnect**. The selection is the requested mode; **Current encoder**
 and the dashboard's codec readout confirm encoder identity and fresh output separately.
 Switching restarts SteamVR and reconnects the stream. Keep the Frame awake, Wi-Fi enabled,
 and the dedicated dongle connected.
@@ -58,7 +58,7 @@ sends a request; stale or incompatible sessions cannot start duplicate switches.
 
 AV1 and H.264 use the paired runtime and disable ordinary encoder/foveation overrides.
 H.264 currently uses a smaller packed image, 1024 × 4096, compared with AV1's 1536 × 6144.
-Targets remain requests rather than guaranteed output rates. **Restore HEVC and end session**
+Targets remain requests rather than guaranteed output rates. Choosing **HEVC** and applying
 requests the supervised rollback. Closing the app leaves the session running; the supervisor
 ends it after its session limit and restores HEVC.
 

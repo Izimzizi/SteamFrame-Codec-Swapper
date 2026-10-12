@@ -170,7 +170,8 @@ public sealed partial class FramePage
         var request = ReadAdvancedEncoderInputs(); var revision = _encoderAdvancedRevision;
         // Explicit Apply can retry a previously rejected experiment with the
         // same values after the user fixes its context (for example, selects VBR).
-        var encoderEdited = _encoderAdvancedEdited || _advancedAvailable && !request.IsDefault;
+        var hevc = SelectedCodec == StreamCodec.Hevc;
+        var encoderEdited = hevc && (_encoderAdvancedEdited || _advancedAvailable && !request.IsDefault);
         var writes = new Dictionary<string, object?>(); var removes = new List<string>(); var rows = new Dictionary<string, long>();
         foreach (var definition in AdvancedDriverSettings.Definitions)
         {
@@ -183,6 +184,21 @@ public sealed partial class FramePage
         }
         await ValidateWidthBoundsAsync(writes, removes);
         var running = await Task.Run(() => OpenVrSettings.IsRunning);
+        if (hevc && _policyEdited)
+        {
+            var policy = new EncodingPolicy((EncoderRateControl)RateControlInput.SelectedIndex, (EncoderMultiPass)MultiPassInput.SelectedIndex);
+            _ = policy.Packed;
+            if (running)
+            {
+                var beforePolicy = await _probe.GetSnapshotAsync();
+                if (beforePolicy.PairedCodecTrialPresent) throw new InvalidOperationException("Encoder overrides are available for HEVC. Select HEVC in Stream settings first.");
+                if (!beforePolicy.Installed) await _probe.StartAsync();
+                await ApplyPolicyAsync(policy);
+            }
+            _preferences.RateControl = policy.RateControl; _preferences.MultiPass = policy.MultiPass;
+            _preferences.ReapplyAfterRestart = ReapplyInput.IsChecked == true;
+            await _preferences.SaveAsync(); _policyEdited = false;
+        }
         if (running && encoderEdited) ValidateAdvancedAgainstObserved(request, await _probe.GetSnapshotAsync());
         if (writes.Count != 0 || removes.Count != 0)
         {
@@ -197,6 +213,8 @@ public sealed partial class FramePage
             if (revision == _encoderAdvancedRevision) { _encoderAdvancedEdited = false; foreach (var row in _encoderRows.Values) row.Dirty = false; }
         }
         foreach (var item in rows) if (_driverRows[item.Key].Revision == item.Value) _driverRows[item.Key].Dirty = false;
+        _preferences.ReapplyAfterRestart = ReapplyInput.IsChecked == true;
+        await _preferences.SaveAsync();
         await RefreshAdvancedDriverAsync(force: true);
         return message;
     });
@@ -245,7 +263,7 @@ public sealed partial class FramePage
         }
         if (!snapshot.Active || snapshot.EncodingPolicy is not { Observed: true } policy) return;
         if ((request.QualityTarget.HasValue || request.PeakMbps.HasValue) && policy.RateControl != 1)
-            throw new ArgumentException("CQ and separate peak-bitrate overrides require VBR. Apply VBR in Stream controls first.");
+            throw new ArgumentException("CQ and separate peak-bitrate overrides require VBR. Select VBR under Encoding method and apply again.");
         var buffer = request.VbvMbit is double vbv ? vbv * 1_000_000 : policy.VbvSize;
         var delay = request.VbvDelayMbit is double initial ? initial * 1_000_000 : policy.VbvDelay;
         if ((request.VbvMbit.HasValue || request.VbvDelayMbit.HasValue) && delay > buffer)
@@ -270,10 +288,11 @@ public sealed partial class FramePage
         _advancedAvailable = snapshot.Installed && snapshot.AdvancedEncoding is { Supported: true };
         foreach (var row in _encoderRows.Values)
         {
-            row.Override.IsEnabled = _advancedAvailable;
-            if (row.Number is not null) row.Number.IsEnabled = _advancedAvailable && row.Override.IsChecked == true;
-            if (row.Toggle is not null) row.Toggle.IsEnabled = _advancedAvailable && row.Override.IsChecked == true;
-            if (row.Choice is not null) row.Choice.IsEnabled = _advancedAvailable && row.Override.IsChecked == true;
+            var editable = SelectedCodec == StreamCodec.Hevc && !_actionPending && !_codecSwitching;
+            row.Override.IsEnabled = editable;
+            if (row.Number is not null) row.Number.IsEnabled = editable && row.Override.IsChecked == true;
+            if (row.Toggle is not null) row.Toggle.IsEnabled = editable && row.Override.IsChecked == true;
+            if (row.Choice is not null) row.Choice.IsEnabled = editable && row.Override.IsChecked == true;
         }
         AdvancedCapabilityStatus.Text = _advancedAvailable ? "Updated helper available. Initialization-only fields need a new encoder session. If pending, restart Frame/PC SteamVR as needed; keep this app open with Reapply enabled and let requests arm before Frame reconnect." +
             (snapshot.AdvancedEncoding!.CapabilitiesQueried ? $" Queried NVENC capabilities: dynamic bitrate {snapshot.AdvancedEncoding.DynamicBitrateSupported}, custom VBV {snapshot.AdvancedEncoding.CustomVbvSupported}, temporal AQ {snapshot.AdvancedEncoding.TemporalAqSupported}." : " NVENC capability query pending.")

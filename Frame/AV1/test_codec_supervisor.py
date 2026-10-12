@@ -6,6 +6,10 @@ class CodecProtocolTests(unittest.TestCase):
  def test_supported_modes_and_rates(self):
   for codec in service.MODES:
    for fps in (90,120):service.validate_mode(codec,100,fps)
+ def test_h264_high_budget_preserves_av1_bounds(self):
+  for fps in (90,120):service.validate_mode('H.264',500,fps)
+  for values in (('H.264',501,90),('H.264',500.0,90),('AV1',201,90),('HEVC',501,90)):
+   with self.assertRaises(ValueError):service.validate_mode(*values)
  def test_unknown_mode_rate_and_unbounded_bitrate_rejected(self):
   for values in (('VP9',100,90),('AV1',201,90),('AV1',24,90),('AV1',100,91),('AV1',True,90)):
    with self.assertRaises(ValueError):service.validate_mode(*values)

@@ -1,7 +1,9 @@
-# All streaming settings
+# Additional settings
 
-The **All streaming settings** tab edits every known `driver_vrlink` setting, including
-ones SteamVR doesn't expose in its own UI. Settings are grouped into Streaming Quality,
+The **Additional settings** page edits less common `driver_vrlink` settings, including
+ones SteamVR doesn't expose in its own UI. Guided controls have one home in **Stream settings**
+or **Advanced**, and are excluded here. Search by display name, key or description.
+Settings are grouped into Streaming Quality,
 Network, Display, Tracking & Input, and Advanced.
 
 ## Reading values
@@ -27,13 +29,13 @@ Unrelated sections, unknown keys and structured values are preserved exactly. Se
 
 ## Resetting
 
-**Reset** on a setting, or **Reset All**, returns it to SteamVR's default. Saving a value equal
+**Reset** on a setting, or **Reset additional settings**, returns those settings to SteamVR's default. Saving a value equal
 to the default **removes the override** instead of writing the number. That way, a future
 SteamVR update that changes a default still applies to you.
 
 ## Unsaved changes
 
-Switching tabs or closing the window with unsaved changes asks whether to **Save**,
+Switching pages or closing the window with unsaved changes asks whether to **Save**,
 **Discard** or **Cancel**.
 
 ## Experimental options
@@ -48,3 +50,18 @@ Reset them to the default if streaming misbehaves.
 SteamVR reads some numbers as floats and others as integers. The editor keeps them consistent
 with SteamVR; for example `targetBandwidth` is always written as a float, and
 `recommendedBandwidthMbit` as an integer.
+
+## Complete presets and recovery
+
+Save Additional settings edits before using **Stream settings → Save preset…**.
+The preset includes all known saved driver values plus the current stream and advanced
+controls, filtering, requested codec/refresh and verified bitrate-patch state. Each
+dropdown entry is one complete setup. Selecting or reloading it fills the editor;
+**Apply** activates it, including settings absent from the preset being returned to defaults.
+
+**Back to stock** saves the current applied tuning first, closes the experimental codec
+session, restores a verified original driver, and removes known app tuning overrides.
+It retains pairing data and unrelated SteamVR settings. If headset SSH is unavailable,
+the app reports that resetting the Frame display preference is pending. Reconnect and retry.
+**Load previous tuning** stages the saved setup for review and Apply. Experimental codecs
+may require the Frame user password again; presets never store it.

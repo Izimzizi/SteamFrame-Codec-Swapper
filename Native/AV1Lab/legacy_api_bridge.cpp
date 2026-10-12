@@ -29,6 +29,11 @@ uint32_t requested_average=100000000,requested_peak=115000000;
 bool requested_fixed=false;
 uint32_t requested_fps=120;
 uint32_t requested_codec=1;
+bool valid_budget(uint32_t average,uint32_t peak){
+ const uint32_t average_limit=requested_codec==2?500000000u:200000000u;
+ const uint32_t peak_limit=requested_codec==2?500000000u:230000000u;
+ return average>=1000000&&average<=average_limit&&peak>=average&&peak<=peak_limit;
+}
 GUID codec_guid(){return requested_codec==2?NV_ENC_CODEC_H264_GUID:NV_ENC_CODEC_AV1_GUID;}
 Av1BridgeStats stats{sizeof(Av1BridgeStats),1};
 struct State {
@@ -103,7 +108,8 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
  rc.multiPass=NV_ENC_MULTI_PASS_DISABLED;rc.zeroReorderDelay=1;rc.qpMapMode=NV_ENC_QP_MAP_DELTA;
  if(requested_codec==2){
   auto& h264=config.encodeCodecConfig.h264Config;
-  h264.level=NV_ENC_LEVEL_H264_52;h264.idrPeriod=requested_fps;h264.chromaFormatIDC=1;
+  h264.level=requested_average>200000000?NV_ENC_LEVEL_AUTOSELECT:NV_ENC_LEVEL_H264_52;
+  h264.idrPeriod=requested_fps;h264.chromaFormatIDC=1;
   h264.repeatSPSPPS=1;h264.disableSPSPPS=0;h264.outputAUD=1;h264.enableFillerDataInsertion=0;
   h264.sliceMode=3;h264.sliceModeData=1;
  }else{
@@ -122,7 +128,7 @@ NVENCSTATUS NVENCAPI initialize(void* encoder,NV_ENC_INITIALIZE_PARAMS* source){
  NV_ENC_INITIALIZE_PARAMS copy{};NV_ENC_CONFIG config{};
  if(!configure(encoder,*source,copy,config)){
   std::lock_guard<std::mutex> lock(mutex);stats.initialize_status=NV_ENC_ERR_INVALID_PARAM;
-  strcpy_s(stats.initialize_error,"Source layout/rate/dimensions or AV1 preset rejected");
+  strcpy_s(stats.initialize_error,"Source layout/rate/dimensions or paired-codec preset rejected");
   return NV_ENC_ERR_INVALID_PARAM;
  }
  const auto status=api.nvEncInitializeEncoder(encoder,&copy);
@@ -254,8 +260,9 @@ NVENCSTATUS NVENCAPI destroy(void* encoder){
 }
 
 extern "C" int AV1_CALL Av1CreateLegacyFunctionTable(void* raw,uint32_t bytes,uint32_t average,uint32_t peak){
- if(!raw||bytes!=2552||*static_cast<uint32_t*>(raw)!=old_table||average<1000000||average>200000000||peak<average||peak>230000000)return -1;
+ if(!raw||bytes!=2552||*static_cast<uint32_t*>(raw)!=old_table)return -1;
  std::lock_guard<std::mutex> lock(mutex);
+ if(!valid_budget(average,peak))return -1;
  if(!sessions.empty()&&(average!=requested_average||peak!=requested_peak))return -2;
  if(!module){
   module=LoadLibraryExW(L"nvEncodeAPI64.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);if(!module)return -3;
@@ -276,8 +283,8 @@ extern "C" int AV1_CALL Av1CreateLegacyFunctionTable(void* raw,uint32_t bytes,ui
 }
 
 extern "C" int AV1_CALL Av1ConfigureLegacyBudget(uint32_t average,uint32_t peak,uint32_t fixed){
- if(average<1000000||average>200000000||peak<average||peak>230000000||fixed>1)return -1;
  std::lock_guard<std::mutex> lock(mutex);
+ if(!valid_budget(average,peak)||fixed>1)return -1;
  if(!sessions.empty())return -2;
  requested_average=average;requested_peak=peak;requested_fixed=fixed!=0;return 0;
 }

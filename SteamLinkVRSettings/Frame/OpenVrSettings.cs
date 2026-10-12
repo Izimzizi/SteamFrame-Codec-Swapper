@@ -32,6 +32,20 @@ public static partial class OpenVrSettings
             finally { foreach (var process in processes) process.Dispose(); }
         }
     }
+    public static async Task WaitUntilAvailableAsync(SteamPaths paths)
+    {
+        // Successful codec rollback precedes the replacement vrserver's settings
+        // connection. Retry that connection before applying the retained controls.
+        var timer = Stopwatch.StartNew();
+        Exception? last = null;
+        while (timer.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            try { await Task.Run(() => Read(paths)); return; }
+            catch (IOException error) { last = error; }
+            await Task.Delay(300);
+        }
+        throw new IOException("HEVC components were restored, but SteamVR is still waiting for the Frame. Reconnect it and apply again; the requested controls remain in the editor.", last);
+    }
     public static void Apply(SteamPaths paths, IReadOnlyDictionary<string, object?> values) => Session(paths, table =>
     {
         foreach (var pair in values)

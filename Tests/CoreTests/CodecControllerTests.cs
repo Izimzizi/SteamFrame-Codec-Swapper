@@ -4,6 +4,29 @@ using SteamLinkVRSettings.Frame;
 
 public sealed class CodecControllerTests
 {
+    [Theory]
+    [InlineData(StreamCodec.H264, 500, true)]
+    [InlineData(StreamCodec.H264, 501, false)]
+    [InlineData(StreamCodec.Av1, 200, true)]
+    [InlineData(StreamCodec.Av1, 201, false)]
+    [InlineData(StreamCodec.Hevc, 500, true)]
+    [InlineData(StreamCodec.H264, 24, false)]
+    public void Codec_specific_budgets_preserve_AV1_bounds(StreamCodec codec, int target, bool accepted)
+    {
+        var request = new CodecSwitchRequest(codec, target, 90);
+        if (accepted) request.Validate();
+        else Assert.Throws<ArgumentOutOfRangeException>(() => request.Validate());
+    }
+    [Fact]
+    public async Task Older_companion_rejects_high_H264_before_publishing_request()
+    {
+        using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264", maximumH264: null);
+        var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
+        Assert.Equal(200, (await controller.ReadStatusAsync()).MaximumH264Mbps);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SwitchAsync(new(StreamCodec.H264, 300, 90), new(), null));
+        Assert.Contains("updated runtime", error.Message);
+        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
+    }
     [Fact]
     public async Task Status_requires_fresh_heartbeat_and_matching_owner_creation()
     {
@@ -140,13 +163,15 @@ public sealed class CodecControllerTests
     {
         public string Root { get; } = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "steam-frame-codec-test-" + Guid.NewGuid().ToString("N")));
         public CodecTestDirectory() => Directory.CreateDirectory(Root);
-        public void Status(double created = 100, double updated = 1000, string state = "ready", string codec = "HEVC", string? operation = null, bool? ok = null, string? error = null)
+        public void Status(double created = 100, double updated = 1000, string state = "ready", string codec = "HEVC", string? operation = null, bool? ok = null, string? error = null, int? maximumH264 = 500)
         {
             var path = Path.Combine(Root, "status.json");
             var temporary = path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new { protocol_version = 1, owner_pid = 123, owner_created_epoch = created,
+            var value = JsonSerializer.SerializeToNode(new { protocol_version = 1, owner_pid = 123, owner_created_epoch = created,
                 updated_epoch = updated, state, active_codec = codec, message = "Test session", operation_id = operation ?? "",
-                last_result = ok is null ? null : new { ok = ok.Value, error }, target_mbps = 100, fps = 90 }));
+                last_result = ok is null ? null : new { ok = ok.Value, error }, target_mbps = 100, fps = 90, maximum_h264_mbps = maximumH264 })!;
+            if (maximumH264 == null) value.AsObject().Remove("maximum_h264_mbps");
+            File.WriteAllText(temporary, value.ToJsonString());
             File.Move(temporary, path, true);
         }
         public async Task<string> WaitForRequest()

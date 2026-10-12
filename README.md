@@ -26,11 +26,13 @@ including the ones SteamVR doesn't show in its own UI.
 | **Foveation bias** | Shift quality between where you look and the periphery on top of Valve's own gaze-tracked map. |
 | **Advanced controls** | Tune CQ, maximum QP, peak bitrate, VBV, chroma, AQ and presets, plus resolution, buffering and sending settings, with accepted/pending/rejected readbacks and restoration. |
 | **Live dashboard** | Graphs actual encoded video Mbps and FPS, the requested target, and adapter traffic over the last 60 seconds. |
-| **Codec selector** | Switch between HEVC, AV1 and H.264, choose a 25–200 Mbps request and 90/120 Hz, and restore stock HEVC. AV1/H.264 are exact-build experiments and restart the stream. |
+| **Codec selector** | Switch between HEVC, AV1 and H.264, choose H.264 25–500 Mbps or AV1 25–200 Mbps at 90/120 Hz, and restore stock HEVC. AV1/H.264 are exact-build experiments and restart the stream. |
 | **Streaming issue capture** | Timestamps recovery requests, bad-link events, encoder stalls, PC presentation drops and headset receiver faults, and saves them as JSONL. |
 | **Driver patcher** | Raises the driver's 232/350 Mbps ceilings to 500 Mbps and selects HEVC level 6.2, with verified backups and one-click restore. |
 | **Connection tools** | Reads headset link status over paired wireless SSH or ADB, and can restart a stalled Frame USB connection. |
-| **All streaming settings** | Every known `driver_vrlink` setting, with defaults, reset buttons, and warnings for experimental options. |
+| **Additional settings** | Search less common `driver_vrlink` options. Settings already in Stream settings or Advanced are excluded to avoid duplicate controls. |
+| **Complete presets** | Save named setups covering codec, target, refresh, filtering, gaze, encoder options, driver overrides and the bitrate patch. Choose one from the dropdown to review, then apply. |
+| **Back to stock** | Save the current tuning, end experimental codecs, restore a verified original driver and remove app tuning overrides. Load previous tuning to return to it. Pairing and unrelated settings stay intact. |
 
 ## Download and run
 
@@ -48,12 +50,19 @@ starts encoder monitoring on its own.
 ## Quick start
 
 1. Keep Wi-Fi on the Frame enabled and start a VR stream.
-2. Open **Stream controls**, choose a bitrate target, and click **Apply stream controls**.
-3. On **Live dashboard**, click **Start live monitor** to see the real encoded bitrate.
+2. Open **Stream settings**, choose a codec and bitrate target, and click **Apply stream settings** or **Apply and reconnect**.
+3. On **Overview**, click **Start monitoring** to see the real encoded bitrate. **Diagnostics** contains detailed timing and fault reports.
 4. Optionally enable **Custom foveation bias**. **Quality focus** (gaze −4, periphery +8)
    is a good starting point.
 5. To request more than 232 Mbps on a stock driver, close SteamVR and use
-   **Driver patcher → Install 500 Mbps override** first.
+   **Patches & Recovery → Install 500 Mbps override** first.
+
+Use **Save preset…** in Stream settings to keep one complete tuning setup. Selecting
+a preset fills the editor without modifying the stream; Apply activates it. Presets
+also include saved Additional settings. Save those edits before capturing the preset.
+Passwords, developer pairing paths and temporary awake-test leases are not saved in
+presets. **Back to stock** saves the currently applied tuning before restoring Valve
+defaults; **Load previous tuning** fills the editor with that saved setup.
 
 For AV1 or H.264, follow the [codec setup guide](docs/codec-modes.md) first.
 The release includes the companion runtime and AV1 decoder, so supported devices

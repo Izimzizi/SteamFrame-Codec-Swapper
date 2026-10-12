@@ -32,16 +32,18 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly SettingsService _service;
     private readonly ILiveSettings _live;
+    private readonly HashSet<string> _excludedKeys;
     private Dictionary<string, object?> _loadedOverrides = [];
     // Converted value each control showed after the last load/save; "unsaved" means differing from this.
     private readonly Dictionary<string, object?> _baseline = [];
 
     public SettingsViewModel() : this(new SettingsService(), new OpenVrLiveSettings()) { }
 
-    public SettingsViewModel(SettingsService service, ILiveSettings live)
+    public SettingsViewModel(SettingsService service, ILiveSettings live, IEnumerable<string>? excludedKeys = null)
     {
         _service = service;
         _live = live;
+        _excludedKeys = (excludedKeys ?? []).ToHashSet(StringComparer.Ordinal);
     }
 
     [ObservableProperty]
@@ -110,6 +112,8 @@ public partial class SettingsViewModel : ObservableObject
                 merged[kvp.Key] = kvp.Value;
 
             var categories = SettingDefinitions.BuildCategories();
+            foreach (var category in categories) category.Settings.RemoveAll(setting => _excludedKeys.Contains(setting.Key));
+            categories.RemoveAll(category => category.Settings.Count == 0);
             var unreadable = new List<string>();
             _baseline.Clear();
 

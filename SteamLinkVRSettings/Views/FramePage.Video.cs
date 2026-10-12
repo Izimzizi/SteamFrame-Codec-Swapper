@@ -35,24 +35,24 @@ public sealed partial class FramePage
         SupersampleFilteringReadback.Text = $"{source}: {(enabled ? "enabled" : "disabled")}";
     }
 
-    private async void SupersampleFiltering_Toggled(object sender, RoutedEventArgs e)
+    private void SupersampleFiltering_Toggled(object sender, RoutedEventArgs e)
     {
         if (_syncingSupersample) return;
+        _bandwidthEdited = true; _basicEditRevision++; UpdateStreamEditStatus();
+        SupersampleFilteringReadback.Text = "Ready to apply";
+    }
+    private async Task ApplySupersampleAsync()
+    {
         var requested = SupersampleFilteringInput.IsOn;
-        await ActionAsync(async () =>
+        if (await Task.Run(() => OpenVrSettings.IsRunning))
         {
-            await EnsureCodecStableAsync();
-            if (await Task.Run(() => OpenVrSettings.IsRunning))
-            {
-                var accepted = await Task.Run(() => OpenVrSettings.SetSupersampleFiltering(_paths, requested));
-                ShowSupersampleValue(accepted, "Live SteamVR readback");
-            }
-            else
-            {
-                await SteamVrVideoSettings().SaveUserOverridesAsync(new() { [OpenVrSettings.SupersampleFilteringKey] = requested });
-                ShowSupersampleValue(requested, "Saved for the next SteamVR session");
-            }
-            return $"Advanced Supersample Filtering {(requested ? "enabled" : "disabled")}.";
-        });
+            var accepted = await Task.Run(() => OpenVrSettings.SetSupersampleFiltering(_paths, requested));
+            ShowSupersampleValue(accepted, "Live SteamVR readback");
+        }
+        else
+        {
+            await SteamVrVideoSettings().SaveUserOverridesAsync(new() { [OpenVrSettings.SupersampleFilteringKey] = requested });
+            ShowSupersampleValue(requested, "Saved for the next SteamVR session");
+        }
     }
 }

@@ -206,6 +206,31 @@ public sealed class FrameConnection : IAsyncDisposable
         return await RunAsync(info, cancellationToken, script.Replace("\r\n", "\n") + "\n");
     }
 
+    public async Task ResetDisplayPreferenceAsync(CancellationToken cancellationToken = default)
+    {
+        var info = FrameReceiverDiagnostics.CreateSshStartInfo(_preferences);
+        const string script = """
+            import ctypes as c,json
+            lib=c.CDLL('/opt/steamvr/bin/linuxarm64/libopenvr_api.so')
+            lib.VR_InitInternal2.argtypes=[c.POINTER(c.c_int),c.c_int,c.c_char_p];lib.VR_InitInternal2.restype=c.c_uint32
+            lib.VR_GetGenericInterface.argtypes=[c.c_char_p,c.POINTER(c.c_int)];lib.VR_GetGenericInterface.restype=c.c_void_p
+            error=c.c_int();lib.VR_InitInternal2(c.byref(error),3,None)
+            if error.value:raise RuntimeError('Frame OpenVR is unavailable')
+            try:
+             p=lib.VR_GetGenericInterface(b'FnTable:IVRSettings_003',c.byref(error))
+             if error.value or not p:raise RuntimeError('Frame settings are unavailable')
+             table=c.cast(p,c.POINTER(c.c_void_p))
+             remove=c.CFUNCTYPE(None,c.c_char_p,c.c_char_p,c.POINTER(c.c_int))(table[10])
+             remove(b'steamvr',b'preferredRefreshRate',c.byref(error))
+             if error.value not in (0,5):raise RuntimeError('Frame display preference could not be reset')
+             print(json.dumps({'display_preference_reset':True}))
+            finally:lib.VR_ShutdownInternal()
+            """;
+        var result = await RunAsync(info, cancellationToken, script.Replace("\r\n", "\n") + "\n");
+        using var json = JsonDocument.Parse(result);
+        if (!json.RootElement.GetProperty("display_preference_reset").GetBoolean()) throw new IOException("Frame reset was not confirmed.");
+    }
+
     private async Task RemoveForwardAsync()
     {
         if (_port != 0)

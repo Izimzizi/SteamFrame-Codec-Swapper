@@ -2,7 +2,7 @@
 
 This lab includes a paired SteamVR AV1 prototype, independent of the production NVENC 11.1 helper. `steamvr_trial.cpp` intercepts the public NVENC factory only for the SteamVR VRLink driver and translates its legacy table to AV1. Installed driver files are unchanged. See [implementation status](../../docs/av1-implementation-status.md) for tested results and limits.
 
-The v1.2 supervised companion also selects H.264 and can restore stock HEVC. The UI offers 25–200 Mbps requests at 90/120 Hz, but actual packet bitrate and sustained fresh-frame rate must be measured independently. Current packed maxima are 1536×6144 for AV1 and 1024×4096 for H.264. The PC adapter and Frame client/decoder are selected together; unsupported Frame fingerprints fail closed. See [codec setup](../../docs/codec-modes.md).
+The supervised companion selects H.264 and can restore stock HEVC. The UI offers H.264 25–500 Mbps and AV1 25–200 Mbps requests at 90/120 Hz. Actual packet bitrate and sustained fresh-frame rate must be measured independently. Current packed maxima are 1536×6144 for AV1 and 1024×4096 for H.264. H.264 requests above 200 Mbps use NVENC's automatic level selection so the emitted SPS matches the requested budget. The PC adapter and Frame client/decoder are selected together; unsupported Frame fingerprints fail closed. See [codec setup](../../docs/codec-modes.md).
 
 Run `build.ps1` from Windows PowerShell with Visual Studio C++ and a Windows SDK installed. Output goes to `artifacts/AV1Lab/backend/`. Alternatively use this directory as a standalone CMake project.
 

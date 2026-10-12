@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml.Media;
 using SteamLinkVRSettings.Controls;
 using SteamLinkVRSettings.Models;
 using SteamLinkVRSettings.ViewModels;
+using SteamLinkVRSettings.Frame;
+using SteamLinkVRSettings.Services;
 using Color = Windows.UI.Color;
 
 namespace SteamLinkVRSettings.Views;
@@ -13,7 +15,8 @@ namespace SteamLinkVRSettings.Views;
 public sealed partial class SettingsPage : Page
 {
     private static readonly Color ModifiedColor = Color.FromArgb(255, 255, 179, 71);
-    private readonly SettingsViewModel _vm = new();
+    private readonly SettingsViewModel _vm = new(new SettingsService(), new OpenVrLiveSettings(), SettingOwnership.GuidedKeys);
+    private readonly Dictionary<SettingItem, SettingsCard> _settingCards = [];
 
     public SettingsPage()
     {
@@ -35,6 +38,7 @@ public sealed partial class SettingsPage : Page
     {
         LoadingOverlay.Visibility = Visibility.Visible;
         await _vm.LoadCommand.ExecuteAsync(null);
+        _settingCards.Clear();
         BuildUI();
         BindHeader();
         UpdateChangeBanner();
@@ -59,25 +63,35 @@ public sealed partial class SettingsPage : Page
 
     private void BuildUI()
     {
+        foreach (var category in SettingsPanel.Children.OfType<SettingsExpander>()) category.Items.Clear();
         SettingsPanel.Children.Clear();
 
+        var query = SettingSearch.Text.Trim();
         foreach (var category in _vm.Categories)
         {
+            var settings = category.Settings.Where(setting => query.Length == 0 || (setting.DisplayName + " " + setting.Key + " " + setting.Description).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (settings.Length == 0) continue;
             var expander = new SettingsExpander
             {
                 Header = category.Name,
                 Description = category.Description,
                 HeaderIcon = new FontIcon { Glyph = category.Glyph },
-                IsExpanded = true,
+                IsExpanded = query.Length > 0,
                 Margin = new Thickness(0, 0, 0, 4)
             };
 
-            foreach (var setting in category.Settings)
-                expander.Items.Add(CreateSettingCard(setting));
+            foreach (var setting in settings)
+            {
+                if (!_settingCards.TryGetValue(setting, out var card)) _settingCards[setting] = card = CreateSettingCard(setting);
+                expander.Items.Add(card);
+            }
 
             SettingsPanel.Children.Add(expander);
         }
+        SearchEmpty.Visibility = SettingsPanel.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private void SettingSearch_TextChanged(object sender, TextChangedEventArgs e) => BuildUI();
 
     private SettingsCard CreateSettingCard(SettingItem setting)
     {

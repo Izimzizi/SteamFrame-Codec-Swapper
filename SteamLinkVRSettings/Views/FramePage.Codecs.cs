@@ -9,108 +9,129 @@ public sealed partial class FramePage
     private readonly CodecController _codecController = new();
     private CodecServiceStatus _codecService = CodecServiceStatus.NotStarted;
     private bool _codecSwitching;
+    private bool _syncingCodec = true;
+    private bool _codecEdited;
+    private StreamCodec SelectedCodec => (StreamCodec)Math.Clamp(CodecSelectionInput.SelectedIndex, 0, 2);
 
     private bool CodecHooksPaused(CodecServiceStatus status) => _codecSwitching || status.State is "starting" or "switching" || !status.Live && !status.CanStart;
-
     private async Task EnsureCodecStableAsync()
     {
-        var status = await _codecController.ReadStatusAsync();
-        if (CodecHooksPaused(status)) throw new InvalidOperationException("Wait for the codec session to finish reconnecting before changing encoder controls.");
+        if (CodecHooksPaused(await _codecController.ReadStatusAsync())) throw new InvalidOperationException("Wait for the codec session to finish reconnecting before changing settings.");
     }
-
     private void InitializeCodecControls()
     {
+        _syncingCodec = true;
         CodecSelectionInput.SelectedIndex = Enum.IsDefined(_preferences.RequestedCodec) ? (int)_preferences.RequestedCodec : 0;
-        CodecSessionTargetInput.Value = Math.Clamp(_preferences.CodecTargetMbps, 25, 200);
+        if (SelectedCodec != StreamCodec.Hevc) BitrateInput.Value = Math.Clamp(_preferences.CodecTargetMbps, 25, CodecSwitchRequest.MaximumMbpsFor(SelectedCodec));
         CodecRefreshInput.SelectedIndex = _preferences.CodecFps == 120 ? 1 : 0;
+        _syncingCodec = false;
         RenderCodecService(_codecService);
     }
-
     private void CodecSelection_Changed(object sender, SelectionChangedEventArgs e)
     {
-        // Selection is a request; only the explicit button changes the runtime.
-        if (SwitchCodecButton is not null) RefreshCodecButtons();
+        if (_syncingCodec || ApplyButton is null) return;
+        _codecEdited = true; _bandwidthEdited = true; _basicEditRevision++;
+        RefreshCodecButtons(); UpdateStreamEditStatus();
     }
-
+    private void CodecRefresh_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCodec || ApplyButton is null) return;
+        _codecEdited = true; UpdateStreamEditStatus();
+    }
     private void RenderCodecService(CodecServiceStatus status)
     {
         _codecService = status;
-        CodecSessionStatus.Text = status.Message + (status.Live ? $" Service mode: {status.ActiveCodec} • {status.TargetMbps} Mbps request • {status.Fps} Hz." : "");
-        var authenticationNeeded = status.CanStart && !status.Live;
-        CodecPasswordInput.Visibility = CodecAuthenticationHint.Visibility = authenticationNeeded ? Visibility.Visible : Visibility.Collapsed;
-        if (!authenticationNeeded) CodecPasswordInput.Password = "";
+        CodecSessionStatus.Text = status.Live ? status.Message : "HEVC uses the standard SteamVR path. Experimental codecs start a temporary paired session.";
+        if (!_codecEdited && !_bandwidthEdited && status.Live && status.State == "ready")
+        {
+            _syncingCodec = _syncingBandwidth = true;
+            try
+            {
+                CodecSelectionInput.SelectedIndex = status.ActiveCodec switch { "AV1" => 1, "H.264" => 2, _ => 0 };
+                BitrateInput.Maximum = CodecSwitchRequest.MaximumMbpsFor(SelectedCodec);
+                BitrateInput.Value = status.TargetMbps; CodecRefreshInput.SelectedIndex = status.Fps == 120 ? 1 : 0;
+            }
+            finally { _syncingCodec = _syncingBandwidth = false; }
+        }
         CodecSwitchProgress.IsActive = _codecSwitching || status.Busy;
         RefreshCodecButtons();
     }
-
     private void RefreshCodecButtons()
     {
-        var idle = !_actionPending && !_codecSwitching && !_codecService.Busy;
-        SwitchCodecButton.IsEnabled = idle && (_codecService.CanStart || _codecService.Live && _codecService.State != "closed");
-        CloseCodecButton.IsEnabled = idle && _codecService.Live && _codecService.State != "closed";
-        CodecSelectionInput.IsEnabled = CodecSessionTargetInput.IsEnabled = CodecRefreshInput.IsEnabled = CodecPasswordInput.IsEnabled = idle;
-        if (!_actionPending)
+        if (ApplyButton is null) return;
+        var idle = !_actionPending && !_codecSwitching && !CodecHooksPaused(_codecService);
+        var paired = SelectedCodec != StreamCodec.Hevc;
+        var patchChange = _pendingPreset != null && _pendingPreset.BitratePatch != (_patch?.IsPatched == true);
+        var authenticationNeeded = paired && (_codecService.CanStart && !_codecService.Live || patchChange && _codecService.Live);
+        CodecPasswordInput.Visibility = CodecAuthenticationHint.Visibility = authenticationNeeded ? Visibility.Visible : Visibility.Collapsed;
+        if (!authenticationNeeded) CodecPasswordInput.Password = "";
+        BitrateInput.Maximum = CodecSwitchRequest.MaximumMbpsFor(SelectedCodec);
+        CodecModeHint.Text = SelectedCodec switch
         {
-            var encoderControls = !CodecHooksPaused(_codecService);
-            ApplyButton.IsEnabled = MonitorButton.IsEnabled = StopMonitorButton.IsEnabled = RecoverButton.IsEnabled = encoderControls;
-            AdvancedApplyButton.IsEnabled = AdvancedRestoreButton.IsEnabled = encoderControls;
-            SupersampleFilteringInput.IsEnabled = encoderControls;
-        }
+            StreamCodec.Av1 => "AV1: 25–200 Mbps, 8-bit hardware encoding and decoding. Changes to codec, bitrate or refresh reconnect SteamVR. Start with 100 Mbps at 90 Hz.",
+            StreamCodec.H264 => "H.264: 25–500 Mbps. The packed image is smaller than AV1 (1024 × 4096). Higher targets need receiver testing; changes reconnect SteamVR.",
+            _ => "HEVC: 25–500 Mbps. Targets above the stock ceiling need the bitrate patch. Display refresh follows SteamVR's Video settings."
+        };
+        ApplyButton.Content = paired || _codecService.Live || patchChange ? "Apply and reconnect" : "Apply stream settings";
+        ApplyButton.IsEnabled = idle;
+        CodecSelectionInput.IsEnabled = CodecPasswordInput.IsEnabled = BitrateInput.IsEnabled = idle;
+        CodecRefreshInput.IsEnabled = idle && paired;
+        CodecRefreshInput.Visibility = paired ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetColumnSpan(BitrateInput, paired ? 1 : 2);
+        AutomaticInput.IsEnabled = idle && !paired;
+        HevcPictureOptions.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
+        AmfInput.IsEnabled = MultipleLinksInput.IsEnabled = idle && !paired;
+        SupersampleFilteringInput.IsEnabled = idle;
+        RateControlInput.IsEnabled = MultiPassInput.IsEnabled = ReapplyInput.IsEnabled = idle && !paired;
+        StockRestoreButton.IsEnabled = idle;
+        PreviousProfileButton.IsEnabled = idle && _previousProfile != null;
+        MonitorButton.IsEnabled = idle && !_monitorInstalled;
+        StopMonitorButton.IsEnabled = idle && _monitorInstalled;
+        RecoverButton.IsEnabled = idle;
+        AdvancedApplyButton.IsEnabled = idle;
+        AdvancedRestoreButton.IsEnabled = idle && !paired;
     }
-
+    private void UpdateStreamEditStatus()
+    {
+        if (StreamChangeStatus is null) return;
+        StreamChangeStatus.Text = _bandwidthEdited || _codecEdited || _pendingPreset != null ? "Changes ready to apply" : "Current setup loaded";
+    }
     private void MarkCodecReconnect()
     {
-        CodecReadback.Text = "Codec: Reconnecting";
-        CodecDetail.Text = "Waiting for verified output after the codec switch.";
-        CodecCurrentReadback.Text = "Current encoder: reconnecting";
-        VideoRate.Text = "—";
-        VideoDetail.Text = "Stream reconnecting…";
+        CodecSessionStatus.Text = "Reconnecting SteamVR and the Frame…";
+        CodecReadback.Text = "Codec: Reconnecting"; CodecCurrentReadback.Text = "Current encoder: reconnecting";
+        CodecDetail.Text = "Waiting for verified output."; VideoRate.Text = "—"; VideoDetail.Text = "Reconnecting…";
         _rate.Reset(); _quantizers.Reset();
     }
-
-    private async void SwitchCodec_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
+    private async Task<string> ApplySelectedCodecAsync(string? suppliedPassword = null)
     {
-        if (!double.IsFinite(CodecSessionTargetInput.Value) || CodecSessionTargetInput.Value % 1 != 0)
-            throw new ArgumentException("Use a whole-number codec-session target from 25 to 200 Mbps.");
-        var request = new CodecSwitchRequest((StreamCodec)CodecSelectionInput.SelectedIndex, checked((int)CodecSessionTargetInput.Value), CodecRefreshInput.SelectedIndex == 1 ? 120 : 90);
-        request.Validate();
-        ReadConnectionInputs();
-        var password = CodecPasswordInput.Password;
-        CodecPasswordInput.Password = "";
-        _codecSwitching = true;
-        MarkCodecReconnect();
-        CodecSwitchProgress.IsActive = true;
+        var request = new CodecSwitchRequest(SelectedCodec, checked((int)BitrateInput.Value), CodecRefreshInput.SelectedIndex == 1 ? 120 : 90);
+        request.Validate(); ReadConnectionInputs();
+        var password = suppliedPassword ?? CodecPasswordInput.Password; CodecPasswordInput.Password = "";
+        _codecSwitching = true; MarkCodecReconnect();
         try
         {
             var before = await _probe.GetSnapshotAsync();
             if (before.Installed && !before.PairedCodecTrialPresent) await _probe.StopAsync();
             var status = await _codecController.SwitchAsync(request, _preferences, password, new Progress<CodecServiceStatus>(RenderCodecService));
-            _preferences.RequestedCodec = request.Codec;
-            _preferences.CodecTargetMbps = request.TargetMbps;
-            _preferences.CodecFps = request.Fps;
-            await _preferences.SaveAsync();
-            RenderCodecService(status);
-            _configuredPid = 0;
-            return $"{request.CodecName} codec session is ready. Reconnect the Frame if needed; the dashboard will verify fresh output.";
+            _preferences.RequestedCodec = request.Codec; _preferences.CodecTargetMbps = request.TargetMbps; _preferences.CodecFps = request.Fps;
+            await _preferences.SaveAsync(); RenderCodecService(status); _configuredPid = 0;
+            return $"{request.CodecName} connected. Reopen the game if it closed; Overview verifies fresh output.";
         }
-        finally { password = ""; _codecSwitching = false; CodecSwitchProgress.IsActive = false; }
-    });
-
-    private async void CloseCodec_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
+        finally { password = ""; _codecSwitching = false; }
+    }
+    private async Task EndCodecSessionAsync()
     {
-        _codecSwitching = true;
-        MarkCodecReconnect();
-        CodecSwitchProgress.IsActive = true;
+        _codecSwitching = true; MarkCodecReconnect();
         try
         {
-            var status = await _codecController.CloseAsync(new Progress<CodecServiceStatus>(RenderCodecService));
-            _preferences.RequestedCodec = StreamCodec.Hevc;
-            await _preferences.SaveAsync();
-            CodecSelectionInput.SelectedIndex = 0;
-            RenderCodecService(status);
-            _configuredPid = 0;
-            return "Codec session ended and HEVC restored. The dashboard will confirm the current encoder after reconnecting.";
+            RenderCodecService(await _codecController.CloseAsync(new Progress<CodecServiceStatus>(RenderCodecService)));
+            _preferences.RequestedCodec = StreamCodec.Hevc; await _preferences.SaveAsync(); _configuredPid = 0;
         }
-        finally { _codecSwitching = false; CodecSwitchProgress.IsActive = false; }
-    });
+        finally { _codecSwitching = false; }
+    }
+    private async Task WaitForHevcSettingsAsync()
+    {
+        await OpenVrSettings.WaitUntilAvailableAsync(_paths);
+    }
 }

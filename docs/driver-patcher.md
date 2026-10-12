@@ -1,7 +1,7 @@
 # Driver patcher
 
 The stock Steam Link VR driver caps the video bitrate at **232 Mbps** when a wireless
-adapter is present and **350 Mbps** otherwise. The **Driver patcher** tab raises both
+adapter is present and **350 Mbps** otherwise. The **Patches & Recovery** page raises both
 ceilings to **500 Mbps** and selects **HEVC level 6.2**, which higher bitrates require.
 
 It does not add filler data or guarantee that every scene reaches that bitrate.
@@ -10,7 +10,7 @@ It does not add filler data or guarantee that every scene reaches that bitrate.
 
 1. **Close SteamVR.** Install and restore refuse to run while `vrserver.exe` is running,
    and the check is repeated immediately before the file is replaced.
-2. Click **Inspect driver** to see whether the installed driver is compatible, already
+2. Click **Driver file and verification → Check driver** to see whether the installed driver is compatible, already
    patched, or unsupported.
 3. Click **Install 500 Mbps override**, or **Restore original driver** to undo it.
 

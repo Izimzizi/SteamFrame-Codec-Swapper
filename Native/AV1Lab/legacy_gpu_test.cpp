@@ -26,6 +26,7 @@ int main(int argc,char** argv){
   if(Av1ConfigureLegacyBudget(200000001,200000001,1)==0||Av1ConfigureLegacyBudget(200000000,199999999,1)==0||Av1ConfigureLegacyBudget(200000000,200000000,2)==0)throw std::runtime_error("Budget guard failed");
   const uint32_t average=fixed?target:100000000,peak=fixed?target:115000000;
   if(Av1ConfigureLegacyCodec(3)==0||Av1ConfigureLegacyCodec(h264?2:1))throw std::runtime_error("Codec guard failed");
+  if(h264&&(Av1ConfigureLegacyBudget(500000000,500000000,1)||Av1ConfigureLegacyBudget(500000001,500000001,1)==0))throw std::runtime_error("H.264 budget guard failed");
   if(Av1ConfigureLegacyRate(91)==0||Av1ConfigureLegacyRate(fps))throw std::runtime_error("Rate guard failed");
   if(Av1ConfigureLegacyBudget(average,peak,fixed?1:0))throw std::runtime_error("Budget configuration failed");
   if(Av1CreateLegacyFunctionTable(&api,sizeof(api)-1,100000000,115000000)==0)throw std::runtime_error("Table size guard failed");

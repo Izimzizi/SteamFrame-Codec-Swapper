@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -10,6 +11,7 @@ namespace SteamLinkVRSettings;
 public sealed partial class MainWindow : Window
 {
     private const int PreferredWidth = 1180, PreferredHeight = 940, MinimumWidth = 720, MinimumHeight = 560;
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint window);
     private static string WindowStatePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamLinkVRSettings", "window.json");
 
@@ -55,7 +57,18 @@ public sealed partial class MainWindow : Window
         _currentItem = item;
         var page = item.Tag as string == "settings" ? typeof(SettingsPage) : typeof(FramePage);
         if (ContentFrame.CurrentSourcePageType != page) ContentFrame.Navigate(page);
-        if (ContentFrame.Content is FramePage frame) _framePage = frame;
+        if (ContentFrame.Content is FramePage frame)
+        {
+            if (!ReferenceEquals(_framePage, frame)) frame.SectionRequested += NavigateToSection;
+            _framePage = frame;
+            frame.ShowSection(item.Tag as string ?? "overview");
+        }
+    }
+
+    private void NavigateToSection(string section)
+    {
+        var item = Navigation.MenuItems.Concat(Navigation.FooterMenuItems).OfType<NavigationViewItem>().FirstOrDefault(x => x.Tag as string == section);
+        if (item != null) Navigation.SelectedItem = item;
     }
 
     private void SelectWithoutNavigating(NavigationViewItem? item)
@@ -72,7 +85,7 @@ public sealed partial class MainWindow : Window
         {
             XamlRoot = Content.XamlRoot,
             Title = "Save changes to streaming settings?",
-            Content = "You have unsaved changes in All streaming settings.",
+            Content = "You have unsaved changes in Additional settings.",
             PrimaryButtonText = "Save",
             SecondaryButtonText = "Discard",
             CloseButtonText = "Cancel",
@@ -125,7 +138,9 @@ public sealed partial class MainWindow : Window
 
     private void RestoreWindowSize()
     {
-        int width = PreferredWidth, height = PreferredHeight;
+        var dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var scale = dpi > 0 ? dpi / 96.0 : 1;
+        int width = (int)(PreferredWidth * scale), height = (int)(PreferredHeight * scale);
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(WindowStatePath));
@@ -136,8 +151,8 @@ public sealed partial class MainWindow : Window
 
         // Never open larger than the screen the window lands on (laptops at 125–150% scaling).
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        width = Math.Clamp(width, Math.Min(MinimumWidth, work.Width), work.Width);
-        height = Math.Clamp(height, Math.Min(MinimumHeight, work.Height), work.Height);
+        width = Math.Clamp(width, Math.Min((int)(MinimumWidth * scale), work.Width), work.Width);
+        height = Math.Clamp(height, Math.Min((int)(MinimumHeight * scale), work.Height), work.Height);
         AppWindow.MoveAndResize(new RectInt32(work.X + (work.Width - width) / 2, work.Y + (work.Height - height) / 2, width, height));
     }
 

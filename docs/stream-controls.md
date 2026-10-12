@@ -1,6 +1,6 @@
 # Stream controls and foveation
 
-The **Stream controls** tab sets how SteamVR encodes and sends video to the Frame.
+The **Stream settings** page sets how SteamVR encodes and sends video to the Frame.
 
 ## Bitrate and encoders
 
@@ -31,7 +31,7 @@ not changed it. The dashboard confirms the last configuration NVENC accepted.
 If the stream is inactive or its public ABI is incompatible, reconnecting or updating
 the helper may be necessary. Changing helper versions requires a SteamVR restart.
 Preset selection is separate under [Advanced controls](advanced-controls.md) and
-requires reconnecting; ordinary Stream controls preserve it.
+requires reconnecting; ordinary Stream settings preserve it.
 
 **Stop live monitor** clears the requested encoder policy and requests restoration
 before removing hooks. If an active encoder has not accepted Valve's original policy,
@@ -40,7 +40,7 @@ Closing the app leaves the selected quality/policy in the current SteamVR sessio
 SteamVR exit removes the helper.
 
 **Apply stream controls** leaves `recommendedBandwidthMbit` unchanged. Edit it under
-[All streaming settings](settings-editor.md) if you need to.
+[Additional settings](settings-editor.md) if you need to.
 
 ## How changes are saved
 

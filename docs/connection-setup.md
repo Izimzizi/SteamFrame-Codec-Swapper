@@ -1,7 +1,7 @@
 # Connection setup
 
 Headset link status, receiver diagnostics and USB recovery all talk to the Frame itself.
-Set them up on the **Connection setup** tab.
+Set them up on the **Connection** page.
 
 ## Wireless monitoring (recommended)
 
@@ -11,7 +11,7 @@ Set them up on the **Connection setup** tab.
    - the Frame's wireless hostname or IP address;
    - the paired Devkit private key, by default `%LOCALAPPDATA%\steamos-devkit\devkit_rsa`;
    - an existing, trusted OpenSSH known-hosts file containing the Frame's host key.
-4. Click **Save wireless setup**.
+4. Click **Save and test connection**.
 
 Requirements: the Windows OpenSSH client (`C:\Windows\System32\OpenSSH\ssh.exe`) and Python 3
 on the headset, which SteamOS provides.

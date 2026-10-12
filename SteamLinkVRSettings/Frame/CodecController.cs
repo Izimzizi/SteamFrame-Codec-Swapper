@@ -8,10 +8,15 @@ namespace SteamLinkVRSettings.Frame;
 public sealed record CodecSwitchRequest(StreamCodec Codec, int TargetMbps = 100, int Fps = 90)
 {
     public string CodecName => Codec switch { StreamCodec.Hevc => "HEVC", StreamCodec.Av1 => "AV1", StreamCodec.H264 => "H.264", _ => throw new ArgumentOutOfRangeException(nameof(Codec)) };
+    public static int MaximumMbpsFor(StreamCodec codec) => codec switch
+    {
+        StreamCodec.Av1 => 200, StreamCodec.H264 or StreamCodec.Hevc => 500,
+        _ => throw new ArgumentOutOfRangeException(nameof(codec))
+    };
     public void Validate()
     {
         _ = CodecName;
-        if (TargetMbps is < 25 or > 200) throw new ArgumentOutOfRangeException(nameof(TargetMbps), "Choose a codec-session target from 25 to 200 Mbps.");
+        if (TargetMbps < 25 || TargetMbps > MaximumMbpsFor(Codec)) throw new ArgumentOutOfRangeException(nameof(TargetMbps), $"Choose a {CodecName} target from 25 to {MaximumMbpsFor(Codec)} Mbps.");
         if (Fps is not (90 or 120)) throw new ArgumentOutOfRangeException(nameof(Fps), "Choose 90 or 120 Hz.");
     }
 }
@@ -29,6 +34,7 @@ public sealed record CodecServiceStatus
     [JsonPropertyName("last_result")] public CodecOperationResult? LastResult { get; init; }
     [JsonPropertyName("target_mbps")] public int TargetMbps { get; init; }
     [JsonPropertyName("fps")] public int Fps { get; init; }
+    [JsonPropertyName("maximum_h264_mbps")] public int MaximumH264Mbps { get; init; } = 200;
     [JsonIgnore] public bool Live { get; init; }
     [JsonIgnore] public bool CanStart { get; init; }
     [JsonIgnore] public bool Busy => Live && State is "starting" or "switching";
@@ -76,6 +82,7 @@ public sealed class CodecController
             if (stream.Length > 65536) throw new InvalidDataException("Codec status is too large.");
             var status = JsonSerializer.Deserialize<CodecServiceStatus>(stream) ?? throw new InvalidDataException("Codec status is empty.");
             if (status.ProtocolVersion != 1 || status.OwnerPid <= 0 || !double.IsFinite(status.OwnerCreatedEpoch) || !double.IsFinite(status.UpdatedEpoch) ||
+                status.MaximumH264Mbps is < 25 or > 500 ||
                 status.State is not ("starting" or "switching" or "ready" or "error" or "closed") ||
                 status.ActiveCodec is not ("HEVC" or "AV1" or "H.264" or "Unknown"))
                 throw new InvalidDataException("Codec status is incompatible.");
@@ -103,7 +110,12 @@ public sealed class CodecController
         {
             var status = ReadStatus();
             if (status.Busy) throw new InvalidOperationException("A codec switch is already running. Wait for it to finish.");
-            if (status.Live) return await SendAsync("switch", request, status, progress, cancellationToken).ConfigureAwait(false);
+            if (status.Live)
+            {
+                if (request.Codec == StreamCodec.H264 && request.TargetMbps > status.MaximumH264Mbps)
+                    throw new InvalidOperationException($"The running codec companion only supports H.264 up to {status.MaximumH264Mbps} Mbps. Select HEVC and apply first, then start H.264 again with the updated runtime.");
+                return await SendAsync("switch", request, status, progress, cancellationToken).ConfigureAwait(false);
+            }
             if (!status.CanStart) throw new InvalidOperationException(status.Message);
             ValidateConnection(preferences);
             if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("Enter the Frame user password to start the codec service.");
@@ -140,7 +152,7 @@ public sealed class CodecController
         {
             var status = ReadStatus();
             if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation before restoring HEVC." : status.Message);
-            return await SendAsync("close", new(StreamCodec.Hevc, status.TargetMbps is >= 25 and <= 200 ? status.TargetMbps : 100,
+            return await SendAsync("close", new(StreamCodec.Hevc, status.TargetMbps is >= 25 and <= 500 ? status.TargetMbps : 100,
                 status.Fps is 90 or 120 ? status.Fps : 90), status, progress, cancellationToken).ConfigureAwait(false);
         }
         finally { _operations.Release(); }

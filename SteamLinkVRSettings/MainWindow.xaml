@@ -23,11 +23,23 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </Grid>
 
-        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Top" IsSettingsVisible="False" IsBackButtonVisible="Collapsed" SelectionChanged="Navigation_SelectionChanged">
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Auto" OpenPaneLength="228" ExpandedModeThresholdWidth="1100" CompactModeThresholdWidth="600" IsSettingsVisible="False" IsBackButtonVisible="Collapsed" SelectionChanged="Navigation_SelectionChanged">
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="{StaticResource SteamBlue}" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Steam Frame" Tag="frame" Icon="Play" />
-                <NavigationViewItem Content="All streaming settings" Tag="settings" Icon="Setting" />
+                <NavigationViewItem Content="Overview" Tag="overview" Icon="Home"/>
+                <NavigationViewItem Content="Stream settings" Tag="stream" Icon="Play"/>
+                <NavigationViewItem Content="Diagnostics" Tag="diagnostics" Icon="ShowResults"/>
+                <NavigationViewItem Content="Connection" Tag="connection" Icon="Link"/>
+                <NavigationViewItemSeparator/>
+                <NavigationViewItem Content="Advanced" Tag="advanced" Icon="Setting"/>
+                <NavigationViewItem Content="Patches &amp; Recovery" Tag="tools" Icon="Repair"/>
             </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Additional settings" Tag="settings" Icon="List"/>
+                <NavigationViewItem Content="Back to stock" Tag="stock" Icon="Undo"/>
+            </NavigationView.FooterMenuItems>
             <Frame x:Name="ContentFrame" />
         </NavigationView>
     </Grid>

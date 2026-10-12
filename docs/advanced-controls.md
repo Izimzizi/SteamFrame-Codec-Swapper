@@ -37,7 +37,7 @@ an NVIDIA effective-configuration getter. It separates applied, pending and reje
 override flags. Initialization-only changes, including removing them, remain pending
 until the encoder is destroyed and initialized again. A Frame stop/reconnect can retain
 the host NVENC session, leaving these requests pending. If reconnect does not apply
-them, enable **Reapply after restart** in Stream controls and apply those controls.
+them, enable **Reapply my HEVC encoder and gaze settings** in Advanced and apply those controls.
 Use the Frame's **Restart SteamVR** action as needed to exit its direct VR path, then
 restart PC SteamVR with this app open. Wait for its monitor and requests to arm before
 reconnecting the Frame. A PC-only restart or an ordinary remote stop can leave or

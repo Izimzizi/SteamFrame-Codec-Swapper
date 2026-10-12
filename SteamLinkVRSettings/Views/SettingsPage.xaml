@@ -1,103 +1,16 @@
-<Page
-    x:Class="SteamLinkVRSettings.Views.SettingsPage"
+<Page x:Class="SteamLinkVRSettings.Views.SettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Background="{StaticResource SteamDarkBgBrush}"
-    Loaded="Page_Loaded">
-
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <!-- Header -->
-        <Grid Grid.Row="0" Padding="36,20,36,0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <!-- Title row -->
-            <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Spacing="2">
-                    <TextBlock Text="Steam Link VR Settings"
-                               Style="{StaticResource TitleTextBlockStyle}"
-                               FontWeight="SemiBold" />
-                    <StackPanel Orientation="Horizontal" Spacing="16">
-                        <TextBlock x:Name="HmdInfoText"
-                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock x:Name="GpuInfoText"
-                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- Action buttons -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
-                            VerticalAlignment="Center">
-                    <Button x:Name="SaveButton" Style="{StaticResource AccentButtonStyle}"
-                            Click="SaveButton_Click" IsEnabled="False">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE74E;" FontSize="14" />
-                            <TextBlock Text="Save" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="ResetAllButton" Click="ResetAllButton_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                            <TextBlock Text="Reset All" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="ReloadButton" Click="ReloadButton_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
-                            <TextBlock Text="Reload" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Grid>
-
-            <!-- Status bar -->
-            <InfoBar x:Name="StatusBar" Grid.Row="1"
-                     IsOpen="False" IsClosable="True"
-                     Margin="0,8,0,0" />
-
-            <!-- Unsaved changes bar -->
-            <InfoBar x:Name="UnsavedBar" Grid.Row="2"
-                     IsOpen="False" IsClosable="False"
-                     Severity="Warning"
-                     Margin="0,4,0,0">
-                <InfoBar.Content>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Padding="0,0,0,4">
-                        <TextBlock x:Name="UnsavedText" VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    </StackPanel>
-                </InfoBar.Content>
-            </InfoBar>
-        </Grid>
-
-        <!-- Scrollable settings -->
-        <ScrollViewer Grid.Row="1" Padding="36,12,36,24"
-                      VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="SettingsPanel" Spacing="8" />
-        </ScrollViewer>
-
-        <!-- Loading overlay -->
-        <Grid x:Name="LoadingOverlay" Grid.Row="0" Grid.RowSpan="2"
-              Background="#80000000" Visibility="Visible">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
-                <ProgressRing IsActive="True" Width="48" Height="48" />
-                <TextBlock Text="Loading settings..." HorizontalAlignment="Center"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            </StackPanel>
-        </Grid>
+    FontFamily="Segoe UI Variable Text" Background="{StaticResource SteamDarkBgBrush}" Loaded="Page_Loaded">
+    <Grid Padding="24,18,24,16" RowSpacing="12">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <StackPanel Spacing="4"><TextBlock Text="Additional settings" FontSize="26" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display"/><TextBlock Text="Less common driver options. Stream settings and Advanced contain the guided controls." TextWrapping="Wrap" Foreground="{StaticResource TextFillColorSecondaryBrush}" MaxWidth="700" HorizontalAlignment="Left"/><StackPanel Orientation="Horizontal" Spacing="12"><TextBlock x:Name="HmdInfoText" FontSize="12" Foreground="{StaticResource TextFillColorSecondaryBrush}"/><TextBlock x:Name="GpuInfoText" FontSize="12" Foreground="{StaticResource TextFillColorSecondaryBrush}"/></StackPanel></StackPanel>
+        <StackPanel Grid.Row="1" Spacing="8">
+            <TextBox x:Name="SettingSearch" PlaceholderText="Search by name, setting key or description" TextChanged="SettingSearch_TextChanged"/>
+            <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="SaveButton" Content="Apply changes" Style="{StaticResource SteamActionButtonStyle}" Click="SaveButton_Click" IsEnabled="False"/><Button x:Name="ResetAllButton" Content="Reset additional settings" Click="ResetAllButton_Click"/><Button x:Name="ReloadButton" Content="Reload" Click="ReloadButton_Click"/></StackPanel>
+        </StackPanel>
+        <StackPanel Grid.Row="2" Spacing="6"><InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True"/><InfoBar x:Name="UnsavedBar" IsOpen="False" IsClosable="False" Severity="Informational"><InfoBar.Content><TextBlock x:Name="UnsavedText" Foreground="{StaticResource TextFillColorSecondaryBrush}"/></InfoBar.Content></InfoBar></StackPanel>
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"><StackPanel Spacing="8" Padding="0,0,8,16"><TextBlock x:Name="SearchEmpty" Text="No additional settings match. Common options have their own home in Stream settings or Advanced." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{StaticResource TextFillColorSecondaryBrush}"/><StackPanel x:Name="SettingsPanel" Spacing="8"/></StackPanel></ScrollViewer>
+        <Grid x:Name="LoadingOverlay" Grid.RowSpan="4" Background="{StaticResource SteamDarkBgBrush}" Visibility="Visible"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12"><ProgressRing IsActive="True" Width="32" Height="32"/><TextBlock Text="Loading settings…"/></StackPanel></Grid>
     </Grid>
 </Page>
