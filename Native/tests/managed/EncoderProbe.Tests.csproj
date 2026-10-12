@@ -9,6 +9,7 @@
   <ItemGroup>
     <Content Include="../../build/SteamFrameEncoderProbe.dll" Link="Native/SteamFrameEncoderProbe.dll" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../../SteamLinkVRSettings/Frame/EncoderSnapshot.cs" Link="EncoderSnapshot.cs" />
+    <Compile Include="../../../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
     <Compile Include="../../../SteamLinkVRSettings/Frame/EncoderProbe.cs" Link="EncoderProbe.cs" />
     <Compile Include="../../../SteamLinkVRSettings/Frame/FoveationOffsets.cs" Link="FoveationOffsets.cs" />
   </ItemGroup>

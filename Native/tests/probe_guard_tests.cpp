@@ -9,8 +9,10 @@ int wmain(int argc, wchar_t** argv) {
     const auto start = reinterpret_cast<Export>(GetProcAddress(module, "StartProbe"));
     const auto stop = reinterpret_cast<Export>(GetProcAddress(module, "StopProbe"));
     const auto set = reinterpret_cast<Export>(GetProcAddress(module, "SetQuality"));
-    if (!version || !start || !stop || !set) return 3;
+    const auto policy = reinterpret_cast<Export>(GetProcAddress(module, "SetEncodingPolicy"));
+    if (!version || !start || !stop || !set || !policy) return 3;
     if (version(nullptr) != 1 || start(nullptr) != 1001 || stop(nullptr) != 0 || set(nullptr) != 1008) return 4;
+    if (policy(nullptr) != 1013) return 5;
     // No hooks installed here, so unloading this test host's copy is safe.
     FreeLibrary(module);
     return 0;

@@ -41,8 +41,13 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $stageRoot $requiredXaml))) { throw "Missing compiled UI resource: $requiredXaml" }
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $stageRoot
-    # The README links to the user guides; ship them beside it.
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs') -Destination (Join-Path $stageRoot 'docs') -Recurse
+    # Ship the release guides, keeping development investigations out of the package.
+    $guideRoot = Join-Path $stageRoot 'docs'
+    New-Item -ItemType Directory -Path $guideRoot -Force | Out-Null
+    foreach ($guide in @('advanced-controls.md', 'building.md', 'connection-setup.md', 'driver-patcher.md', 'live-dashboard.md', 'settings-editor.md', 'stream-controls.md')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "docs\$guide") -Destination $guideRoot
+    }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs\images') -Destination (Join-Path $guideRoot 'images') -Recurse
     if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'CHANGELOG.md')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'CHANGELOG.md') -Destination $stageRoot }
     $licenseRoot = Join-Path $stageRoot 'Licenses'
     New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null

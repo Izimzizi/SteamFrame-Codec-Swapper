@@ -5,10 +5,11 @@ using System.Text;
 namespace SteamLinkVRSettings.Frame;
 
 // Uses Valve's installed loader; no OpenVR binary is redistributed.
-public static class OpenVrSettings
+public static partial class OpenVrSettings
 {
     private static readonly object Gate = new();
     private const string Section = "driver_vrlink";
+    internal const int TemporaryPowerTimeout = 3600;
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint Init(ref int error, int appType, nint startupInfo);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void Shutdown();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate nint Interface([MarshalAs(UnmanagedType.LPStr)] string version, ref int error);
@@ -83,18 +84,79 @@ public static class OpenVrSettings
         {
             int error = 0;
             Function<RemoveKey>(table, 10)(Section, key, ref error);
-            Check(error, "Remove " + key);
+            if (error != 5) Check(error, "Remove " + key); // Missing already means Valve default/fallback.
         }
         return true;
     });
 
-    public static (double Target, bool Automatic, bool MultipleLinks) Read(SteamPaths paths) => Session(paths, table =>
+    public static (double Target, bool Automatic, bool MultipleLinks, int StreamWidth, bool AutomaticWidth) Read(SteamPaths paths) => Session(paths, table =>
     {
         int error = 0;
         var target = Function<GetFloat>(table, 7)(Section, "targetBandwidth", ref error); Check(error, "Read target");
         var automatic = Function<GetBool>(table, 5)(Section, "automaticBandwidth", ref error); Check(error, "Read automatic bandwidth");
         var multiple = Function<GetBool>(table, 5)(Section, "allowMultipleLinks", ref error); Check(error, "Read multiple links");
-        return ((double)target, automatic, multiple);
+        var width = Function<GetInt>(table, 6)(Section, "streamFormatWidth", ref error); Check(error, "Read stream width");
+        var automaticWidth = Function<GetBool>(table, 5)(Section, "automaticStreamFormatWidth", ref error); Check(error, "Read automatic stream width");
+        return ((double)target, automatic, multiple, width, automaticWidth);
+    });
+
+
+    /// <summary>Explicitly asks Valve to reconfigure, preserving the latest target and every other stream setting.</summary>
+    public static void RefreshEncoder(SteamPaths paths) => Session(paths, table =>
+    {
+        double ReadTarget()
+        {
+            int error = 0;
+            var value = Function<GetFloat>(table, 7)(Section, "targetBandwidth", ref error);
+            Check(error, "Read current target"); return value;
+        }
+        void WriteTarget(double value)
+        {
+            int error = 0;
+            Function<SetFloat>(table, 3)(Section, "targetBandwidth", (float)value, ref error);
+            Check(error, "Refresh encoder target");
+        }
+        RefreshTarget(ReadTarget, WriteTarget, () => Thread.Sleep(400));
+        return true;
+    });
+
+    internal static void RefreshTarget(Func<double> read, Action<double> write, Action wait)
+    {
+        var original = read();
+        if (!double.IsFinite(original) || original < 25 || original > 500)
+            throw new InvalidOperationException("The live target is outside 25–500 Mbps. Reconnect to apply the encoder policy.");
+        var temporary = original >= 500 ? original - 1 : original + 1;
+        try { write(temporary); wait(); }
+        finally
+        {
+            // A different app or the user may have changed the target during the
+            // refresh. Restore only the value this operation actually set.
+            if (Math.Abs(read() - temporary) < 0.01) write(original);
+        }
+    }
+
+    internal static (bool Pause, int Timeout) ReadPower(SteamPaths paths) => Session(paths, table =>
+    {
+        int error = 0;
+        var pause = Function<GetBool>(table, 5)("power", "pauseCompositorOnStandby", ref error); Check(error, "Read standby pause");
+        var timeout = Function<GetInt>(table, 6)("power", "turnOffScreensTimeout", ref error); Check(error, "Read screen timeout");
+        return (pause, timeout);
+    });
+    internal static void WritePower(SteamPaths paths, bool? pause, int? timeout) => Session(paths, table =>
+    {
+        int error = 0;
+        if (pause is bool b) { Function<SetBool>(table, 1)("power", "pauseCompositorOnStandby", b, ref error); Check(error, "Set standby pause"); }
+        if (timeout is int i) { Function<SetInt>(table, 2)("power", "turnOffScreensTimeout", i, ref error); Check(error, "Set screen timeout"); }
+        return true;
+    });
+    internal static void RestorePower(SteamPaths paths, bool originalPause, int originalTimeout) => Session(paths, table =>
+    {
+        int error = 0;
+        var pause = Function<GetBool>(table, 5)("power", "pauseCompositorOnStandby", ref error); Check(error, "Read standby pause before restore");
+        if (!pause) { Function<SetBool>(table, 1)("power", "pauseCompositorOnStandby", originalPause, ref error); Check(error, "Restore standby pause"); }
+        var timeout = Function<GetInt>(table, 6)("power", "turnOffScreensTimeout", ref error); Check(error, "Read screen timeout before restore");
+        if (timeout == TemporaryPowerTimeout) { Function<SetInt>(table, 2)("power", "turnOffScreensTimeout", originalTimeout, ref error); Check(error, "Restore screen timeout"); }
+        return true;
     });
     private static T Function<T>(nint table, int index) where T : Delegate => Marshal.GetDelegateForFunctionPointer<T>(Marshal.ReadIntPtr(table, index * IntPtr.Size));
     private static void Check(int error, string operation) { if (error != 0) throw new IOException($"{operation} failed (OpenVR settings error {error})."); }

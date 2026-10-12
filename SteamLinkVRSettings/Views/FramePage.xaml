@@ -68,6 +68,18 @@
                         <TextBlock x:Name="QualityReadback" Text="Foveation: Valve defaults" Style="{StaticResource Hint}"/>
                         <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
                             <StackPanel Spacing="8">
+                                <TextBlock Text="Encoder quality and policy" FontSize="18" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="PolicyRequestedReadback" Text="Requested policy: Valve defaults" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="PolicyAppliedReadback" Text="Accepted NVENC configuration: waiting for a verified initialize/reconfigure call" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="QuantizerReadback" Text="Whole-frame QP: unavailable" Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="CenterMapReadback" Text="Gaze map deltas: unavailable" Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="AdvancedLiveReadback" Text="Advanced encoder configuration: updated helper required" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="CallbackTimingReadback" Text="Encoder API duration: unavailable" Style="{StaticResource Hint}"/>
+                                <TextBlock Text="QP here describes the whole encoded frame; lower usually means less quantization. Gaze tile deltas are a relative bias, not an absolute center QP. Requested settings are confirmed only after NVENC accepts a configuration." Style="{StaticResource Hint}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
+                            <StackPanel Spacing="8">
                                 <Grid>
                                     <TextBlock Text="Streaming issue capture" FontSize="18" FontWeight="SemiBold"/>
                                     <Button Content="Open capture folder" HorizontalAlignment="Right" Click="OpenCaptureFolder_Click"/>
@@ -118,27 +130,90 @@
                         </StackPanel>
                         <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
                         <StackPanel Spacing="10">
-                            <TextBlock Text="Gaze and peripheral quality" FontSize="22" FontWeight="SemiBold"/>
-                            <TextBlock Text="Bias Valve's existing gaze-tracked foveation map. Negative values improve quality; positive values reduce detail and free encoding budget. This is a quality preference, not a guaranteed minimum bitrate." Style="{StaticResource Hint}"/>
-                            <ToggleSwitch x:Name="QualityInput" Header="Custom foveation bias" OnContent="Apply the offsets below" OffContent="Keep Valve's quality map"/>
-                            <Grid ColumnSpacing="20">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <controls:NoWheelNumberBox x:Name="GazeInput" Header="Where you are looking (QP offset)" Minimum="-20" Maximum="12" SmallChange="1" Value="-4" SpinButtonPlacementMode="Compact"/>
-                                <controls:NoWheelNumberBox x:Name="PeripheralInput" Grid.Column="1" Header="Outside your gaze (QP offset)" Minimum="-12" Maximum="31" SmallChange="1" Value="8" SpinButtonPlacementMode="Compact"/>
-                            </Grid>
-                            <TextBlock Text="Peripheral offsets above +12 are aggressive. +31 is the strongest available bias and can make peripheral detail very coarse; gaze quality uses its separate offset." Style="{StaticResource Hint}"/>
-                            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Quality focus: −4 / +8" Click="QualityPreset_Click"/><Button Content="Valve defaults" Click="QualityDefault_Click"/></StackPanel>
-                            <CheckBox x:Name="ReapplyInput" Content="Restart the monitor and reapply my bias after SteamVR restarts, while this app is open"/>
+                            <TextBlock Text="Resolution and encoding" FontSize="22" FontWeight="SemiBold"/>
+                            <controls:NoWheelNumberBox x:Name="StreamWidthInput" Header="Stream format width (pixels)" Minimum="512" Maximum="4096" SmallChange="128" LargeChange="256" Value="1536" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
+                            <ToggleSwitch x:Name="AutomaticWidthInput" Header="Automatic stream width" OnContent="Valve chooses the width" OffContent="Request the width above" Toggled="Bandwidth_Toggled"/>
+                            <TextBlock Text="A larger width can preserve center detail but increases encoder and decoder work. Width changes may require reconnecting. The dashboard reports actual NVENC dimensions, which may differ from this foveated stream-format setting." Style="{StaticResource Hint}"/>
+                            <ComboBox x:Name="RateControlInput" Header="NVENC rate control (experimental)" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="Valve default"/>
+                                <ComboBoxItem Content="VBR"/>
+                                <ComboBoxItem Content="CBR without filler or padding"/>
+                            </ComboBox>
+                            <ComboBox x:Name="MultiPassInput" Header="NVENC encoding passes (experimental)" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="Valve default"/>
+                                <ComboBoxItem Content="Single pass"/>
+                                <ComboBoxItem Content="Quarter-resolution multipass"/>
+                            </ComboBox>
+                            <TextBlock Text="CBR aims at the target and may still use less in simple scenes. Padding would only inflate traffic, so it is disabled. Multipass may improve encoding efficiency but can add latency or stutter. These controls preserve Valve's preset, frame rate, GOP, lookahead and decoder-buffer settings." Style="{StaticResource Hint}"/>
+                            <TextBlock Text="Applying a policy briefly refreshes the current bitrate target to request reconfiguration. An inactive or incompatible stream may require reconnecting. Updating the helper requires a SteamVR restart; the app never replaces a helper in a running process." Style="{StaticResource Hint}"/>
                         </StackPanel>
                         <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
                         <StackPanel Spacing="10">
-                            <TextBlock Text="Wired streaming" FontSize="22" FontWeight="SemiBold"/>
-                            <ToggleSwitch x:Name="MultipleLinksInput" Header="Allow the USB cable to join an existing stream" OnContent="Use all available links" OffContent="Only the first link is used" IsOn="True" Toggled="Bandwidth_Toggled"/>
-                            <TextBlock Text="Keep Wi-Fi enabled on the Frame for discovery and connection. This setting allows SteamVR to add the cable; the dashboard confirms whether USB is active. It does not force an exclusive wired route." Style="{StaticResource Hint}"/>
-                            <TextBlock Text="USB stalls can still occur. Our measured USB 2 connection carried about 318–325 Mbps of UDP payload; raising the driver's ceiling does not increase the cable's capacity." Style="{StaticResource Hint}"/>
+                            <TextBlock Text="Gaze and peripheral quality" FontSize="22" FontWeight="SemiBold"/>
+                            <TextBlock Text="Bias Valve's existing gaze-tracked foveation map. Negative values improve quality; positive values reduce detail and free encoding budget. This is a quality preference, not a guaranteed minimum bitrate." Style="{StaticResource Hint}"/>
+                            <ToggleSwitch x:Name="QualityInput" Header="Custom foveation bias" OnContent="Apply the offsets below" OffContent="Keep Valve's quality map" Toggled="Bandwidth_Toggled"/>
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <controls:NoWheelNumberBox x:Name="GazeInput" Header="Where you are looking (QP offset)" Minimum="-20" Maximum="12" SmallChange="1" Value="-4" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
+                                <controls:NoWheelNumberBox x:Name="PeripheralInput" Grid.Column="1" Header="Outside your gaze (QP offset)" Minimum="-12" Maximum="31" SmallChange="1" Value="8" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged"/>
+                            </Grid>
+                            <TextBlock Text="Peripheral offsets above +12 are aggressive. +31 is the strongest available bias and can make peripheral detail very coarse; gaze quality uses its separate offset." Style="{StaticResource Hint}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Quality focus: −4 / +8" Click="QualityPreset_Click"/><Button Content="Valve defaults" Click="QualityDefault_Click"/></StackPanel>
+                            <CheckBox x:Name="ReapplyInput" Content="Restart the monitor and reapply my foveation, encoding policy and advanced requests after SteamVR restarts, while this app is open" Checked="Bandwidth_Toggled" Unchecked="Bandwidth_Toggled"/>
+                        </StackPanel>
+                        <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Streaming links" FontSize="22" FontWeight="SemiBold"/>
+                            <ToggleSwitch x:Name="MultipleLinksInput" Header="Allow additional streaming links" OnContent="Valve may use available links together" OffContent="Use the first link only" IsOn="False" Toggled="Bandwidth_Toggled"/>
+                            <TextBlock Text="Keep Wi-Fi enabled for discovery and the dedicated wireless dongle. This permits available dongle, local-network or USB links; it does not guarantee combined throughput. The dashboard confirms which links the headset reports active, with per-link latency and loss." Style="{StaticResource Hint}"/>
                         </StackPanel>
                         <Button x:Name="ApplyButton" Content="Apply stream controls" Style="{StaticResource AccentButtonStyle}" Click="Apply_Click"/>
                         <TextBlock Text="With SteamVR running, controls are written through its live settings API. With SteamVR stopped, they are saved for the next session. Foveation bias requires an active supported NVENC session." Style="{StaticResource Hint}"/>
+                        <Border Height="1" Background="{StaticResource SteamBorderBrush}"/>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Temporary diagnostics" FontSize="22" FontWeight="SemiBold"/>
+                            <ToggleSwitch x:Name="KeepAwakeInput" Header="Keep SteamVR awake for an unattended test" OnContent="Temporary one-hour screen timeout; compositor keeps running" OffContent="Original power settings" Toggled="KeepAwake_Toggled"/>
+                            <TextBlock Text="Use while the Frame is powered on for a test. This changes only SteamVR's standby pause and screen timeout; it does not control the headset's Wi-Fi or privacy sensors. Original values are saved before changing them and restored on disable or app close. If SteamVR is stopped or the app crashes, the saved lease is recovered when the app and SteamVR are next running. Newer differing power settings are preserved." Style="{StaticResource Hint}"/>
+                            <TextBlock x:Name="PowerLeaseStatus" Text="No temporary power lease" Style="{StaticResource Hint}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+            <PivotItem Header="Advanced controls">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="18" Padding="0,14,12,20" MaxWidth="1080" HorizontalAlignment="Left">
+                        <TextBlock Text="Advanced stream experiments" FontSize="22" FontWeight="SemiBold"/>
+                        <TextBlock Text="Override only the values you want to test. Unchecked values preserve Valve's defaults. Accepted API settings and encoder configurations appear below; compare actual picture quality, frame timing and receiver events before keeping a change." Style="{StaticResource Hint}"/>
+                        <TextBlock x:Name="AdvancedCapabilityStatus" Text="Checking the native helper…" TextWrapping="Wrap"/>
+                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Encoder quality and buffering" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock Text="CQ, max QP, peak bitrate and VBV are live experiments. Chroma offsets, AQ and preset changes require reconnecting. CQ uses VBR; none of these settings guarantees center quality or a minimum useful bitrate." Style="{StaticResource Hint}"/>
+                                <TextBlock Text="A Frame reconnect can preserve the host encoder session. If initialization-only changes stay pending, enable Reapply after restart and apply Stream controls. Use Restart SteamVR on the Frame as needed, then restart PC SteamVR with this app open. Wait for the monitor/requests to arm before reconnecting the Frame." Style="{StaticResource Hint}"/>
+                                <StackPanel x:Name="AdvancedEncoderHost" Spacing="16"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Driver resolution and sending" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock Text="OpenVR readback confirms the requested setting. A consumer may apply it after reconnecting. An unset key is shown as a driver fallback, never as an observed zero." Style="{StaticResource Hint}"/>
+                                <StackPanel x:Name="AdvancedDriverHost" Spacing="16"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="AdvancedApplyButton" Content="Apply advanced controls" Style="{StaticResource AccentButtonStyle}" Click="ApplyAdvanced_Click"/>
+                            <Button x:Name="AdvancedRestoreButton" Content="Restore advanced Valve defaults" Click="RestoreAdvanced_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="AdvancedRequestedReadback" Text="Requested advanced encoding: Valve defaults" IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="AdvancedAcceptedReadback" Text="Last successfully submitted configuration: not yet observed" IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
+                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="8" Padding="20,16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Capabilities still under research" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock Text="Foveation geometry: gaze/periphery QP bias is supported in Stream controls; changing region radius or transition packing needs matching host and receiver support." Style="{StaticResource Hint}"/>
+                                <TextBlock Text="Split-frame encoding: the installed driver uses an older NVENC ABI and actual engine participation has not been established. No split-frame override is applied." Style="{StaticResource Hint}"/>
+                                <TextBlock Text="Decoder buffers and display delay: no safe accepted runtime control has been established. Buffer count is not queued-frame latency; the client already requests zero display delay." Style="{StaticResource Hint}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </PivotItem>

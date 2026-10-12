@@ -6,7 +6,7 @@ records streaming faults with timestamps.
 ## Starting the monitor
 
 Click **Start live monitor** during an NVIDIA-encoded stream. Encoded bitrate appears after
-two samples. **Stop live monitor** stops measuring and turns custom foveation off.
+two samples. **Stop live monitor** restores Valve's encoder policy and foveation before stopping.
 
 The monitor is opt-in: opening the app never loads anything into SteamVR. It checks the
 running driver's encoder layout first and refuses incompatible builds. If an identical
@@ -25,6 +25,11 @@ If **Start live monitor** keeps failing while SteamVR is running, the status bar
 | Active adapter send / stream adapters | Windows counters for the Valve wireless dongle and USB NCM adapters. Includes overhead, FEC and other traffic, so it is not the encoded video bitrate. The graph only uses an adapter that uniquely matches a headset-confirmed active link. |
 | Video path / headset links | The Frame's own active-link status over paired wireless SSH, or ADB when no wireless host is set. Distinguishes dedicated wireless, local network and USB. |
 | Foveation | The helper's current offsets and how many frames it changed. |
+| Requested NVENC policy / last accepted configuration | Requested hook settings versus the last successfully accepted, exact-ABI initialize/reconfigure call. Shows actual rate-control mode, pass mode, preset, encoder target, dimensions, fps, VBV and padding. A pending request is not labeled applied. |
+| Whole-frame QP | Interval mean and last-frame NVENC QP metadata, not the gaze region's absolute QP. Missing/new-generation samples are unavailable. |
+| Gaze map deltas | Last verified center changed/total tiles, effective delta range and clamp counts; outside-gaze saturation and protected-tile mismatches. These are relative quality-map deltas. |
+| Advanced encoder configuration | Requested/applied/pending/rejected flags and last successful submitted CQ, maximum QPs, chroma/AQ, preset, peak/VBV and bit depth. This is API submission metadata, not an NVIDIA effective-config getter. |
+| Encoder API durations | Mean/max and calls over 2 ms since monitor start for reconfigure/encode. Submit-to-output completion includes encoder/queue/lock time, excludes network and headset decoder. |
 | PC presentation / GPU timing | Public OpenVR compositor counters and recent frame timings: dropped, reprojected and timed-out presentations on the PC. These are separate from headset receiver faults and reset with each SteamVR or scene session. |
 
 The graph keeps 60 seconds. Missing, stopped, unsupported or stale samples appear as gaps,

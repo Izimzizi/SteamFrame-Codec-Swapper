@@ -106,6 +106,16 @@ public sealed partial class MainWindow : Window
             _closeApproved = true;
             Close();
         }
+        catch (Exception error)
+        {
+            await new ContentDialog
+            {
+                XamlRoot = Content.XamlRoot,
+                Title = "Could not finish closing",
+                Content = error.Message + " The window remains open so you can retry.",
+                CloseButtonText = "OK"
+            }.ShowAsync();
+        }
         finally
         {
             _closing = false;

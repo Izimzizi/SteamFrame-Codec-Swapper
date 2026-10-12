@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 — Advanced streaming controls
+
+- Added advanced encoder controls for fractional VBR quality target, maximum QP,
+  peak bitrate, VBV buffer/delay, chroma offsets, spatial/temporal AQ and P1–P7 presets.
+- Added typed driver controls for stream width bounds, foveation mode, pooling,
+  asynchronous start/send, 10-bit, sharpening, timed retry, FEC, QoS and backoff recovery.
+- Added requested, accepted, pending and rejected encoder readbacks, bit depth,
+  whole-frame QP and encoder callback timing to the live dashboard.
+- Added live VBR/CBR and encoding-pass experiments, wider gaze-bias controls and
+  temporary test power settings with restoration.
+- Preserved Valve defaults for unchecked overrides, validated capabilities and
+  buffer/width limits, and kept explicit retries separate from monitor polling.
+- Improved initialization-only reapplication after SteamVR restart and preserved
+  edits made while Apply is running.
+- Removed the codec research notice from the app. Portable releases include user
+  guides and omit development investigation documents.
+
 ## 1.0.0 — Steam Frame edition
 
 First release of the Steam Frame edition.

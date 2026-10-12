@@ -26,6 +26,45 @@ changes or moved functions can therefore work without an app update. A changed o
 ambiguous private layout leaves telemetry available and rejects quality activation;
 future NVENC ABI changes can require an update.
 
+Optional encoding-policy controls hook public `NvEncInitializeEncoder` and
+`NvEncReconfigureEncoder` function pointers discovered through the API 11.1 function
+list. The caller must belong to Valve's executable sections and parameter/config
+versions must match the vendored public declarations exactly. Synchronous calls use
+copied parameter/config structs; caller memory is preserved. Rate-control and multipass
+change only when selected. Custom CBR disables codec filler and picture-timing SEI that
+can request HRD padding. The separate advanced controls selectively override CQ,
+maximum QP, peak bitrate, VBV, chroma-QP offsets and AQ. An explicit peak also bounds
+Valve's transient per-frame average so the submitted average never exceeds that peak.
+GOP, frame rate, lookahead, references and resource formats remain preserved. Default calls pass through unchanged. Unknown ABI
+and unrelated callers pass through without modification. Failed calls never become
+accepted-policy telemetry.
+
+`SetAdvancedEncoding` uses a fixed 64-byte/version-1 little-endian contract. Missing
+overrides preserve Valve values; zero can be an explicit setting such as automatic CQ.
+Custom VBV, temporal AQ and dynamic bitrate/RC changes are capability checked. Chroma,
+AQ and presets are initialization-only; pending changes never mutate an existing
+session's initialized bundle. Presets use a matching codec/tuning query and GUID, a
+small whole-field quality whitelist, and preserve Valve's codec/layout/latency policy.
+The active preset snapshot is immutable across later pending preset queries.
+Rejected experiments retain the original caller configuration as fallback and block
+that request until a new explicit Apply. Accepted metadata is the successful submitted
+configuration, not an NVIDIA effective-config query or proof of visual improvement.
+
+Explicit Start can arm callbacks before the first session by loading the installed
+NVIDIA API from System32 only. Obtaining its public function table creates no encode
+session or GPU resource. Initialization-only overrides must be armed before reconnect.
+Stop retains restoration hooks while an initialized custom bundle remains active;
+disconnect/reconnect restores that bundle when the request has been cleared.
+Callback timing counters include reconfiguration, encoding and submission-to-bitstream
+completion. Completion includes encoder/queue/lock work, not network or headset decode.
+
+Policy readback reports a request separately from the last successful accepted
+configuration. SetEncodingPolicy does not itself call NVENC or guarantee a minimum
+video rate. Stop clears the request and refuses to disable hooks until all tracked
+live custom-policy encoders have accepted a default configuration or been destroyed.
+The managed explicit Apply/Stop path asks Valve to reconfigure through its settings
+API while preserving the latest bitrate target. Read-only polling does not do so.
+
 Quality changes use Valve's fresh map on every submission. Consecutive map quarters
 are gaze/periphery/gaze/periphery. Values of 31 and the timing tile remain unchanged.
 Gaze offsets are limited to -20 through 12, peripheral offsets to -12 through 31,

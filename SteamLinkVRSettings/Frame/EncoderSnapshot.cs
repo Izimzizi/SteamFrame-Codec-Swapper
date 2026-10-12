@@ -29,9 +29,57 @@ public sealed record EncoderSnapshot
     public ulong QuantizerSum { get; init; }
     public uint? LastFrameQp { get; init; }
     public uint? LastFrameBytes { get; init; }
+    public EncodingPolicySnapshot? EncodingPolicy { get; init; }
+    public AdvancedEncodingSnapshot? AdvancedEncoding { get; init; }
+    public EncoderCallbackTiming? CallbackTiming { get; init; }
     public uint LastNvencStatus { get; init; }
     public string Codec { get; init; } = "Unknown";
+    public uint? BitDepth { get; init; }
     public string Message { get; init; } = "Encoder monitoring has not started.";
+}
+
+public enum EncoderRateControl { ValveDefault, Vbr, Cbr }
+public enum EncoderMultiPass { ValveDefault, SinglePass, QuarterResolution }
+
+/// <summary>Only explicit public NVENC policy fields. Zero leaves Valve's configuration unchanged.</summary>
+public sealed record EncodingPolicy(EncoderRateControl RateControl = EncoderRateControl.ValveDefault,
+    EncoderMultiPass MultiPass = EncoderMultiPass.ValveDefault)
+{
+    public uint Packed => IsValid ? (uint)RateControl | ((uint)MultiPass << 2) : throw new ArgumentOutOfRangeException(nameof(RateControl));
+    public bool IsValid => Enum.IsDefined(RateControl) && Enum.IsDefined(MultiPass);
+    public bool IsDefault => Packed == 0;
+    public string Description => $"{RateControl switch { EncoderRateControl.Vbr => "VBR", EncoderRateControl.Cbr => "CBR without padding", _ => "Valve rate control" }} / {MultiPass switch { EncoderMultiPass.SinglePass => "single pass", EncoderMultiPass.QuarterResolution => "quarter-resolution multipass", _ => "Valve multipass" }}";
+    public static EncodingPolicy FromPacked(uint packed)
+    {
+        var policy = new EncodingPolicy((EncoderRateControl)(packed & 3), (EncoderMultiPass)((packed >> 2) & 3));
+        if ((packed & ~15u) != 0 || !policy.IsValid) throw new ArgumentOutOfRangeException(nameof(packed));
+        return policy;
+    }
+}
+
+/// <summary>Last configuration accepted by a verified initialize/reconfigure API call, never inferred from the request.</summary>
+public sealed record EncodingPolicySnapshot
+{
+    public EncodingPolicy Requested { get; init; } = new();
+    public EncodingPolicy Applied { get; init; } = new();
+    public bool Observed { get; init; }
+    public uint RateControl { get; init; }
+    public uint MultiPass { get; init; }
+    public uint AverageBitrate { get; init; }
+    public uint MaxBitrate { get; init; }
+    public uint VbvSize { get; init; }
+    public uint VbvDelay { get; init; }
+    public uint Width { get; init; }
+    public uint Height { get; init; }
+    public uint FrameRateNum { get; init; }
+    public uint FrameRateDen { get; init; }
+    public bool Filler { get; init; }
+    public string Preset { get; init; } = "Unknown";
+    public ulong Calls { get; init; }
+    public ulong Errors { get; init; }
+    public ulong RejectedCalls { get; init; }
+    public string RateControlName => RateControl switch { 0 => "constant QP", 1 => "VBR", 2 => "CBR", _ => $"mode {RateControl}" };
+    public string MultiPassName => MultiPass switch { 0 => "single pass", 1 => "quarter-resolution multipass", 2 => "full-resolution multipass", _ => $"mode {MultiPass}" };
 }
 
 /// <summary>Metadata for the last validated map submitted to NVENC. Deltas are not absolute codec QPs.</summary>

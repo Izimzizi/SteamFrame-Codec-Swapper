@@ -9,6 +9,8 @@
   <ItemGroup>
     <Compile Include="../../SteamLinkVRSettings/Frame/FrameReceiverDiagnostics.cs" Link="FrameReceiverDiagnostics.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/FramePreferences.cs" Link="FramePreferences.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/EncoderSnapshot.cs" Link="EncoderSnapshot.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

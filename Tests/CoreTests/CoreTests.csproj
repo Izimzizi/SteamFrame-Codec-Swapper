@@ -10,6 +10,12 @@
     <Compile Include="../../SteamLinkVRSettings/Frame/RateTracker.cs" Link="RateTracker.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/SteamPaths.cs" Link="SteamPaths.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/FramePreferences.cs" Link="FramePreferences.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/EncoderSnapshot.cs" Link="EncoderSnapshot.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/AdvancedDriverSettings.cs" Link="AdvancedDriverSettings.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.Advanced.cs" Link="OpenVrSettings.Advanced.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/QuantizerTracker.cs" Link="QuantizerTracker.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/TemporaryPowerLease.cs" Link="TemporaryPowerLease.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/FrameTransport.cs" Link="FrameTransport.cs" />
     <Compile Include="../../SteamLinkVRSettings/Services/SettingsService.cs" Link="SettingsService.cs" />
   </ItemGroup>

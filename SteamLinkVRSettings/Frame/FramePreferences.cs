@@ -13,6 +13,9 @@ public sealed class FramePreferences
     public int PeripheralOffset { get; set; } = 8;
     public bool QualityEnabled { get; set; }
     public bool ReapplyAfterRestart { get; set; }
+    public EncoderRateControl RateControl { get; set; }
+    public EncoderMultiPass MultiPass { get; set; }
+    public AdvancedEncoding AdvancedEncoding { get; set; } = new();
     private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamLinkVRSettings", "frame.json");
     public static FramePreferences Load(string? path = null)
     {

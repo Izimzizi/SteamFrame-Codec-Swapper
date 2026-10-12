@@ -69,6 +69,8 @@ public sealed class EncoderProbe
                 return new() { ProcessId = process.Id, Supported = true,
                     Message = "The loaded encoder helper protocol was not validated. Restart SteamVR before monitoring." };
             }
+            if (supported && loaded is not null) return new() { ProcessId = process.Id, Supported = true,
+                Message = "An older encoder helper is loaded. Restart SteamVR to use this app's current monitoring and advanced controls." };
             return new() { ProcessId = process.Id, Supported = supported, Message = supported
                 ? "Select Start to monitor actual NVENC output. Other encoders provide transport statistics only."
                 : "This driver has an incompatible encoder layout; monitoring was not installed." };
@@ -173,6 +175,43 @@ public sealed class EncoderProbe
         if (result != 0) return ReadSnapshot(process, modules, _session) with { Message = NativeError(result) };
         return ReadSnapshot(process, modules, _session) with { Message = "Monitoring stopped and Valve's original quality map restored. The helper remains loaded until SteamVR exits." };
     });
+
+    /// <summary>Explicit request only; polling never arms a policy or nudges stream settings.</summary>
+    public Task<EncoderSnapshot> SetEncodingPolicyAsync(EncodingPolicy policy)
+    {
+        var packed = policy.Packed;
+        return RunAsync(() =>
+        {
+            if (_session is null) return new() { Message = "Start encoder monitoring before changing NVENC policy." };
+            EnsureSessionResponsive();
+            using var process = Process.GetProcessById(_session.ProcessId);
+            var modules = ReadModules(process);
+            using var handle = OpenTarget(process.Id);
+            ValidateIdentity(handle, _session.CreationTime);
+            var result = Invoke(handle, Address(FindHelper(modules, _session), _session.Exports, "SetEncodingPolicy"), (nint)packed);
+            var snapshot = ReadSnapshot(process, modules, _session);
+            return result == 0 ? snapshot : snapshot with { Message = NativeError(result) };
+        });
+    }
+
+    public Task<EncoderSnapshot> SetAdvancedEncodingAsync(AdvancedEncoding settings)
+    {
+        var bytes = settings.ToNativeBytes();
+        return RunAsync(() =>
+        {
+            if (_session is null) return new() { Message = "Start the updated encoder monitor before changing advanced encoding." };
+            EnsureSessionResponsive();
+            using var process = Process.GetProcessById(_session.ProcessId);
+            var modules = ReadModules(process);
+            if (!_session.Exports.ContainsKey("SetAdvancedEncoding")) return ReadSnapshot(process, modules, _session) with
+                { Message = "This loaded helper does not support advanced encoding. Restart SteamVR after updating the app." };
+            using var handle = OpenTarget(process.Id);
+            ValidateIdentity(handle, _session.CreationTime);
+            var result = Invoke(handle, Address(FindHelper(modules, _session), _session.Exports, "SetAdvancedEncoding"), bytes);
+            var snapshot = ReadSnapshot(process, modules, _session);
+            return result == 0 ? snapshot : snapshot with { Message = NativeError(result) };
+        });
+    }
 
     private async Task<EncoderSnapshot> RunAsync(Func<EncoderSnapshot> operation)
     {
@@ -281,12 +320,87 @@ public sealed class EncoderProbe
             QuantizerSum = json.TryGetProperty("quantizer_sum", out var qpSum) ? qpSum.GetUInt64() : 0,
             LastFrameQp = json.TryGetProperty("last_frame_qp", out var lastQp) ? lastQp.GetUInt32() : null,
             LastFrameBytes = json.TryGetProperty("last_frame_bytes", out var frameBytes) ? frameBytes.GetUInt32() : null,
+            EncodingPolicy = ReadEncodingPolicy(json),
+            AdvancedEncoding = ReadAdvancedEncoding(json), CallbackTiming = ReadCallbackTiming(json),
             LastNvencStatus = json.GetProperty("last_nvenc_status").GetUInt32(), Codec = codec,
+            BitDepth = json.TryGetProperty("bit_depth", out var bitDepth) ? bitDepth.GetUInt32() : null,
             RejectedApiCalls = json.TryGetProperty("rejected_api_calls", out var rejected) ? rejected.GetUInt64() : 0,
             Message = !installed ? "Encoder monitoring is stopped." : active ? $"Measuring actual {codec} video output; transport overhead is excluded."
                 : json.TryGetProperty("rejected_api_calls", out var invalidApi) && invalidApi.GetUInt64() > 0
                     ? "This stream uses an incompatible NVENC structure version; video measurements are unavailable."
                     : "Waiting for NVENC encoded frames. Other encoders provide transport statistics only."
+        };
+    }
+
+    private static EncodingPolicySnapshot? ReadEncodingPolicy(JsonElement json)
+    {
+        if (!json.TryGetProperty("requested_encoding_policy", out var requested)) return null;
+        return new()
+        {
+            Requested = Frame.EncodingPolicy.FromPacked(requested.GetUInt32()),
+            Applied = Frame.EncodingPolicy.FromPacked(json.GetProperty("applied_encoding_policy").GetUInt32()),
+            Observed = json.GetProperty("policy_observed").GetBoolean(),
+            RateControl = json.GetProperty("rate_control").GetUInt32(), MultiPass = json.GetProperty("multi_pass").GetUInt32(),
+            AverageBitrate = json.GetProperty("average_bitrate").GetUInt32(), MaxBitrate = json.GetProperty("max_bitrate").GetUInt32(),
+            VbvSize = json.GetProperty("vbv_size").GetUInt32(), VbvDelay = json.GetProperty("vbv_delay").GetUInt32(),
+            Width = json.GetProperty("encode_width").GetUInt32(), Height = json.GetProperty("encode_height").GetUInt32(),
+            FrameRateNum = json.GetProperty("frame_rate_num").GetUInt32(), FrameRateDen = json.GetProperty("frame_rate_den").GetUInt32(),
+            Filler = json.GetProperty("filler").GetBoolean(), Preset = json.GetProperty("preset").GetString() ?? "Unknown",
+            Calls = json.GetProperty("policy_calls").GetUInt64(), Errors = json.GetProperty("policy_errors").GetUInt64(),
+            RejectedCalls = json.GetProperty("rejected_policy_calls").GetUInt64()
+        };
+    }
+
+    private static bool JsonBool(JsonElement json, string name) => json.GetProperty(name).ValueKind == JsonValueKind.Number
+        ? json.GetProperty(name).GetUInt32() != 0 : json.GetProperty(name).GetBoolean();
+    private static AdvancedEncodingSnapshot? ReadAdvancedEncoding(JsonElement json)
+    {
+        if (!json.TryGetProperty("requested_advanced", out var requested) || !json.TryGetProperty("effective", out var effective)) return null;
+        var flags = (AdvancedEncodingFlags)requested.GetProperty("flags").GetUInt32();
+        bool Has(AdvancedEncodingFlags flag) => flags.HasFlag(flag);
+        return new()
+        {
+            Supported = json.TryGetProperty("advanced_supported", out _) && JsonBool(json, "advanced_supported"),
+            CapabilitiesQueried = json.TryGetProperty("advanced_capabilities", out var capabilities) && JsonBool(capabilities, "queried"),
+            DynamicBitrateSupported = capabilities.ValueKind == JsonValueKind.Object && JsonBool(capabilities, "dynamic_bitrate"),
+            CustomVbvSupported = capabilities.ValueKind == JsonValueKind.Object && JsonBool(capabilities, "custom_vbv"),
+            TemporalAqSupported = capabilities.ValueKind == JsonValueKind.Object && JsonBool(capabilities, "temporal_aq"),
+            Requested = new()
+            {
+                QualityTarget = Has(AdvancedEncodingFlags.QualityTarget) ? requested.GetProperty("cq256").GetUInt32() / 256.0 : null,
+                MaximumQp = Has(AdvancedEncodingFlags.MaximumQp) ? requested.GetProperty("max_qp").GetInt32() : null,
+                PeakMbps = Has(AdvancedEncodingFlags.PeakBitrate) ? requested.GetProperty("peak_bitrate").GetUInt32() / 1_000_000.0 : null,
+                VbvMbit = Has(AdvancedEncodingFlags.VbvBuffer) ? requested.GetProperty("vbv_bits").GetUInt32() / 1_000_000.0 : null,
+                VbvDelayMbit = Has(AdvancedEncodingFlags.VbvDelay) ? requested.GetProperty("vbv_delay_bits").GetUInt32() / 1_000_000.0 : null,
+                CbQpOffset = Has(AdvancedEncodingFlags.ChromaOffsets) ? requested.GetProperty("cb_qp_offset").GetInt32() : null,
+                CrQpOffset = Has(AdvancedEncodingFlags.ChromaOffsets) ? requested.GetProperty("cr_qp_offset").GetInt32() : null,
+                SpatialAq = Has(AdvancedEncodingFlags.SpatialAq) ? JsonBool(requested, "spatial_aq") : null,
+                AqStrength = requested.GetProperty("aq_strength").GetInt32(),
+                TemporalAq = Has(AdvancedEncodingFlags.TemporalAq) ? JsonBool(requested, "temporal_aq") : null,
+                Preset = Has(AdvancedEncodingFlags.Preset) ? requested.GetProperty("preset").GetInt32() : null
+            },
+            AppliedFlags = (AdvancedEncodingFlags)json.GetProperty("applied_advanced_flags").GetUInt32(),
+            PendingFlags = (AdvancedEncodingFlags)json.GetProperty("pending_advanced_flags").GetUInt32(),
+            RejectedFlags = (AdvancedEncodingFlags)json.GetProperty("rejected_advanced_flags").GetUInt32(), LastError = json.GetProperty("last_advanced_error").GetUInt32(),
+            QualityTarget = effective.GetProperty("cq256").GetUInt32() / 256.0, MaximumQpEnabled = JsonBool(effective, "max_qp_enabled"),
+            MaximumQpI = effective.GetProperty("max_qp_i").GetUInt32(), MaximumQpP = effective.GetProperty("max_qp_p").GetUInt32(), MaximumQpB = effective.GetProperty("max_qp_b").GetUInt32(),
+            SpatialAq = JsonBool(effective, "spatial_aq"), AqStrength = effective.GetProperty("aq_strength").GetUInt32(), TemporalAq = JsonBool(effective, "temporal_aq"),
+            CbQpOffset = effective.GetProperty("cb_qp_offset").GetInt32(), CrQpOffset = effective.GetProperty("cr_qp_offset").GetInt32()
+        };
+    }
+    private static EncoderCallbackTiming? ReadCallbackTiming(JsonElement json)
+    {
+        if (!json.TryGetProperty("timing", out var timing)) return null;
+        return new()
+        {
+            ReconfigureCalls = timing.GetProperty("reconfigure_calls").GetUInt64(), ReconfigureTotalUs = timing.GetProperty("reconfigure_total_us").GetUInt64(),
+            ReconfigureMaximumUs = timing.GetProperty("reconfigure_max_us").GetUInt64(), ReconfigureOver2Ms = timing.GetProperty("reconfigure_over_2ms").GetUInt64(),
+            EncodeCalls = timing.GetProperty("encode_calls").GetUInt64(), EncodeTotalUs = timing.GetProperty("encode_total_us").GetUInt64(),
+            EncodeMaximumUs = timing.GetProperty("encode_max_us").GetUInt64(), EncodeOver2Ms = timing.GetProperty("encode_over_2ms").GetUInt64()
+            , CompletionCalls = timing.TryGetProperty("completion_calls", out var completion) ? completion.GetUInt64() : 0,
+            CompletionTotalUs = timing.TryGetProperty("completion_total_us", out var completionTotal) ? completionTotal.GetUInt64() : 0,
+            CompletionMaximumUs = timing.TryGetProperty("completion_max_us", out var completionMax) ? completionMax.GetUInt64() : 0,
+            CompletionOver2Ms = timing.TryGetProperty("completion_over_2ms", out var completionOver) ? completionOver.GetUInt64() : 0
         };
     }
 
@@ -315,7 +429,7 @@ public sealed class EncoderProbe
     private static string NativeError(uint error) => error switch
     {
         1001 => "The loaded driver has an incompatible encoder layout. Restart SteamVR if the driver was updated while it was running.",
-        1002 => "NVENC is not loaded. Start an NVIDIA-encoded VR stream, then select Start again. Other encoders provide transport statistics only.",
+        1002 => "NVIDIA's installed NVENC API is unavailable. Install or repair the NVIDIA display driver; other encoders provide transport statistics only.",
         1003 => "This NVENC API version is unsupported; encoder monitoring was not installed.",
         1004 or 1005 or 1007 => "Encoder hook installation failed. Restart SteamVR before retrying.",
         1008 => "Quality settings were rejected or monitoring is stopped.",
@@ -323,6 +437,9 @@ public sealed class EncoderProbe
         1010 => "Stopping encoder hooks failed; restart SteamVR to restore all original functions.",
         1011 => "Restart SteamVR to remove the older SteamFrameQuality helper before using this encoder probe.",
         1012 => "Video monitoring is available, but this driver's foveation layout is incompatible. Valve's quality map was preserved.",
+        1013 => "NVENC policy was rejected or monitoring is stopped.",
+        1014 => "Valve's encoder policy has not been restored yet. Reconnect the stream, then select Stop again; restoration hooks remain active.",
+        1015 => "Advanced encoder settings were rejected. Check the ranges and buffer/delay relationship; the updated monitor must be running.",
         _ => $"Native encoder probe returned error {error}."
     };
 
@@ -366,7 +483,7 @@ public sealed class EncoderProbe
                 throw new InvalidOperationException("Forwarded exports are not supported in the encoder helper.");
             found[name] = rva;
         }
-        foreach (var name in new[] { "GetProbeVersion", "InspectDriver", "StartProbe", "SetQuality", "WriteStatus", "StopProbe" })
+        foreach (var name in new[] { "GetProbeVersion", "InspectDriver", "StartProbe", "SetQuality", "SetEncodingPolicy", "WriteStatus", "StopProbe" })
             if (!found.ContainsKey(name)) throw new InvalidOperationException($"The native helper is missing the {name} export.");
         return found;
     }

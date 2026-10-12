@@ -21,6 +21,7 @@ public sealed partial class FramePage : Page
     private readonly BitratePatcher _patcher = new();
     private BitratePatchStatus? _patch;
     private readonly RateTracker _rate = new();
+    private readonly QuantizerTracker _quantizers = new();
     private readonly FrameTrafficMonitor _traffic = new();
     private readonly SemaphoreSlim _actions = new(1, 1);
     private readonly List<(double At, double? Video, double? Transport, double? Target)> _history = [];
@@ -29,6 +30,9 @@ public sealed partial class FramePage : Page
     private readonly StreamingHealth _streamHealth;
     private readonly StreamingFrameTrace _frameTrace;
     private readonly CompositorTiming _compositorTiming;
+    private readonly TemporaryPowerLease _powerLease;
+    private bool _syncingPower = true;
+    private double _nextPowerRecovery;
     private FrameReceiverDiagnostics _receiver;
     private Task<ConnectionSnapshot>? _linkRead;
     private Task<FrameReceiverSnapshot>? _receiverRead;
@@ -46,6 +50,9 @@ public sealed partial class FramePage : Page
     private bool _syncingBandwidth = true;
     // True while any stream control has unapplied edits; reloads and live reads never overwrite them.
     private bool _bandwidthEdited;
+    private long _basicEditRevision;
+    private bool _linkEdited;
+    private long _linkEditRevision;
     // vrserver presence, sampled off the UI thread once per poll.
     private bool _vrRunning;
     private double? _target;
@@ -66,6 +73,7 @@ public sealed partial class FramePage : Page
         _streamHealth = StreamingHealth.FromSteamRoot(_paths.SteamRoot);
         _frameTrace = new(Path.Combine(_paths.SteamRoot, "logs"));
         _compositorTiming = new(_paths);
+        _powerLease = new(new OpenVrPowerSettings(_paths));
         _receiver = new(_preferences);
         _timer.Tick += async (_, _) => await PollAsync();
         DriverPathInput.Text = _paths.Driver;
@@ -78,7 +86,11 @@ public sealed partial class FramePage : Page
         PeripheralInput.Value = Math.Clamp(_preferences.PeripheralOffset, FoveationOffsets.Minimum, FoveationOffsets.MaximumPeripheral);
         QualityInput.IsOn = _preferences.QualityEnabled;
         ReapplyInput.IsChecked = _preferences.ReapplyAfterRestart;
+        RateControlInput.SelectedIndex = Enum.IsDefined(_preferences.RateControl) ? (int)_preferences.RateControl : 0;
+        MultiPassInput.SelectedIndex = Enum.IsDefined(_preferences.MultiPass) ? (int)_preferences.MultiPass : 0;
+        InitializeAdvancedControls();
         _syncingBandwidth = false;
+        _syncingPower = false;
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -92,6 +104,8 @@ public sealed partial class FramePage : Page
         if (!_initialized)
         {
             _initialized = true;
+            if (_powerLease.RecoveryPending)
+                await ActionAsync(async () => { try { await _powerLease.RestoreAsync(); return "Recovered the app's previous temporary power settings."; } finally { UpdatePowerLease(); } }, reportSuccess: false);
             await ActionAsync(InspectPatchAsync, reportSuccess: false);
             if (_disposed || lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
         }
@@ -105,18 +119,46 @@ public sealed partial class FramePage : Page
     }
     public async Task CloseAsync()
     {
-        _disposed = true;
-        _timer.Stop();
-        _lifetime?.Cancel();
         // Release only the ephemeral port created by this page, never the ADB server.
         await _actions.WaitAsync();
         try
         {
+            try { await _powerLease.RestoreAsync(); }
+            catch (Exception error) when (_powerLease.RecoveryPending)
+            {
+                // A running vrserver may still reject OpenVR initialization when
+                // the Frame disconnects. Closing is best-effort; the already
+                // durable app lease is retried on the next available session.
+                PowerLeaseStatus.Text = "Power restoration pending: " + error.Message + " Original values remain saved for recovery when the app and SteamVR are available.";
+            }
+            _disposed = true;
+            _timer.Stop();
+            _lifetime?.Cancel();
             if (_linkRead is not null) { try { await _linkRead; } catch (OperationCanceledException) { } }
             if (_receiverRead is not null) { try { await _receiverRead; } catch (OperationCanceledException) { } }
             await _connection.DisposeAsync();
         }
         finally { _actions.Release(); }
+    }
+    private void UpdatePowerLease()
+    {
+        _syncingPower = true;
+        try { KeepAwakeInput.IsOn = _powerLease.Enabled; }
+        finally { _syncingPower = false; }
+        PowerLeaseStatus.Text = _powerLease.Enabled ? "Temporary awake test active; original power values saved."
+            : _powerLease.RecoveryPending ? "Power restoration pending; start SteamVR, then disable this control or retry closing."
+            : "No temporary power lease";
+    }
+    private async void KeepAwake_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_syncingPower) return;
+        var enabled = KeepAwakeInput.IsOn;
+        await ActionAsync(async () =>
+        {
+            if (enabled) await _powerLease.EnableAsync(); else await _powerLease.RestoreAsync();
+            return enabled ? "Temporary unattended-test power settings enabled." : "Original SteamVR power settings restored; newer differing values preserved.";
+        });
+        UpdatePowerLease();
     }
     private async Task LoadControlsAsync()
     {
@@ -130,6 +172,8 @@ public sealed partial class FramePage : Page
             if (values.TryGetValue("automaticBandwidth", out var automatic)) AutomaticInput.IsOn = automatic is true;
             if (values.TryGetValue("allowMultipleLinks", out var multiple)) MultipleLinksInput.IsOn = multiple is true;
             if (values.TryGetValue("enableAmfEncoder", out var amf)) AmfInput.IsOn = amf is true;
+            if (values.TryGetValue("streamFormatWidth", out var width)) StreamWidthInput.Value = Convert.ToDouble(width);
+            if (values.TryGetValue("automaticStreamFormatWidth", out var automaticWidth)) AutomaticWidthInput.IsOn = automaticWidth is true;
             _target = double.IsFinite(BitrateInput.Value) ? BitrateInput.Value : null;
             TargetReadback.Text = _target is double t ? $"{t:0} Mbps" : "— Mbps";
             TargetMode.Text = "Saved setting";
@@ -139,11 +183,19 @@ public sealed partial class FramePage : Page
     }
     private void Bandwidth_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
-        if (!_syncingBandwidth) _bandwidthEdited = true;
+        if (!_syncingBandwidth) { _bandwidthEdited = true; _basicEditRevision++; }
     }
     private void Bandwidth_Toggled(object sender, RoutedEventArgs e)
     {
-        if (!_syncingBandwidth) _bandwidthEdited = true;
+        if (!_syncingBandwidth)
+        {
+            _bandwidthEdited = true; _basicEditRevision++;
+            if (ReferenceEquals(sender, MultipleLinksInput)) { _linkEdited = true; _linkEditRevision++; }
+        }
+    }
+    private void Policy_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_syncingBandwidth) { _bandwidthEdited = true; _basicEditRevision++; }
     }
     private bool ContainsFocus(DependencyObject control)
     {
@@ -189,6 +241,13 @@ public sealed partial class FramePage : Page
             }
             await Task.WhenAll(runningTask, nativeTask, trafficTask, healthTask, compositorTask, (Task?)traceTask ?? Task.CompletedTask);
             _vrRunning = await runningTask;
+            if (_vrRunning && _powerLease.RecoveryPending && !_powerLease.Enabled && at >= _nextPowerRecovery)
+            {
+                _nextPowerRecovery = at + 30;
+                try { await _powerLease.RestoreAsync(); }
+                catch (Exception error) { ShowStatus("Temporary power recovery is pending: " + error.Message, true); }
+                UpdatePowerLease();
+            }
             var snapshot = await nativeTask;
             var adapters = await trafficTask;
             if (_linkRead is { IsCompleted: true })
@@ -247,10 +306,16 @@ public sealed partial class FramePage : Page
                     TargetMode.Text = live.Automatic ? "Live • automatic" : "Live • manual";
                     // External/live changes should become the next Apply value,
                     // while an in-progress user edit remains untouched.
-                    if (!_bandwidthEdited && !ContainsFocus(BitrateInput) && !ContainsFocus(AutomaticInput) && !ContainsFocus(MultipleLinksInput))
+                    if (!_bandwidthEdited && !ContainsFocus(BitrateInput) && !ContainsFocus(AutomaticInput) && !ContainsFocus(StreamWidthInput) && !ContainsFocus(AutomaticWidthInput))
                     {
                         _syncingBandwidth = true;
-                        try { BitrateInput.Value = live.Target; AutomaticInput.IsOn = live.Automatic; MultipleLinksInput.IsOn = live.MultipleLinks; }
+                        try { BitrateInput.Value = live.Target; AutomaticInput.IsOn = live.Automatic; StreamWidthInput.Value = live.StreamWidth; AutomaticWidthInput.IsOn = live.AutomaticWidth; }
+                        finally { _syncingBandwidth = false; }
+                    }
+                    if (!_linkEdited && !ContainsFocus(MultipleLinksInput))
+                    {
+                        _syncingBandwidth = true;
+                        try { MultipleLinksInput.IsOn = live.MultipleLinks; }
                         finally { _syncingBandwidth = false; }
                     }
                 }
@@ -269,18 +334,55 @@ public sealed partial class FramePage : Page
                 if (snapshot.Installed)
                 {
                     snapshot = await _probe.SetQualityAsync(_preferences.QualityEnabled, _preferences.GazeOffset, _preferences.PeripheralOffset);
+                    var policy = new EncodingPolicy(_preferences.RateControl, _preferences.MultiPass);
+                    // Arm every native request before an OpenVR refresh. A fresh
+                    // server may have no connected Frame yet (OpenVR error216),
+                    // but the public NVENC hooks can already catch initialization.
+                    if (policy.IsValid) snapshot = await _probe.SetEncodingPolicyAsync(policy);
+                    var advanced = _preferences.AdvancedEncoding ?? new();
+                    if (snapshot.AdvancedEncoding is { Supported: true })
+                        snapshot = await _probe.SetAdvancedEncodingAsync(advanced);
                     _configuredPid = snapshot.ProcessId;
+                    if (snapshot.Active)
+                    {
+                        try
+                        {
+                            await Task.Run(() => OpenVrSettings.RefreshEncoder(_paths));
+                            snapshot = await _probe.GetSnapshotAsync();
+                        }
+                        catch (Exception error) { ShowStatus("Native requests are armed; live refresh unavailable: " + error.Message + " Connect the Frame, or restart SteamVR if initialization-only changes stay pending.", false); }
+                    }
                 }
                 if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
             }
             var measured = snapshot.Installed && snapshot.Active
                 ? _rate.Sample(snapshot.Generation, snapshot.EncodedBytes, snapshot.EncodedFrames, snapshot.TimestampSeconds)
                 : (Mbps: (double?)null, Fps: (double?)null);
-            if (!snapshot.Installed || !snapshot.Active) _rate.Reset();
+            if (!snapshot.Installed || !snapshot.Active) { _rate.Reset(); _quantizers.Reset(); }
             VideoRate.Text = measured.Mbps is double mbps ? mbps.ToString("0.0") : "—";
             VideoDetail.Text = measured.Fps is double fps ? $"{fps:0.0} frames/s • {snapshot.Codec}" : snapshot.Installed ? "Waiting for encoded frames…" : "Start the live monitor during an NVENC stream.";
             ProbeStatus.Text = snapshot.Message + (snapshot.Installed ? $"  Encode errors: {snapshot.EncodeErrors}; output errors: {snapshot.LockErrors}; frames measured: {snapshot.EncodedFrames}." : "");
             QualityReadback.Text = snapshot.Enabled ? $"Custom foveation: gaze {snapshot.CenterOffset:+0;-0;0}, periphery {snapshot.PeripheralOffset:+0;-0;0} • {snapshot.ModifiedFrames} frames changed" : snapshot.Installed ? snapshot.QualitySupported ? "Foveation: Valve defaults" : "Video monitoring available; this driver's foveation layout is incompatible." : "Foveation status available when the monitor is running";
+            if (!_bandwidthEdited && snapshot.Installed && !ContainsFocus(RateControlInput) && !ContainsFocus(MultiPassInput) &&
+                !ContainsFocus(QualityInput) && !ContainsFocus(GazeInput) && !ContainsFocus(PeripheralInput))
+            {
+                _syncingBandwidth = true;
+                try
+                {
+                    if (snapshot.EncodingPolicy is { } currentPolicy)
+                    {
+                        RateControlInput.SelectedIndex = (int)currentPolicy.Requested.RateControl;
+                        MultiPassInput.SelectedIndex = (int)currentPolicy.Requested.MultiPass;
+                    }
+                    QualityInput.IsOn = snapshot.Enabled;
+                    if (snapshot.Enabled) { GazeInput.Value = snapshot.CenterOffset; PeripheralInput.Value = snapshot.PeripheralOffset; }
+                }
+                finally { _syncingBandwidth = false; }
+            }
+            RenderEncodingReadbacks(snapshot);
+            RenderAdvancedReadbacks(snapshot);
+            try { await RefreshAdvancedDriverAsync(); }
+            catch (Exception error) { foreach (var row in _driverRows.Values) row.Readback!.Text = "Advanced settings read unavailable: " + error.Message; }
             if (!_actionPending)
             {
                 MonitorButton.IsEnabled = !snapshot.Installed;
@@ -306,6 +408,29 @@ public sealed partial class FramePage : Page
         finally { _polling = false; _actions.Release(); }
     }
     private static string Rate(double? value) => value is double d ? d.ToString("0.0") : "—";
+    private void RenderEncodingReadbacks(EncoderSnapshot snapshot)
+    {
+        var policy = snapshot.EncodingPolicy;
+        PolicyRequestedReadback.Text = policy is null ? "Requested NVENC policy: unavailable (updated helper required)" : "Requested NVENC policy: " + policy.Requested.Description;
+        PolicyAppliedReadback.Text = policy is not { Observed: true } ? "Accepted NVENC configuration: waiting for a verified initialize/reconfigure call" :
+            $"Last accepted: {policy.RateControlName} / {policy.MultiPassName} / preset {policy.Preset} • {policy.AverageBitrate / 1_000_000.0:0.0} Mbps encoder target\n" +
+            $"{policy.Width} × {policy.Height} at {(policy.FrameRateDen > 0 ? policy.FrameRateNum / (double)policy.FrameRateDen : 0):0.0} fps • bit depth {(snapshot.BitDepth is uint depth ? depth.ToString() : "unavailable")} • VBV {policy.VbvSize / 1_000_000.0:0.00} Mbit / initial {policy.VbvDelay / 1_000_000.0:0.00} Mbit • padding {(policy.Filler ? "enabled" : "disabled")}\n" +
+            (policy.Requested == policy.Applied ? "Requested policy accepted." : "Policy change pending; reconnect if it does not apply.") +
+            $" Calls {policy.Calls}, errors {policy.Errors}, rejected ABI calls {policy.RejectedCalls}." + (snapshot.Active ? "" : " Stream currently inactive.");
+        var qp = snapshot.Active ? _quantizers.Sample(snapshot.Generation, snapshot.QuantizerSamples, snapshot.QuantizerSum) : null;
+        QuantizerReadback.Text = $"Whole-frame QP: {(qp is double value ? value.ToString("0.00") + " interval mean" : "waiting for new samples")} • last frame {(snapshot.QuantizerSamples > 0 ? snapshot.LastFrameQp?.ToString() : "unavailable")} • {snapshot.LastFrameBytes / 1024.0:0.0} KiB/frame";
+        CenterMapReadback.Text = snapshot.LastQualityMap is not { TimestampSeconds: > 0 } map ? "Gaze map deltas: unavailable" :
+            $"Last gaze map: {map.CenterChangedTiles}/{map.CenterTiles} center tiles changed, deltas {map.CenterMinDelta:+0;-0;0} to {map.CenterMaxDelta:+0;-0;0}, {map.CenterClampedTiles} clamped. " +
+            $"Outside gaze: {map.PeripheralChangedTiles}/{map.PeripheralTiles} changed, {map.PeripheralSaturatedTiles} saturated; protected mismatches {map.ProtectedMismatches}.";
+    }
+
+    private async Task<EncoderSnapshot> ApplyPolicyAsync(EncodingPolicy policy)
+    {
+        var result = await _probe.SetEncodingPolicyAsync(policy);
+        if (!result.Installed || result.EncodingPolicy?.Requested != policy) return result;
+        await Task.Run(() => OpenVrSettings.RefreshEncoder(_paths));
+        return await _probe.GetSnapshotAsync();
+    }
     private static string Stage(StageTiming? value) => value is null ? "unavailable" : $"{value.MaximumMs:0.0} ms";
     private static string Timing(CompositorTimingStats? value) => value is null ? "unavailable" : $"{value.P99Ms:0.0} ms";
     private static string TraceAge(DateTimeOffset? timestamp)
@@ -341,22 +466,43 @@ public sealed partial class FramePage : Page
     });
     private async void StopMonitor_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
+        // Prevent automatic reapplication while restoration is pending.
+        _preferences.ReapplyAfterRestart = false;
+        ReapplyInput.IsChecked = false;
+        await _preferences.SaveAsync();
+        var before = await _probe.GetSnapshotAsync();
+        if (before.Installed && before.AdvancedEncoding is not null &&
+            (!before.AdvancedEncoding.Requested.IsDefault || before.AdvancedEncoding.AppliedFlags != 0 || before.AdvancedEncoding.PendingFlags != 0))
+        {
+            await _probe.SetAdvancedEncodingAsync(new());
+            await Task.Run(() => OpenVrSettings.RefreshEncoder(_paths));
+            before = await _probe.GetSnapshotAsync();
+        }
+        if (before.Installed && before.EncodingPolicy is not null &&
+            (!before.EncodingPolicy.Requested.IsDefault || before.EncodingPolicy.Observed && !before.EncodingPolicy.Applied.IsDefault))
+            await ApplyPolicyAsync(new());
         var status = await _probe.StopAsync();
         if (status.Installed) throw new IOException(status.Message);
         _preferences.ReapplyAfterRestart = false;
         ReapplyInput.IsChecked = false;
         await _preferences.SaveAsync();
         _rate.Reset();
-        return "Live monitor stopped and custom foveation disabled for this session.";
+        _quantizers.Reset();
+        return "Live monitor stopped; Valve's original foveation and encoder policy restored for this session.";
     });
     private async void Apply_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
         if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value < 25 || BitrateInput.Value > 500) throw new ArgumentException("Choose a bitrate between 25 and 500 Mbps.");
         if (!FoveationOffsets.IsValid(GazeInput.Value, FoveationOffsets.MaximumGaze, FoveationOffsets.MinimumGaze) || !FoveationOffsets.IsValid(PeripheralInput.Value, FoveationOffsets.MaximumPeripheral))
             throw new ArgumentException("Use whole-number offsets: gaze −20 to +12, outside gaze −12 to +31.");
+        if (!double.IsFinite(StreamWidthInput.Value) || StreamWidthInput.Value < 512 || StreamWidthInput.Value > 4096 || StreamWidthInput.Value % 32 != 0)
+            throw new ArgumentException("Choose a stream width from 512 to 4096 pixels, in multiples of 32.");
         // Capture the request before asynchronous work. Later edits remain a
         // separate pending request instead of changing what this Apply saves.
         var enteredTarget = BitrateInput.Value;
+        var requestRevision = _basicEditRevision;
+        var requestLinkRevision = _linkEditRevision;
+        var requestedLinkWasEdited = _linkEdited;
         var requestedTarget = Math.Round(enteredTarget);
         var requestedAutomatic = AutomaticInput.IsOn;
         var requestedMultiple = MultipleLinksInput.IsOn;
@@ -365,6 +511,10 @@ public sealed partial class FramePage : Page
         var requestedGaze = (int)GazeInput.Value;
         var requestedPeriphery = (int)PeripheralInput.Value;
         var requestedReapply = ReapplyInput.IsChecked == true;
+        var requestedWidth = (int)StreamWidthInput.Value;
+        var requestedAutomaticWidth = AutomaticWidthInput.IsOn;
+        var requestedPolicy = new EncodingPolicy((EncoderRateControl)RateControlInput.SelectedIndex, (EncoderMultiPass)MultiPassInput.SelectedIndex);
+        _ = requestedPolicy.Packed;
         // Check the driver selected in Driver patcher, not only the auto-discovered path.
         var driverPath = DriverPathInput.Text.Trim().Trim('"');
         var driver = await _patcher.InspectAsync(string.IsNullOrWhiteSpace(driverPath) ? _paths.Driver : driverPath);
@@ -377,14 +527,22 @@ public sealed partial class FramePage : Page
             // recommendedBandwidthMbit is deliberately left alone; it is edited under All streaming settings.
             ["targetBandwidth"] = requestedTarget,
             ["allowMultipleLinks"] = requestedMultiple,
-            ["enableAmfEncoder"] = requestedAmf
+            ["enableAmfEncoder"] = requestedAmf,
+            ["streamFormatWidth"] = requestedWidth,
+            ["automaticStreamFormatWidth"] = requestedAutomaticWidth
         };
         bool running = await Task.Run(() => OpenVrSettings.IsRunning);
-        if (running) await Task.Run(() => OpenVrSettings.Apply(_paths, values));
+        if (running)
+        {
+            // Unedited link state can change outside this app between polls.
+            // Preserve the latest runtime value instead of reapplying a stale toggle.
+            if (!requestedLinkWasEdited) values["allowMultipleLinks"] = (await Task.Run(() => OpenVrSettings.Read(_paths))).MultipleLinks;
+            await Task.Run(() => OpenVrSettings.Apply(_paths, values));
+        }
         else await new SettingsService().SaveUserOverridesAsync(values);
         var before = await _probe.GetSnapshotAsync();
         string qualityMessage = "";
-        if (running && (requestedQuality || before.Installed))
+        if (running && (requestedQuality || !requestedPolicy.IsDefault || before.Installed))
         {
             if (!before.Installed) before = await _probe.StartAsync();
             if (!before.Installed) qualityMessage = " Foveation pending: " + before.Message;
@@ -393,16 +551,25 @@ public sealed partial class FramePage : Page
                 var after = await _probe.SetQualityAsync(requestedQuality, requestedGaze, requestedPeriphery);
                 if (after.Enabled != requestedQuality) qualityMessage = " Foveation was not applied: " + after.Message;
                 else _configuredPid = after.ProcessId;
+                if (before.EncodingPolicy?.Requested != requestedPolicy || before.EncodingPolicy.Observed == false)
+                {
+                    var policyResult = await ApplyPolicyAsync(requestedPolicy);
+                    qualityMessage += policyResult.EncodingPolicy is { Observed: true } accepted && accepted.Requested == requestedPolicy && accepted.Applied == requestedPolicy
+                        ? " NVENC policy accepted."
+                        : " NVENC policy pending: " + policyResult.Message + " Reconnect if the dashboard does not confirm it.";
+                }
             }
         }
         _preferences.GazeOffset = requestedGaze;
         _preferences.PeripheralOffset = requestedPeriphery;
         _preferences.QualityEnabled = requestedQuality;
         _preferences.ReapplyAfterRestart = requestedReapply;
+        _preferences.RateControl = requestedPolicy.RateControl;
+        _preferences.MultiPass = requestedPolicy.MultiPass;
         await _preferences.SaveAsync();
-        if (BitrateInput.Value == enteredTarget && AutomaticInput.IsOn == requestedAutomatic &&
-            MultipleLinksInput.IsOn == requestedMultiple && AmfInput.IsOn == requestedAmf) _bandwidthEdited = false;
-        return (running ? "Stream settings accepted by SteamVR. Encoder selection applies after reconnecting." : "Stream settings saved for the next session. Start SteamVR to apply foveation.") + qualityMessage;
+        if (_basicEditRevision == requestRevision) _bandwidthEdited = false;
+        if (_linkEditRevision == requestLinkRevision) _linkEdited = false;
+        return (running ? "Stream settings accepted by SteamVR. Encoder selection and width changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + qualityMessage;
     });
     private void QualityPreset_Click(object sender, RoutedEventArgs e) { QualityInput.IsOn = true; GazeInput.Value = -4; PeripheralInput.Value = 8; }
     private void QualityDefault_Click(object sender, RoutedEventArgs e) { QualityInput.IsOn = false; GazeInput.Value = 0; PeripheralInput.Value = 0; }
@@ -446,6 +613,7 @@ public sealed partial class FramePage : Page
         if (_actionPending || _disposed) return;
         _actionPending = true;
         ApplyButton.IsEnabled = MonitorButton.IsEnabled = StopMonitorButton.IsEnabled = PatchButton.IsEnabled = RestoreButton.IsEnabled = RecoverButton.IsEnabled = false;
+        AdvancedApplyButton.IsEnabled = AdvancedRestoreButton.IsEnabled = false;
         await _actions.WaitAsync();
         try { var message = await action(); if (reportSuccess) ShowStatus(message, false); }
         catch (Exception ex) { ShowStatus(ex.Message, true, offerElevation: !Elevation.IsElevated && (ex is ElevationSuggestedException || Elevation.IsAccessDenied(ex))); }
@@ -454,6 +622,7 @@ public sealed partial class FramePage : Page
             _actions.Release();
             _actionPending = false;
             ApplyButton.IsEnabled = MonitorButton.IsEnabled = StopMonitorButton.IsEnabled = RecoverButton.IsEnabled = true;
+            AdvancedApplyButton.IsEnabled = AdvancedRestoreButton.IsEnabled = true;
             UpdatePatchButtons();
             // Patch buttons are refreshed from the verified file state after each operation.
             if (reportSuccess) await PollAsync();

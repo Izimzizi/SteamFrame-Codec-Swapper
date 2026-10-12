@@ -19,6 +19,7 @@ including the ones SteamVR doesn't show in its own UI.
 | --- | --- |
 | **Stream controls** | Set the video bitrate target, automatic bandwidth, AMD AMF and USB link joining. Changes apply live to running SteamVR, or are saved for its next start. |
 | **Foveation bias** | Shift quality between where you look and the periphery on top of Valve's own gaze-tracked map. |
+| **Advanced controls** | Tune CQ, maximum QP, peak bitrate, VBV, chroma, AQ and presets, plus resolution, buffering and sending settings, with accepted/pending/rejected readbacks and restoration. |
 | **Live dashboard** | Graphs actual encoded video Mbps and FPS, the requested target, and adapter traffic over the last 60 seconds. |
 | **Streaming issue capture** | Timestamps recovery requests, bad-link events, encoder stalls, PC presentation drops and headset receiver faults, and saves them as JSONL. |
 | **Driver patcher** | Raises the driver's 232/350 Mbps ceilings to 500 Mbps and selects HEVC level 6.2, with verified backups and one-click restore. |
@@ -52,7 +53,8 @@ starts encoder monitoring on its own.
 
 | Guide | Covers |
 | --- | --- |
-| [Stream controls and foveation](docs/stream-controls.md) | Bitrate, encoders, USB link joining, foveation offsets, how settings are saved |
+| [Stream controls and foveation](docs/stream-controls.md) | Bitrate, stream width, VBR/CBR, encoding passes, additional links, gaze offsets and temporary test power settings |
+| [Advanced controls](docs/advanced-controls.md) | CQ, max QP, peak/VBV, chroma/AQ/presets, driver width/pooling/sharpening/sending experiments, readbacks and restoration |
 | [Live dashboard and diagnostics](docs/live-dashboard.md) | Every readout, capture files, recovery traces, PC presentation counters |
 | [Driver patcher](docs/driver-patcher.md) | What the patch changes, compatibility checks, backups and restore |
 | [Connection setup](docs/connection-setup.md) | Wireless SSH pairing, optional ADB, USB recovery |
@@ -78,6 +80,14 @@ starts encoder monitoring on its own.
 - 500 Mbps is a software ceiling. One measured USB 2 connection carried about
   318–325 Mbps of UDP payload; real headroom depends on the link and scene.
 - Encoder measurement and foveation bias support NVENC only.
+- Experimental NVENC rate-control and pass controls use guarded public API 11.1
+  initialize/reconfigure calls. The dashboard separates the requested policy from
+  the last accepted encoder configuration and reports whole-frame QP separately
+  from gaze-map deltas. CBR without padding is a target, not a useful minimum.
+- Quarter-resolution multipass may use more of the target for useful detail but
+  can add work or stutter. Valve's default encoding policy remains the app default;
+  reconnect-only presets are available in Advanced controls with Valve's stream
+  policy preserved. No preset or AQ experiment is enabled by default.
 - A future SteamVR driver with a rewritten encoder can disable the patcher or foveation
   until the app is updated. Both refuse layouts they can't verify rather than guessing.
 
