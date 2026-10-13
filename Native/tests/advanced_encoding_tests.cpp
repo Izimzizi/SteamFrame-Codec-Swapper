@@ -99,6 +99,18 @@ int main() {
     value = {}; value.flags = AdvancedCq | AdvancedVbv; value.cq256 = 30 * 256; value.vbvBits = 3000000; SetAdvancedEncoding(&value);
     if (hookInitialize(other, &params) || stats.rejectedAdvancedFlags != AdvancedVbv || stats.appliedAdvancedFlags != AdvancedCq ||
         observed.rcParams.targetQuality != 30 || observed.rcParams.vbvBufferSize != config.rcParams.vbvBufferSize) return 23;
+    // Conflicts are dropped per field: CQ cannot apply under CBR, but max QP still does.
+    rejectVbv = false; auto third = reinterpret_cast<void*>(456);
+    value = {}; value.flags = AdvancedCq | AdvancedMaxQp; value.cq256 = 30 * 256; value.maxQp = 38; SetAdvancedEncoding(&value);
+    SetEncodingPolicy(reinterpret_cast<void*>(2));
+    if (hookInitialize(third, &params) || stats.rejectedAdvancedFlags != AdvancedCq || stats.appliedAdvancedFlags != AdvancedMaxQp ||
+        observed.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR || !observed.rcParams.enableMaxQP || observed.rcParams.maxQP.qpIntra != 38) return 24;
+    SetEncodingPolicy(nullptr);
+    // A VBV-only request clamps Valve's larger initial delay instead of rejecting every field.
+    copy = config; copy.rcParams.vbvInitialDelay = 2000000; value = {}; value.flags = AdvancedVbv; value.vbvBits = 1000000;
+    if (!ApplyAdvancedEncoding(value, copy) || copy.rcParams.vbvBufferSize != 1000000 || copy.rcParams.vbvInitialDelay != 1000000) return 25;
+    value = {}; value.flags = AdvancedDelay; value.vbvDelayBits = 3000000; copy = config;
+    if (AdvancedConflicts(value, copy) != AdvancedDelay || ApplyAdvancedEncoding(value, copy)) return 26;
     printf("PASS: advanced ABI/ranges, copied fields, rejection fallback/blocking, consistent presets, reconnect/restoration, min-QP/RC guards and telemetry.\n");
     return 0;
 }

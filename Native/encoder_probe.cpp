@@ -49,6 +49,8 @@ PNVENCGETENCODECAPS getCaps{};
 std::array<void*, 7> targets{};
 std::atomic<uint32_t> mode{};
 std::atomic<uint32_t> encodingPolicy{};
+// Set when NVENC rejected a policy-modified initialize; cleared by the next request.
+std::atomic<bool> policyRejected{};
 std::atomic<bool> installed{};
 std::atomic<bool> qualitySupported{};
 inspection::Image driverImage;
@@ -247,6 +249,12 @@ AdvancedEncoding prepareAdvanced(void* handle, bool initialization, NV_ENC_INITI
     if (unsupported) rejectAdvanced(unsupported, NV_ENC_ERR_UNSUPPORTED_PARAM);
     return value;
 }
+// Drop only the advanced fields that conflict with the final configuration.
+void stripAdvancedConflicts(AdvancedEncoding& advanced, const NV_ENC_CONFIG& config) {
+    if (const auto conflicts = AdvancedConflicts(advanced, config)) {
+        rejectAdvanced(conflicts, NV_ENC_ERR_INVALID_PARAM); advanced.flags &= ~conflicts;
+    }
+}
 NVENCSTATUS NVENCAPI hookPreset(void* handle, GUID codec, GUID preset, NV_ENC_TUNING_INFO tuning, NV_ENC_PRESET_CONFIG* output) {
     const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
     if (!installed.load() || !inspection::executableCaller(driverImage, caller)) return originalPreset(handle, codec, preset, tuning, output);
@@ -277,19 +285,24 @@ NVENCSTATUS NVENCAPI hookInitialize(void* handle, NV_ENC_INITIALIZE_PARAMS* para
         { std::lock_guard<std::mutex> lock(statsMutex); ++stats.rejectedPolicyCalls; }
         return originalInitialize(handle, params);
     }
-    auto policy = encodingPolicy.load();
+    auto policy = policyRejected.load() ? 0u : encodingPolicy.load();
     if ((policy || advancedRequest.flags) && !canTrackPolicy(handle)) return originalInitialize(handle, params);
     policy = validatedPolicy(handle, *params, policy, true);
     auto copied = *params; auto config = *params->encodeConfig;
     ApplyEncodingPolicy(policy, copied, config); copied.encodeConfig = &config;
     auto advanced = prepareAdvanced(handle, true, copied, config);
+    stripAdvancedConflicts(advanced, config);
     if (!ApplyAdvancedEncoding(advanced, config) || (!advanced.flags && (advancedRequest.flags & ~advancedRejected))) {
         rejectAdvanced(advancedRequest.flags, NV_ENC_ERR_UNSUPPORTED_PARAM); advanced.flags = 0;
         copied = *params; config = *params->encodeConfig; ApplyEncodingPolicy(policy, copied, config); copied.encodeConfig = &config;
     }
     auto result = originalInitialize(handle, policy || advanced.flags ? &copied : params);
-    if (result != NV_ENC_SUCCESS && advanced.flags) {
-        rejectAdvanced(advancedRequest.flags, result); advanced.flags = 0;
+    if (result != NV_ENC_SUCCESS && (advanced.flags || policy)) {
+        // Blame the advanced bundle first. A policy that still fails on its own is latched
+        // so later reconnects start with Valve's configuration instead of failing again.
+        if (advanced.flags) rejectAdvanced(advancedRequest.flags, result);
+        else { policyRejected.store(true); std::lock_guard<std::mutex> lock(statsMutex); ++stats.rejectedPolicyCalls; }
+        advanced.flags = 0;
         result = originalInitialize(handle, params); // Exact untouched Valve fallback.
         recordPolicy(handle, *params, 0, result, advanced, true);
     } else recordPolicy(handle, policy || advanced.flags ? copied : *params, policy, result, advanced, true);
@@ -304,17 +317,19 @@ NVENCSTATUS NVENCAPI hookReconfigure(void* handle, NV_ENC_RECONFIGURE_PARAMS* pa
         { std::lock_guard<std::mutex> lock(statsMutex); ++stats.rejectedPolicyCalls; }
         return originalReconfigure(handle, params);
     }
-    auto policy = encodingPolicy.load();
+    auto policy = policyRejected.load() ? 0u : encodingPolicy.load();
     if ((policy || advancedRequest.flags) && !canTrackPolicy(handle)) return originalReconfigure(handle, params);
     policy = validatedPolicy(handle, params->reInitEncodeParams, policy, false);
     auto copied = *params; auto config = *params->reInitEncodeParams.encodeConfig;
     ApplyEncodingPolicy(policy, copied.reInitEncodeParams, config); copied.reInitEncodeParams.encodeConfig = &config;
     auto advanced = prepareAdvanced(handle, false, copied.reInitEncodeParams, config);
+    stripAdvancedConflicts(advanced, config);
     if (!ApplyAdvancedEncoding(advanced, config) || (!advanced.flags && (advancedRequest.flags & ~advancedRejected & ~AdvancedInitialization))) {
         rejectAdvanced(advancedRequest.flags & ~AdvancedInitialization, NV_ENC_ERR_UNSUPPORTED_PARAM);
         copied = *params; config = *params->reInitEncodeParams.encodeConfig;
         ApplyEncodingPolicy(policy, copied.reInitEncodeParams, config); copied.reInitEncodeParams.encodeConfig = &config;
         advanced = prepareAdvanced(handle, false, copied.reInitEncodeParams, config);
+        stripAdvancedConflicts(advanced, config);
         ApplyAdvancedEncoding(advanced, config);
     }
     const auto begin = qpcSeconds();
@@ -323,6 +338,7 @@ NVENCSTATUS NVENCAPI hookReconfigure(void* handle, NV_ENC_RECONFIGURE_PARAMS* pa
         rejectAdvanced(advancedRequest.flags & ~AdvancedInitialization, result);
         copied = *params; config = *params->reInitEncodeParams.encodeConfig; copied.reInitEncodeParams.encodeConfig = &config;
         advanced = prepareAdvanced(handle, false, copied.reInitEncodeParams, config);
+        stripAdvancedConflicts(advanced, config);
         ApplyAdvancedEncoding(advanced, config);
         result = originalReconfigure(handle, advanced.flags ? &copied : params);
         recordPolicy(handle, advanced.flags ? copied.reInitEncodeParams : params->reInitEncodeParams, 0, result, advanced);
@@ -502,7 +518,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartProbe(void*) {
         const auto generation = stats.generation + 1;
         stats = {}; stats.generation = generation; sessions.clear();
     }
-    mode.store(0); encodingPolicy.store(0); advancedRequest = {}; advancedRejected = 0; installed.store(true);
+    mode.store(0); encodingPolicy.store(0); policyRejected.store(false); advancedRequest = {}; advancedRejected = 0; installed.store(true);
     for (auto target : targets) if (target) MH_QueueEnableHook(target);
     if (MH_ApplyQueued() != MH_OK) {
         installed.store(false);
@@ -523,7 +539,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SetEncodingPolicy(void* parameter)
     std::lock_guard<std::mutex> control(controlMutex);
     const auto policy = reinterpret_cast<uintptr_t>(parameter);
     if (policy > 15 || !EncodingPolicyValid(static_cast<uint32_t>(policy)) || !installed.load()) return 1013;
-    encodingPolicy.store(static_cast<uint32_t>(policy));
+    encodingPolicy.store(static_cast<uint32_t>(policy)); policyRejected.store(false);
     return 0; // Acceptance is reported only after the driver's next successful NVENC call.
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SetAdvancedEncoding(void* parameter) {
@@ -598,7 +614,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StopProbe(void*) {
     std::lock_guard<std::mutex> control(controlMutex);
     mode.store(0);
     if (!installed.load()) return 0;
-    encodingPolicy.store(0);
+    encodingPolicy.store(0); policyRejected.store(false);
     advancedRequest = {}; advancedRejected = 0;
     { std::lock_guard<std::mutex> lock(statsMutex); for (const auto& session : sessions) if (session.second.customPolicy) return 1014; }
     for (auto target : targets) if (target) MH_QueueDisableHook(target);

@@ -20,8 +20,9 @@ public sealed class StreamingFrameTrace
     {
         try
         {
+            // Valve creates a trace before writing it; an empty file is not the newest trace yet.
             var file = new DirectoryInfo(_logsDirectory).EnumerateFiles("vrlink_aftm_*.csv")
-                .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+                .Where(f => f.Length > 0).OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
             if (file is null) return null;
             var identity = $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
             if (identity == _lastIdentity) return _last;
@@ -29,6 +30,9 @@ public sealed class StreamingFrameTrace
             if (stream.Length > 4 * 1024 * 1024) return new(file.Name, null, null, 0, 0, 0, 0, 0, null, null, null, null, "Recovery trace exceeds the inspection limit.");
             using var reader = new StreamReader(stream);
             var parsed = Read(reader, file.Name);
+            // A trace still being written may hold only its header. Keep the previous complete
+            // summary and read this file again once it changes.
+            if (parsed.SentFrames == 0 && _last is { SentFrames: > 0 }) return _last;
             _lastIdentity = identity; _last = parsed;
             return parsed;
         }

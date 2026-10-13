@@ -56,9 +56,13 @@ public sealed class StockProfiles(SettingsService driver, SettingsService video,
     {
         if (!File.Exists(snapshotPath)) return null;
         if (new FileInfo(snapshotPath).Length > 1024 * 1024) throw new IOException("The saved tuning profile is too large.");
-        var profile = JsonSerializer.Deserialize<TuningProfile>(await File.ReadAllTextAsync(snapshotPath)) ?? throw new IOException("The tuning profile is empty.");
+        var profile = WithoutUnrelated(JsonSerializer.Deserialize<TuningProfile>(await File.ReadAllTextAsync(snapshotPath)) ?? throw new IOException("The tuning profile is empty."));
         Validate(profile); return profile;
     }
+
+    /// <summary>Older presets and snapshots also stored non-tuning settings. Ignore them rather than reapplying them.</summary>
+    public static TuningProfile WithoutUnrelated(TuningProfile profile) => profile?.Driver is null || !profile.Driver.Keys.Any(SettingOwnership.UnrelatedKeys.Contains) ? profile!
+        : profile with { Driver = profile.Driver.Where(pair => !SettingOwnership.UnrelatedKeys.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value) };
 
     public async Task ResetAsync(FramePreferences preferences)
     {
@@ -81,7 +85,20 @@ public sealed class StockProfiles(SettingsService driver, SettingsService video,
         preferences.QualityEnabled = profile.QualityEnabled; preferences.GazeOffset = profile.GazeOffset; preferences.PeripheralOffset = profile.PeripheralOffset;
         preferences.ReapplyAfterRestart = profile.Reapply; preferences.RateControl = profile.RateControl; preferences.MultiPass = profile.MultiPass; preferences.AdvancedEncoding = profile.Advanced;
     }
-    private static Dictionary<string, JsonElement> Serialize(Dictionary<string, object?> values, IEnumerable<string> keys) => keys.Where(values.ContainsKey).ToDictionary(key => key, key => JsonSerializer.SerializeToElement(values[key]));
+    private static Dictionary<string, JsonElement> Serialize(Dictionary<string, object?> values, IEnumerable<string> keys)
+    {
+        var result = new Dictionary<string, JsonElement>();
+        foreach (var key in keys.Where(values.ContainsKey))
+        {
+            var element = JsonSerializer.SerializeToElement(values[key]);
+            // Overrides outside the app's supported ranges, such as a target saved by an older
+            // release, are left out instead of blocking Back to stock or Save preset.
+            try { foreach (var value in Deserialize(new() { [key] = element })) SettingOwnership.ValidateValue(value.Key, value.Value); }
+            catch (Exception error) when (error is IOException or ArgumentException or OverflowException or InvalidOperationException) { continue; }
+            result[key] = element;
+        }
+        return result;
+    }
     public static Dictionary<string, object?> Deserialize(Dictionary<string, JsonElement> values) => values.ToDictionary(pair => pair.Key, pair => pair.Value.ValueKind switch
     {
         JsonValueKind.True => (object?)true, JsonValueKind.False => false, JsonValueKind.Number => SettingOwnership.NormalizeValue(pair.Key, pair.Value.GetDouble()), JsonValueKind.String => pair.Value.GetString(), _ => throw new IOException("The profile contains a nonscalar setting.")

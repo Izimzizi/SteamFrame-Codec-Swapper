@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../SteamLinkVRSettings/Frame/CompositorTiming.cs" Link="CompositorTiming.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/CaptureFile.cs" Link="CaptureFile.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.cs" Link="OpenVrSettings.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/SteamPaths.cs" Link="SteamPaths.cs" />
   </ItemGroup>

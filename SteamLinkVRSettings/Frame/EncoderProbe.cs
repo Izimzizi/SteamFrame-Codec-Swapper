@@ -232,7 +232,7 @@ public sealed partial class EncoderProbe
             return await Task.Run(() =>
             {
                 try { return _lastSnapshot = operation(); }
-                catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException or ArgumentException or JsonException or TimeoutException or OverflowException or KeyNotFoundException or BadImageFormatException or DllNotFoundException or EntryPointNotFoundException)
+                catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or JsonException or TimeoutException or OverflowException or KeyNotFoundException or BadImageFormatException or DllNotFoundException or EntryPointNotFoundException)
                 {
                     if (error is TimeoutException) _sessionFaulted = true;
                     return _lastSnapshot with { Active = false, Codec = "Unknown", CodecObserved = false,

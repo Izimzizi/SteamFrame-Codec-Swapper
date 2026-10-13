@@ -142,7 +142,7 @@ public sealed partial class FramePage
         var service = new SettingsService();
         var overrides = await service.LoadUserOverridesAsync();
         var merged = await service.LoadMergedAsync();
-        var live = _vrRunning ? await Task.Run(() => OpenVrSettings.ReadAdvanced(_paths)) : null;
+        var live = _vrRunning ? await ReadOpenVrAsync("advanced", () => OpenVrSettings.ReadAdvanced(_paths)) : null;
         _syncingAdvanced = true;
         try
         {

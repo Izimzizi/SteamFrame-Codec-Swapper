@@ -90,15 +90,35 @@ public sealed class CodecController
             if (created is null) return status with { Live = false, CanStart = true, State = "closed", ActiveCodec = "Unknown", Message = "The previous codec service has exited. Start a new session to switch codecs." };
             if (Math.Abs(created.Value - status.OwnerCreatedEpoch) > 2)
                 return status with { Live = false, CanStart = false, ActiveCodec = "Unknown", Message = "Codec service ownership could not be verified. The saved status belongs to a different process." };
+            // A closed session has already restored HEVC; its owner is only exiting.
+            // Treat it as finished so a second close or restore is never sent to it.
+            if (status.State == "closed")
+                return status with { Live = false, CanStart = false, Message = "The previous codec session is finishing." };
             var age = _now() - status.UpdatedEpoch;
             if (age is > 6 or < -2)
                 return status with { Live = false, CanStart = false, ActiveCodec = "Unknown", Message = "Codec service heartbeat is stale. Wait for recovery before starting another session." };
             return status with { Live = true, CanStart = false, Message = SafeMessage(status.Message) };
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or InvalidDataException or System.ComponentModel.Win32Exception)
         {
+            // The supervisor holds owner.lock for its whole lifetime. Without a holder, an
+            // unreadable status file is stale and must not block the app indefinitely.
+            if (!OwnerLockHeld()) return CodecServiceStatus.NotStarted with { Message = "The previous codec status was unreadable; no codec service is running." };
             return new() { State = "error", Message = "Codec service status is unavailable or incompatible. No switch was sent." };
         }
+    }
+
+    private bool OwnerLockHeld()
+    {
+        var path = Path.Combine(_sessionDirectory, "owner.lock");
+        if (!File.Exists(path)) return false;
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+            stream.Lock(0, 1); stream.Unlock(0, 1);
+            return false;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return true; }
     }
 
     public async Task<CodecServiceStatus> SwitchAsync(CodecSwitchRequest request, FramePreferences preferences,

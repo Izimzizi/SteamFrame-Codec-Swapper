@@ -39,6 +39,9 @@ Av1BridgeStats stats{sizeof(Av1BridgeStats),1};
 struct State {
  uint32_t width=0,height=0;
  std::unordered_map<void*,std::vector<int8_t>> maps;
+ // The host reconfigures before every frame; the codec preset is fixed per session.
+ bool baseline_ready=false;
+ NV_ENC_CONFIG baseline{};
 };
 std::unordered_map<void*,State> sessions;
 
@@ -85,14 +88,24 @@ NVENCSTATUS preset_common(void* encoder,GUID codec,GUID preset,NV_ENC_TUNING_INF
 NVENCSTATUS NVENCAPI preset_ex(void* e,GUID c,GUID p,NV_ENC_TUNING_INFO t,NV_ENC_PRESET_CONFIG* s){return preset_common(e,c,p,t,s,true);}
 NVENCSTATUS NVENCAPI preset(void* e,GUID c,GUID p,NV_ENC_PRESET_CONFIG* s){return preset_common(e,c,p,NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,s,false);}
 
+bool session_baseline(void* encoder,NV_ENC_CONFIG& output){
+ {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);
+  if(found!=sessions.end()&&found->second.baseline_ready){output=found->second.baseline;return true;}}
+ NV_ENC_PRESET_CONFIG baseline{};baseline.version=NV_ENC_PRESET_CONFIG_VER;baseline.presetCfg.version=NV_ENC_CONFIG_VER;
+ if(api.nvEncGetEncodePresetConfigEx(encoder,codec_guid(),NV_ENC_PRESET_P2_GUID,
+    NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,&baseline)!=NV_ENC_SUCCESS)return false;
+ output=baseline.presetCfg;
+ std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);
+ if(found!=sessions.end()){found->second.baseline=output;found->second.baseline_ready=true;}
+ return true;
+}
 bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config){
  if(source.version!=old_init||!source.encodeConfig||source.encodeConfig->version!=old_config||
     !source.frameRateDen||uint64_t(source.frameRateNum)!=uint64_t(source.frameRateDen)*requested_fps||
     source.encodeWidth<128||source.encodeHeight<128||source.encodeWidth>(requested_codec==2?1024u:1536u)||source.encodeHeight>(requested_codec==2?4096u:6144u))return false;
- NV_ENC_PRESET_CONFIG baseline{};baseline.version=NV_ENC_PRESET_CONFIG_VER;baseline.presetCfg.version=NV_ENC_CONFIG_VER;
- if(api.nvEncGetEncodePresetConfigEx(encoder,codec_guid(),NV_ENC_PRESET_P2_GUID,
-    NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,&baseline)!=NV_ENC_SUCCESS)return false;
- init=source;config=baseline.presetCfg;
+ NV_ENC_CONFIG baseline{};
+ if(!session_baseline(encoder,baseline))return false;
+ init=source;config=baseline;
  init.version=NV_ENC_INITIALIZE_PARAMS_VER;config.version=NV_ENC_CONFIG_VER;
  init.encodeGUID=codec_guid();init.presetGUID=NV_ENC_PRESET_P2_GUID;
  init.tuningInfo=NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;init.enablePTD=1;init.enableMEOnlyMode=0;
@@ -232,8 +245,11 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
     map[y*columns+x]=static_cast<int8_t>(std::clamp(minimum*4,-128,124));
    }
   }
-  // Retain the timing-marker block at high quality across the larger AV1 SB.
-  map[(rows-1)*columns]=requested_codec==2?-51:-128;
+  // Retain the HEVC 32x32 timing tile at high quality: every H.264 macroblock
+  // it covers, or the larger AV1 superblock that contains it.
+  if(requested_codec==2){
+   for(unsigned y=2*(height-1);y<rows;++y)for(unsigned x=0;x<std::min(2u,columns);++x)map[y*columns+x]=-51;
+  }else map[(rows-1)*columns]=-128;
   copy.qpDeltaMap=map.data();copy.qpDeltaMapSize=static_cast<uint32_t>(map.size());
  }
  const auto status=api.nvEncEncodePicture(encoder,&copy);++stats.encodes;stats.last_status=status;

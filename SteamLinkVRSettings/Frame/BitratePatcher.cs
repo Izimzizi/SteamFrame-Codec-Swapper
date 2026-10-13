@@ -109,7 +109,9 @@ public sealed class BitratePatcher
                 if (backupState == BitrateBackupState.VerifiedOriginal) ValidateSegments(data, plan!, false);
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or OverflowException or InvalidOperationException)
+        // A malformed backup or receipt makes this driver unavailable for patching; it must
+        // not escape and block ordinary stream settings that only inspect the driver.
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or OverflowException or InvalidOperationException)
         { state = BitratePatchState.Unavailable; error = ex.Message; }
         var running = vrServerRunning();
         var message = error ?? (backupState == BitrateBackupState.Mismatch ? "The backup does not match this exact source build; no changes are allowed." : state switch

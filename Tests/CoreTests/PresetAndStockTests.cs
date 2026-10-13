@@ -27,6 +27,36 @@ public sealed class PresetAndStockTests : IDisposable
         Assert.DoesNotContain("Ssh", await File.ReadAllTextAsync(Path.Combine(_root, "previous.json")));
     }
     [Fact]
+    public async Task StockResetLeavesTrackingOscAndConnectivitySettingsAlone()
+    {
+        await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"targetBandwidth":275.0,"useOSC":true,"useOSCFace":true,"OSCInPort":9001,"shareEyeTrackingData":true,"enableHandTracking":false,"enableNAT":false,"allowVolumeSync":false,"wirelessShutdownTimeout":600}}""");
+        var preferences = new FramePreferences();
+        var captured = await Profiles.CaptureAsync(preferences, false);
+        Assert.DoesNotContain(captured.Driver.Keys, SettingOwnership.UnrelatedKeys.Contains);
+        await Profiles.ResetAsync(preferences);
+        var driver = await Driver.LoadUserOverridesAsync();
+        Assert.DoesNotContain("targetBandwidth", driver.Keys);
+        Assert.Equal(true, driver["useOSC"]); Assert.Equal(true, driver["useOSCFace"]); Assert.Equal(9001, driver["OSCInPort"]); Assert.Equal(true, driver["shareEyeTrackingData"]);
+        Assert.Equal(false, driver["enableHandTracking"]); Assert.Equal(false, driver["enableNAT"]); Assert.Equal(false, driver["allowVolumeSync"]); Assert.Equal(600, driver["wirelessShutdownTimeout"]);
+    }
+    [Fact]
+    public async Task OlderPresetsWithNonTuningSettingsStillLoadWithoutThem()
+    {
+        var path = Path.Combine(_root, "legacy-presets.json");
+        await File.WriteAllTextAsync(path, """[{"Id":"PRESET-ID","Name":"Legacy","Profile":{"Version":1,"Driver":{"targetBandwidth":200.0,"useOSC":false},"Video":{},"Codec":0,"TargetMbps":200,"Fps":90,"GazeOffset":-4,"PeripheralOffset":8,"Advanced":{}}}]""".Replace("PRESET-ID", Guid.NewGuid().ToString("D")));
+        var preset = Assert.Single(await new PresetStore(path).ReadAsync());
+        Assert.Equal(new[] { "targetBandwidth" }, preset.Profile.Driver.Keys);
+    }
+    [Fact]
+    public async Task OutOfRangeOlderOverridesDoNotBlockBackToStockOrSavingAPreset()
+    {
+        await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"targetBandwidth":600.0,"enableQoS":true}}""");
+        var captured = await Profiles.CaptureAsync(new FramePreferences(), false);
+        Assert.DoesNotContain("targetBandwidth", captured.Driver.Keys); Assert.Contains("enableQoS", captured.Driver.Keys);
+        await Profiles.SaveAsync(captured);
+        await new PresetStore(Path.Combine(_root, "presets.json")).SaveAsync("From old release", captured);
+    }
+    [Fact]
     public async Task CompletePresetSurvivesRestartAndNameReplacement()
     {
         var path = Path.Combine(_root, "presets.json"); var store = new PresetStore(path);

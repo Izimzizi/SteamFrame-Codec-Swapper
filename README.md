@@ -59,7 +59,8 @@ starts encoder monitoring on its own.
 
 Use **Save preset…** in Stream settings to keep one complete tuning setup. Selecting
 a preset fills the editor without modifying the stream; Apply activates it. Presets
-also include saved Additional settings. Save those edits before capturing the preset.
+also include saved Additional streaming settings; tracking, OSC, NAT, power and volume
+preferences are left as they are. Save those edits before capturing the preset.
 Passwords, developer pairing paths and temporary awake-test leases are not saved in
 presets. **Back to stock** saves the currently applied tuning before restoring Valve
 defaults; **Load previous tuning** fills the editor with that saved setup.
@@ -128,7 +129,9 @@ own installed file. It refuses unknown headset builds.
   add general codec negotiation or support unknown future Frame builds.
 - AV1 has been tested on an RTX 5090 and the Frame's Qualcomm hardware decoder.
   A 100 Mbps request at 90 Hz is the initial viewing setting; 200 Mbps failed the
-  earlier fresh-frame rate test. H.264 currently uses a smaller packed image.
+  earlier fresh-frame rate test. H.264 currently uses a smaller packed image; 225 Mbps
+  was its highest clean short trial, and requests above 232 Mbps need the bitrate patch.
+  SteamVR can lower a codec session's bitrate after link problems.
   Available controls are experiments, not a guarantee of higher quality or full FPS.
 
 ## Project layout

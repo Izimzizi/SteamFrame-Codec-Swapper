@@ -82,7 +82,7 @@ public sealed class FrameConnection : IAsyncDisposable
                 return new(wifi, hasInfo, links, hasInfo ? "Active links reported by the headset" : "The headset is available; no stream is active.");
             }
         }
-        catch (Exception ex) when (ex is IOException or HttpRequestException or WebSocketException or JsonException or OperationCanceledException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex) when (ex is IOException or HttpRequestException or WebSocketException or JsonException or OperationCanceledException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException)
         {
             await RemoveForwardAsync();
             return new(null, false, [], ex is OperationCanceledException ? "Headset status timed out. Check Developer Mode and the USB connection." : ex.Message);

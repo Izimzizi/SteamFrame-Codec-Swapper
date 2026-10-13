@@ -14,7 +14,8 @@ public sealed class PresetStore(string? path = null)
     {
         if (!File.Exists(_path)) return [];
         if (new FileInfo(_path).Length > 4 * 1024 * 1024) throw new IOException("The preset file is too large.");
-        var values = JsonSerializer.Deserialize<List<NamedPreset>>(await File.ReadAllTextAsync(_path)) ?? throw new IOException("The preset file is empty.");
+        var values = (JsonSerializer.Deserialize<List<NamedPreset>>(await File.ReadAllTextAsync(_path)) ?? throw new IOException("The preset file is empty."))
+            .Select(value => value is null ? throw new IOException("The preset catalog is incompatible.") : value with { Profile = StockProfiles.WithoutUnrelated(value.Profile) }).ToList();
         if (values.Count > 200 || values.Select(x => x.Id).Distinct().Count() != values.Count) throw new IOException("The preset catalog is incompatible.");
         foreach (var value in values) { ValidateName(value.Name); if (!Guid.TryParseExact(value.Id, "D", out _)) throw new IOException("A preset identifier is invalid."); StockProfiles.Validate(value.Profile); }
         return values.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();

@@ -103,6 +103,7 @@ public sealed class StreamingHealth
 
     private void ReadTail(Tail tail, DateTimeOffset observed, List<StreamingHealthEvent> capture)
     {
+        long readFrom = -1;
         try
         {
             using var stream = new FileStream(tail.Path, FileMode.Open, FileAccess.Read,
@@ -128,7 +129,7 @@ public sealed class StreamingHealth
                 tail.Line.Clear();
                 tail.DiscardUntilNewline = true;
             }
-            stream.Position = tail.Position;
+            stream.Position = readFrom = tail.Position;
             var remaining = Math.Min(MaximumBytesPerLogPerPoll, stream.Length - tail.Position);
             var buffer = new byte[4096];
             while (remaining > 0)
@@ -165,6 +166,10 @@ public sealed class StreamingHealth
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             tail.Available = false; // Retry on the next poll; do not replay existing bytes.
+            // Bytes consumed before the failure were already parsed and counted. Keep their
+            // position and drop the anchor that described the old one, so the next poll
+            // continues rather than treating the log as replaced and re-reading it.
+            if (readFrom >= 0 && tail.Position != readFrom) tail.Anchor = [];
         }
     }
 
@@ -203,7 +208,7 @@ public sealed class StreamingHealth
             foreach (var item in events)
             {
                 var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(item, JsonOptions) + "\n");
-                stream ??= new FileStream(CapturePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+                stream ??= CaptureFile.OpenAppend(CapturePath);
                 if (stream.Length + bytes.Length > MaximumCaptureFileBytes)
                 {
                     stream.Dispose(); stream = null;
@@ -284,8 +289,10 @@ public sealed class StreamingHealth
     private const string Number = @"[0-9]{1,10}(?:\.[0-9]{1,9})?";
     private static readonly Regex Header = Pattern(@"^(?<time>[A-Za-z]{3} [A-Za-z]{3} [0-9]{1,2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})\s+\[[A-Za-z]{1,16}\]\s+-\s+");
     private static readonly Regex ResetRequest = Pattern(@"^Reset video stream because we had a stream reset request(?: \[wgpReset:(?<request>[0-9]{1,10}) != lastReset:(?<previous>[0-9]{1,10})\])?(?:\s|$)");
+    private static readonly Regex FrameIdReset = Pattern(@"^Reset video stream because frame ID was not what we expected\. wgp id \((?<request>[0-9]{1,10})\) - last id \((?<previous>[0-9]{1,10})\)(?:\s|$)");
     private static readonly Regex BadLink = Pattern(@"^Bad link event: d=(?<duration>" + Number + @") ms (?<before>" + Number + @") mbit/s -> (?<after>" + Number + @") mbit/s, ping (?<ping>" + Number + @") ms(?:\s|,|$)");
-    private static readonly Regex EncoderPerf = Pattern(@"^\[Perf warning\]\s+(?<duration>" + Number + @")\s*ms\s+-\s+(?<stage>Encode Time|videonvenc::GetEncodedPacket|videonvenc::StartEncodeData|StartEncodeData::nvEncEncodePicture|Submitting EOS encode)(?:\s|$)");
+    private static readonly Regex EncoderPerf = Pattern(@"^\[Perf warning\]\s+(?<duration>" + Number + @")\s*ms\s+-\s+(?<stage>Encode Time|videonvenc::SubmitFrame|videonvenc::GetEncodedPacket|videonvenc::StartEncodeData|StartEncodeData::nvEncReconfigureEncoder|StartEncodeData::nvEncEncodePicture|Submitting EOS encode)(?:\s|$)");
+    private static readonly Regex SubmitDelay = Pattern(@"^Perf warning: Getting from SubmitFrame to StartEncode took (?<duration>" + Number + @")\s*ms(?:\s|$)");
     private static readonly Regex Reconfiguration = Pattern(@"^Starting NVENC reset configuration Cause Mask: (?<mask>[01]{1,32})(?:\s|$)");
     private static readonly Regex AcquireTimeout = Pattern(@"^WaitForAcquire timed out \([A-Za-z_]{1,32}\); rendering the next frame before the driver took the sync texture(?:\s|$)");
     private static readonly Regex Suppressed = Pattern(@"\[(?<count>[0-9]{1,10}) messages suppressed\]");
@@ -318,6 +325,14 @@ public sealed class StreamingHealth
                         ResetRequestId: Count(match, "request"), PreviousResetId: Count(match, "previous"));
                     return true;
                 }
+                match = FrameIdReset.Match(body);
+                if (match.Success)
+                {
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.StreamResetRequest,
+                        "Stream was reset because the received frame ID was unexpected; this follows a stream restart or lost frames, not a measured dropped-frame count.",
+                        ResetRequestId: Count(match, "request"), PreviousResetId: Count(match, "previous"));
+                    return true;
+                }
                 match = BadLink.Match(body);
                 if (match.Success && Numeric(match, "duration") is { } delay && Numeric(match, "ping") is { } ping &&
                     Numeric(match, "before") is { } before && Numeric(match, "after") is { } after)
@@ -332,6 +347,13 @@ public sealed class StreamingHealth
                     var stage = match.Groups["stage"].Value; // Exact allowlisted label, never arbitrary log text.
                     item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.EncoderPerformance,
                         FormattableString.Invariant($"Encoder performance warning: {stage} took {duration:0.###} ms."), duration);
+                    return true;
+                }
+                match = SubmitDelay.Match(body);
+                if (match.Success && Numeric(match, "duration") is { } delayMs)
+                {
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.EncoderPerformance,
+                        FormattableString.Invariant($"Encoder performance warning: SubmitFrame to StartEncode took {delayMs:0.###} ms."), delayMs);
                     return true;
                 }
                 match = Reconfiguration.Match(body);

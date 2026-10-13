@@ -246,7 +246,7 @@ public sealed class FrameReceiverDiagnostics
                     if (File.Exists(CapturePath + ".1")) File.Move(CapturePath + ".1", CapturePath + ".2");
                     File.Move(CapturePath, CapturePath + ".1");
                 }
-                using var output = new FileStream(CapturePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+                using var output = CaptureFile.OpenAppend(CapturePath);
                 output.Write(bytes);
             }
         }

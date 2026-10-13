@@ -1,12 +1,15 @@
 // Fake synchronous NVENC APIs only. Never creates a GPU session or opens SteamVR.
 #include "../encoder_probe.cpp"
 NVENCSTATUS policyResult = NV_ENC_SUCCESS;
+bool rejectCbr{};
+unsigned initializeCalls{};
 NV_ENC_INITIALIZE_PARAMS seenParams{};
 NV_ENC_CONFIG seenConfig{};
 void* seenPointer{};
 NV_ENC_CONFIG* seenConfigPointer{};
 NVENCSTATUS NVENCAPI fakeInitialize(void*, NV_ENC_INITIALIZE_PARAMS* params) {
-    seenPointer = params;
+    seenPointer = params; ++initializeCalls;
+    if (rejectCbr && params && params->encodeConfig && params->encodeConfig->rcParams.rateControlMode == NV_ENC_PARAMS_RC_CBR) return NV_ENC_ERR_UNSUPPORTED_PARAM;
     if (params && params->encodeConfig) { seenParams = *params; seenConfig = *params->encodeConfig; seenConfigPointer = params->encodeConfig; }
     return policyResult;
 }
@@ -100,6 +103,14 @@ int main() {
     policyResult = NV_ENC_SUCCESS;
     hookInitialize(handle, &params);
     if (stats.appliedPolicy || sessions[handle].customPolicy || sessions[handle].acceptedRc != NV_ENC_PARAMS_RC_VBR) return 18;
+    // A policy-only initialize failure falls back to Valve's exact parameters and is latched.
+    rejectCbr = true; auto other = reinterpret_cast<void*>(789);
+    SetEncodingPolicy(reinterpret_cast<void*>(2)); const auto rejectedBefore = stats.rejectedPolicyCalls;
+    if (hookInitialize(other, &params) || seenPointer != &params || stats.appliedPolicy || stats.rejectedPolicyCalls != rejectedBefore + 1) return 19;
+    const auto callsBefore = initializeCalls;
+    if (hookInitialize(other, &params) || initializeCalls != callsBefore + 1 || seenPointer != &params) return 20;
+    SetEncodingPolicy(reinterpret_cast<void*>(2)); rejectCbr = false;
+    if (hookInitialize(other, &params) || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR) return 21;
     // No caller-owned structure or unrequested parameter changed in this test.
     printf("PASS: public API policy copy, exact ABI/caller guards, no-padding CBR, preserved frame/GOP/VBV, failed-call telemetry, restoration-before-stop.\n");
     return 0;

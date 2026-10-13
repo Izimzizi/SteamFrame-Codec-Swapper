@@ -42,15 +42,29 @@ inline const char* PresetName(const GUID& value) {
     }
     return "Other";
 }
+// Fields that cannot apply to this configuration. Callers drop these individually so
+// one conflict does not discard unrelated requested fields.
+inline uint32_t AdvancedConflicts(const AdvancedEncoding& value, const NV_ENC_CONFIG& config) {
+    const auto& rc = config.rcParams;
+    uint32_t conflicts{};
+    if ((value.flags & AdvancedCq) && rc.rateControlMode != NV_ENC_PARAMS_RC_VBR) conflicts |= AdvancedCq;
+    if ((value.flags & AdvancedPeak) && rc.rateControlMode != NV_ENC_PARAMS_RC_VBR) conflicts |= AdvancedPeak;
+    if ((value.flags & AdvancedMaxQp) && rc.enableMinQP &&
+        (value.maxQp < rc.minQP.qpIntra || value.maxQp < rc.minQP.qpInterP || value.maxQp < rc.minQP.qpInterB)) conflicts |= AdvancedMaxQp;
+    // An explicit delay larger than Valve's unchanged buffer cannot apply. (Both explicit
+    // values are already validated together; a VBV-only request clamps Valve's delay.)
+    if ((value.flags & AdvancedDelay) && !(value.flags & AdvancedVbv) && rc.vbvBufferSize && value.vbvDelayBits > rc.vbvBufferSize)
+        conflicts |= AdvancedDelay;
+    return conflicts;
+}
 inline bool ApplyAdvancedEncoding(const AdvancedEncoding& value, NV_ENC_CONFIG& config) {
     auto& rc = config.rcParams;
-    if ((value.flags & AdvancedCq) && rc.rateControlMode != NV_ENC_PARAMS_RC_VBR) return false;
-    if ((value.flags & AdvancedPeak) && rc.rateControlMode != NV_ENC_PARAMS_RC_VBR) return false;
-    if ((value.flags & AdvancedMaxQp) && rc.enableMinQP &&
-        (value.maxQp < rc.minQP.qpIntra || value.maxQp < rc.minQP.qpInterP || value.maxQp < rc.minQP.qpInterB)) return false;
+    if (AdvancedConflicts(value, config)) return false;
     const auto size = value.flags & AdvancedVbv ? value.vbvBits : rc.vbvBufferSize;
     const auto delay = value.flags & AdvancedDelay ? value.vbvDelayBits : rc.vbvInitialDelay;
-    if ((value.flags & (AdvancedVbv | AdvancedDelay)) && size && delay > size) return false;
+    if ((value.flags & AdvancedDelay) && size && delay > size) return false;
+    // A smaller requested buffer must not be paired with Valve's larger initial delay.
+    if ((value.flags & AdvancedVbv) && !(value.flags & AdvancedDelay) && delay > size) rc.vbvInitialDelay = size;
     if (value.flags & AdvancedCq) { rc.targetQuality = static_cast<uint8_t>(value.cq256 >> 8); rc.targetQualityLSB = static_cast<uint8_t>(value.cq256); }
     if (value.flags & AdvancedMaxQp) { rc.enableMaxQP = 1; rc.maxQP = {value.maxQp, value.maxQp, value.maxQp}; }
     if (value.flags & AdvancedPeak) {

@@ -111,7 +111,9 @@ def main():
         'AV1 uses the bundled GPL-2.0-only experimental Iris module.\n'
         'Corresponding source, provenance, port patch, license and build instructions: Assets/decoder-source.zip.\n'
         'Client patches are generated on the Frame from its exact installed build; no Valve client or firmware is distributed.\n'
-        'The session expires after 90 minutes and restores HEVC. Codec changes restart SteamVR.\n'
+        'Returning to HEVC restores the PC stream settings from before the session. Codec changes restart SteamVR.\n'
+        'Quitting SteamVR ends the session without relaunching it. After 90 minutes HEVC is restored when SteamVR exits,\n'
+        'or automatically before the two-hour Frame administrator session limit.\n'
         'H.264 uses a 1024x4096 packed layout; AV1 uses up to 1536x6144.\n'
         'Bundled CPython license and included third-party notices: runtime/LICENSE.txt.\n',
         encoding='utf-8')

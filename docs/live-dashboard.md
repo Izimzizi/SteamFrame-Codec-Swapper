@@ -70,7 +70,7 @@ While the dashboard is open, the app watches new log events and saves bounded JS
 
 | File | Contents |
 | --- | --- |
-| `streaming-health.jsonl` | PC-side SteamVR events: client recovery requests, bad-link delays, encoder stalls, compositor handoff warnings, encoder reconfigurations. |
+| `streaming-health.jsonl` | PC-side SteamVR events: client recovery requests and frame-ID stream resets, bad-link delays, encoder stalls (including SubmitFrame, submit-to-start and reconfigure delays), compositor handoff warnings, encoder reconfigurations. |
 | `frame-receiver-health.jsonl` | Headset receiver events over paired wireless SSH: retry requests, backtrack-window resets, unrecoverable FEC errors, late metadata, missing mapped buffers, buffer index mismatches, decoder queue failures. |
 | `compositor-timing.jsonl` | PC presentation anomalies: drop, reprojection and timeout deltas with observation timestamps. |
 

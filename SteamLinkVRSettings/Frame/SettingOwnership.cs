@@ -9,8 +9,17 @@ public static class SettingOwnership
     private static readonly Dictionary<string, SettingItem> ValueDefinitions = SettingDefinitions.BuildCategories().SelectMany(x => x.Settings).ToDictionary(x => x.Key, StringComparer.Ordinal);
     public static readonly string[] StreamKeys = ["targetBandwidth", "automaticBandwidth", "allowMultipleLinks", "enableAmfEncoder", "streamFormatWidth", "automaticStreamFormatWidth"];
     public static readonly HashSet<string> GuidedKeys = StreamKeys.Concat(AdvancedDriverSettings.Definitions.Select(x => x.Key)).ToHashSet(StringComparer.Ordinal);
+    /// <summary>
+    /// Integration, privacy, connectivity and power preferences in Additional settings. They are not
+    /// stream tuning, so presets and Back to stock never save, remove or reapply them.
+    /// </summary>
+    public static readonly HashSet<string> UnrelatedKeys = new(StringComparer.Ordinal)
+    {
+        "enableHandTracking", "shareEyeTrackingData", "useOSC", "useOSCFace", "OSCInPort", "OSCOutPort",
+        "enableNAT", "openDashboardOnConnectionLoss", "wirelessShutdownTimeout", "allowVolumeSync"
+    };
     public static readonly HashSet<string> TuningKeys = SettingDefinitions.BuildCategories().SelectMany(x => x.Settings).Select(x => x.Key)
-        .Concat(GuidedKeys).Append("recommendedBandwidthMbit").ToHashSet(StringComparer.Ordinal);
+        .Concat(GuidedKeys).Append("recommendedBandwidthMbit").Where(key => !UnrelatedKeys.Contains(key)).ToHashSet(StringComparer.Ordinal);
     public static readonly string[] VideoKeys = ["allowSupersampleFiltering", "preferredRefreshRate"];
     public static void ValidateValue(string key, object? value)
     {

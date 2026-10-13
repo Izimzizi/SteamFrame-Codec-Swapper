@@ -131,7 +131,10 @@ public sealed partial class FramePage : Page
         {
             try
             {
-                if (!CodecHooksPaused(await _codecController.ReadStatusAsync())) await _powerLease.RestoreAsync();
+                bool paused;
+                try { paused = CodecHooksPaused(await _codecController.ReadStatusAsync()); }
+                catch (Exception) { paused = true; } // Codec status must never prevent closing.
+                if (!paused) await _powerLease.RestoreAsync();
                 else if (_powerLease.RecoveryPending) PowerLeaseStatus.Text = "Power restoration pending until the codec reconnect finishes; original values remain saved.";
             }
             catch (Exception error) when (_powerLease.RecoveryPending)
@@ -231,20 +234,21 @@ public sealed partial class FramePage : Page
         {
             var at = Now;
             PollUsbDongle(at);
-            var runningTask = Task.Run(() => OpenVrSettings.IsRunning);
+            var runningTask = Settle(Task.Run(() => OpenVrSettings.IsRunning), _ => false);
             // A paired switch installs its backend into the fresh process before ordinary hooks may start.
             var codecService = await _codecController.ReadStatusAsync(lifetime.Token);
             if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
             RenderCodecService(codecService);
             var codecPaused = CodecHooksPaused(codecService);
-            var nativeTask = codecPaused ? Task.FromResult(new EncoderSnapshot { Message = "Codec session is reconnecting; encoder monitoring is paused." }) : _probe.GetSnapshotAsync();
-            var trafficTask = Task.Run(() => _traffic.Sample());
-            var healthTask = _streamHealth.PollAsync(lifetime.Token);
-            var compositorTask = codecPaused
-                ? Task.FromResult(_compositorTiming.Current with { Available = false, ObservedAt = DateTimeOffset.Now,
-                    Message = "Codec session is reconnecting; PC compositor timing is paused." })
-                : _compositorTiming.PollAsync(lifetime.Token);
-            var traceTask = at >= _nextTraceRead ? Task.Run(() => _frameTrace.ReadLatest(), lifetime.Token) : null;
+            // Each source fails on its own, so one bad reading cannot stop the rest of the
+            // dashboard or leave completed headset reads uncollected.
+            var nativeTask = codecPaused ? Task.FromResult(new EncoderSnapshot { Message = "Codec session is reconnecting; encoder monitoring is paused." })
+                : Settle(_probe.GetSnapshotAsync(), error => new EncoderSnapshot { Message = "Encoder monitor unavailable: " + error.Message });
+            var trafficTask = Settle(Task.Run(() => _traffic.Sample()), _ => Array.Empty<AdapterSample>());
+            var healthTask = Settle(_streamHealth.PollAsync(lifetime.Token), _ => _streamHealth.Current);
+            var compositorTask = codecPaused ? Task.FromResult(CompositorFallback("Codec session is reconnecting; PC compositor timing is paused."))
+                : ReadCompositorAsync(lifetime.Token);
+            var traceTask = at >= _nextTraceRead ? Settle(Task.Run(() => _frameTrace.ReadLatest(), lifetime.Token), _ => null) : null;
             if (traceTask != null) _nextTraceRead = at + 5;
             // Remote monitoring must not stall the one-second video graph if Wi-Fi disappears.
             if (_linkRead is null && at >= _nextConnectionRead)
@@ -290,7 +294,7 @@ public sealed partial class FramePage : Page
             var health = await healthTask;
             HealthSummary.Text = health.Summary + (health.CaptureError is null ? "" : " Capture file unavailable: " + health.CaptureError);
             HealthCounts.Text = $"This app session: {health.StreamResetRequests} recovery requests • {health.NetworkBadLinkEvents} network delays • {health.EncoderPerformanceWarnings} encoder stalls • {health.CompositorAcquireTimeouts} compositor handoff warnings";
-            var compositor = await compositorTask;
+            var compositor = _lastCompositor = await compositorTask;
             CompositorStatus.Text = compositor.Available && compositor.ScenePid is int scene
                 ? $"PC scene {scene}: {compositor.DroppedFrames} dropped presentations • {compositor.ReprojectedFrames} reprojected • {compositor.TimedOutEvents} timeout events • {compositor.LateRenderFrames} frames on an unpredicted vsync"
                 : compositor.Message;
@@ -330,8 +334,7 @@ public sealed partial class FramePage : Page
                 _nextRuntimeRead = at + 3;
                 try
                 {
-                    var live = await Task.Run(() => OpenVrSettings.Read(_paths));
-                    var supersample = await Task.Run(() => OpenVrSettings.ReadSupersampleFiltering(_paths));
+                    var (live, supersample) = await ReadOpenVrAsync("runtime", () => (OpenVrSettings.Read(_paths), OpenVrSettings.ReadSupersampleFiltering(_paths)));
                     if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
                     _target = live.Target;
                     if (!_bandwidthEdited && _pendingPreset == null) ShowSupersampleValue(supersample, "Live SteamVR readback");
@@ -552,6 +555,19 @@ public sealed partial class FramePage : Page
         if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value % 1 != 0) throw new ArgumentException("Use a whole-number bitrate target.");
         var suppliedPassword = CodecPasswordInput.Password;
         CodecPasswordInput.Password = "";
+        // Validate the whole request before a pending preset stops SteamVR, changes the
+        // driver patch or writes settings, so a rejected Apply leaves nothing half-applied.
+        string ceilingNote;
+        if (SelectedCodec != StreamCodec.Hevc)
+        {
+            new CodecSwitchRequest(SelectedCodec, checked((int)BitrateInput.Value), CodecRefreshInput.SelectedIndex == 1 ? 120 : 90).Validate();
+            ceilingNote = await CheckBitrateCeilingAsync(BitrateInput.Value);
+        }
+        else
+        {
+            ValidateHevcInputs();
+            ceilingNote = AutomaticInput.IsOn ? "" : await CheckBitrateCeilingAsync(Math.Round(BitrateInput.Value));
+        }
         var presetNeedsReconnect = _pendingPreset != null;
         await PreparePendingPresetAsync();
         if (SelectedCodec != StreamCodec.Hevc)
@@ -565,14 +581,10 @@ public sealed partial class FramePage : Page
             await ApplyPendingPresetAsync(paired: true);
             await ApplySupersampleAsync();
             _presetRestartNeeded = false;
-            _bandwidthEdited = _codecEdited = _refreshEdited = false; UpdateStreamEditStatus(); return message;
+            _bandwidthEdited = _codecEdited = _refreshEdited = false; UpdateStreamEditStatus(); return message + ceilingNote;
         }
-        if (_codecService.Live) { await EndCodecSessionAsync(); await WaitForHevcSettingsAsync(); }
-        if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value < 25 || BitrateInput.Value > 500) throw new ArgumentException("Choose a bitrate between 25 and 500 Mbps.");
-        if (!FoveationOffsets.IsValid(GazeInput.Value, FoveationOffsets.MaximumGaze, FoveationOffsets.MinimumGaze) || !FoveationOffsets.IsValid(PeripheralInput.Value, FoveationOffsets.MaximumPeripheral))
-            throw new ArgumentException("Use whole-number offsets: gaze −20 to +12, outside gaze −12 to +31.");
-        if (!double.IsFinite(StreamWidthInput.Value) || StreamWidthInput.Value < 512 || StreamWidthInput.Value > 4096 || StreamWidthInput.Value % 32 != 0)
-            throw new ArgumentException("Choose a stream width from 512 to 4096 pixels, in multiples of 32.");
+        // Read the owner afresh: a session that just closed is finishing, not live.
+        if ((await _codecController.ReadStatusAsync()).Live) { await EndCodecSessionAsync(); await WaitForHevcSettingsAsync(); }
         // Capture the request before asynchronous work. Later edits remain a
         // separate pending request instead of changing what this Apply saves.
         var enteredTarget = BitrateInput.Value;
@@ -593,11 +605,6 @@ public sealed partial class FramePage : Page
         var requestedRefreshEdited = _refreshEdited;
         var requestedPolicy = new EncodingPolicy(_pendingPreset != null ? (EncoderRateControl)RateControlInput.SelectedIndex : _preferences.RateControl, _pendingPreset != null ? (EncoderMultiPass)MultiPassInput.SelectedIndex : _preferences.MultiPass);
         _ = requestedPolicy.Packed;
-        // Check the driver selected in Patches & Recovery, not only the auto-discovered path.
-        var driverPath = DriverPathInput.Text.Trim().Trim('"');
-        var driver = await _patcher.InspectAsync(string.IsNullOrWhiteSpace(driverPath) ? _paths.Driver : driverPath);
-        if (!requestedAutomatic && driver.State == BitratePatchState.Original && requestedTarget > 232)
-            throw new InvalidOperationException("This original driver has a 232 Mbps ceiling when wireless is present. Install the bitrate override in Patches & Recovery before requesting a higher manual target.");
         var values = new Dictionary<string, object?>
         {
             ["automaticBandwidth"] = requestedAutomatic,
@@ -657,8 +664,65 @@ public sealed partial class FramePage : Page
         if (_basicEditRevision == requestRevision) _refreshEdited = false;
         if (_presetRestartNeeded) { SteamVrRuntime.Start(_paths); _presetRestartNeeded = false; }
         _codecEdited = false; UpdateStreamEditStatus();
-        return (running ? "Stream settings accepted by SteamVR. Encoder, width and refresh changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + qualityMessage;
+        return (running ? "Stream settings accepted by SteamVR. Encoder, width and refresh changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + qualityMessage + ceilingNote;
     });
+    private void ValidateHevcInputs()
+    {
+        if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value < 25 || BitrateInput.Value > 500) throw new ArgumentException("Choose a bitrate between 25 and 500 Mbps.");
+        if (!FoveationOffsets.IsValid(GazeInput.Value, FoveationOffsets.MaximumGaze, FoveationOffsets.MinimumGaze) || !FoveationOffsets.IsValid(PeripheralInput.Value, FoveationOffsets.MaximumPeripheral))
+            throw new ArgumentException("Use whole-number offsets: gaze −20 to +12, outside gaze −12 to +31.");
+        if (!double.IsFinite(StreamWidthInput.Value) || StreamWidthInput.Value < 512 || StreamWidthInput.Value > 4096 || StreamWidthInput.Value % 32 != 0)
+            throw new ArgumentException("Choose a stream width from 512 to 4096 pixels, in multiples of 32.");
+    }
+    /// <summary>
+    /// Requests above the original driver's 232 Mbps wireless ceiling need the verified patch, for
+    /// HEVC and paired codecs alike. A pending preset may install or restore it first, so judge the
+    /// state it will leave. An unrecognized driver cannot be checked, so it only produces a warning.
+    /// </summary>
+    private async Task<string> CheckBitrateCeilingAsync(double target)
+    {
+        if (target <= 232) return "";
+        // Check the driver selected in Patches & Recovery, not only the auto-discovered path.
+        var driverPath = DriverPathInput.Text.Trim().Trim('"');
+        var driver = await _patcher.InspectAsync(string.IsNullOrWhiteSpace(driverPath) ? _paths.Driver : driverPath);
+        var patched = driver.IsPatched;
+        if (_pendingPreset is { } preset && driver.IsSupported && string.Equals(Path.GetFullPath(driver.FilePath), Path.GetFullPath(_paths.Driver), StringComparison.OrdinalIgnoreCase))
+            patched = preset.BitratePatch;
+        if (patched) return "";
+        if (driver.IsSupported)
+            throw new InvalidOperationException("This original driver has a 232 Mbps ceiling when wireless is present. Install the bitrate override in Patches & Recovery before requesting a higher target.");
+        return " The driver could not be verified, so SteamVR may still cap this stream at 232 Mbps; check Patches & Recovery.";
+    }
+    private static async Task<T> Settle<T>(Task<T> task, Func<Exception, T> fallback)
+    {
+        try { return await task; }
+        catch (Exception error) when (error is not OperationCanceledException) { return fallback(error); }
+    }
+    // OpenVR calls cannot be cancelled. Bound each wait so a hung SteamVR cannot hold the
+    // action lock, and reuse a still-pending read instead of queueing another blocked one.
+    private static readonly TimeSpan OpenVrResponseLimit = TimeSpan.FromSeconds(3);
+    private readonly Dictionary<string, Task> _openVrReads = new(StringComparer.Ordinal);
+    private CompositorTimingSnapshot? _lastCompositor;
+    private async Task<T> ReadOpenVrAsync<T>(string name, Func<T> read)
+    {
+        if (!_openVrReads.TryGetValue(name, out var pending)) _openVrReads[name] = pending = Task.Run(read);
+        try { await pending.WaitAsync(OpenVrResponseLimit); }
+        catch (TimeoutException) { throw new TimeoutException("SteamVR did not respond to an OpenVR request; it may be busy or hung."); }
+        finally { if (pending.IsCompleted) _openVrReads.Remove(name); }
+        return await (Task<T>)pending;
+    }
+    private Task<CompositorTimingSnapshot> ReadCompositorAsync(CancellationToken cancellationToken)
+    {
+        if (_lastCompositor is null && !_openVrReads.ContainsKey("compositor")) _lastCompositor = _compositorTiming.Current;
+        return Settle(ReadOpenVrAsync("compositor", () => _compositorTiming.Poll(cancellationToken)),
+            error => CompositorFallback(error is TimeoutException ? "SteamVR is not responding; PC compositor timing is paused." : "PC compositor timing unavailable: " + error.Message));
+    }
+    private CompositorTimingSnapshot CompositorFallback(string message)
+    {
+        // CompositorTiming.Current waits for an in-flight poll, so only read it when none is pending.
+        if (_lastCompositor is null && !_openVrReads.ContainsKey("compositor")) _lastCompositor = _compositorTiming.Current;
+        return _lastCompositor! with { Available = false, ObservedAt = DateTimeOffset.Now, Message = message };
+    }
     private void QualityPreset_Click(object sender, RoutedEventArgs e) { QualityInput.IsOn = true; GazeInput.Value = -4; PeripheralInput.Value = 8; }
     private void QualityDefault_Click(object sender, RoutedEventArgs e) { QualityInput.IsOn = false; GazeInput.Value = 0; PeripheralInput.Value = 0; }
     private async void SaveConnection_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>

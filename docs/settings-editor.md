@@ -54,14 +54,20 @@ with SteamVR; for example `targetBandwidth` is always written as a float, and
 ## Complete presets and recovery
 
 Save Additional settings edits before using **Stream settings → Save preset…**.
-The preset includes all known saved driver values plus the current stream and advanced
-controls, filtering, requested codec/refresh and verified bitrate-patch state. Each
+The preset includes the saved streaming driver values plus the current stream and advanced
+controls, filtering, requested codec/refresh and verified bitrate-patch state. Tracking and
+OSC, eye-tracking sharing, NAT, dashboard-on-disconnect, wireless shutdown and volume sync
+are not stream tuning: presets and Back to stock never save, change or remove them. Older
+presets that stored them still load; those values are ignored. Saved overrides outside the
+app's supported ranges, for example from an older release, are left out of a preset or
+Back to stock snapshot instead of blocking it. Apply validates the whole request, including
+the 232 Mbps driver ceiling, before a preset stops SteamVR or changes the driver patch. Each
 dropdown entry is one complete setup. Selecting or reloading it fills the editor;
 **Apply** activates it, including settings absent from the preset being returned to defaults.
 
 **Back to stock** saves the current applied tuning first, closes the experimental codec
 session, restores a verified original driver, and removes known app tuning overrides.
-It retains pairing data and unrelated SteamVR settings. If headset SSH is unavailable,
+It retains pairing data, the non-tuning settings listed above and unrelated SteamVR settings. If headset SSH is unavailable,
 the app reports that resetting the Frame display preference is pending. Reconnect and retry.
 **Load previous tuning** stages the saved setup for review and Apply. Experimental codecs
 may require the Frame user password again; presets never store it.

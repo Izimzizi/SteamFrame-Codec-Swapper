@@ -46,7 +46,24 @@ public sealed class CodecControllerTests
         var dead = new CodecController(lab.Root, lab.Root, _ => null, () => 1000);
         Assert.True((await dead.ReadStatusAsync()).CanStart);
         File.WriteAllText(Path.Combine(lab.Root, "status.json"), "{invalid}");
-        Assert.False((await controller.ReadStatusAsync()).CanStart);
+        // An unreadable status blocks a new session only while a supervisor holds the owner lock.
+        using (var owner = new FileStream(Path.Combine(lab.Root, "owner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+        {
+            owner.WriteByte((byte)'0'); owner.Flush(); owner.Lock(0, 1);
+            Assert.False((await controller.ReadStatusAsync()).CanStart);
+        }
+        Assert.True((await controller.ReadStatusAsync()).CanStart);
+    }
+
+    [Fact]
+    public async Task Closed_session_is_not_live_while_its_owner_exits()
+    {
+        using var lab = new CodecTestDirectory(); lab.Status(state: "closed", codec: "HEVC", ok: true);
+        var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
+        var status = await controller.ReadStatusAsync();
+        Assert.False(status.Live); Assert.False(status.CanStart); Assert.Equal("closed", status.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.CloseAsync());
+        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
     }
 
     [Fact]

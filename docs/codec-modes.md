@@ -57,8 +57,12 @@ password entry.
 | H.264 | NVIDIA NVENC and the Frame's stock Qualcomm hardware decoder | Packed image 1024 × 4096, 90 or 120 Hz; the smaller image is an explicit current limitation. |
 
 H.264 accepts 25–500 Mbps requests; AV1 retains its 25–200 Mbps range.
-The field is the encoder's requested budget. Actual compressed output
-depends on content, and no filler is added to force a minimum transmitted rate.
+The field is the encoder's requested ceiling. SteamVR's own rate control can lower
+the encoder below it after bad-link events, as it does for HEVC, instead of the
+session pinning a rate the link cannot carry. Actual compressed output depends on
+content, and no filler is added to force a minimum transmitted rate. Requests above
+232 Mbps need the [bitrate patch](driver-patcher.md); Apply refuses them on a
+verified original driver, because that driver caps SteamVR's target at 232 Mbps.
 A 200 Mbps request did not maintain the desired new-frame rate in the earlier AV1
 trial. Display refresh, encoded FPS and transmitted Mbps measure different things.
 
@@ -76,15 +80,25 @@ quality-map conversion is not a calibrated comparison of HEVC and AV1 image qual
 
 Choose **HEVC** in Stream settings and apply to remove the temporary client mount, unload
 the AV1 module if active, restore the stock decoder and restart ordinary HEVC.
-The supervised codec session also ends after 90 minutes or when SteamVR exits.
-Closing the app window does not itself end the independent companion session.
+
+The session also ends when SteamVR exits. The Frame and your HEVC stream settings are
+restored, and SteamVR is left closed unless it was already started again. After 90
+minutes the session no longer stops a running game: stock HEVC is restored the next time
+SteamVR exits, or automatically shortly before the Frame administrator session's two-hour
+limit (about 115 minutes after authentication), which restarts SteamVR. The session status
+shows when the limit has been reached. Closing the app window does not itself end the
+independent companion session.
 
 The helper changes only temporary runtime state. It does not replace the installed
 kernel, firmware, original client file or boot module files. Rebooting the Frame
 uses the stock installed components. **Back to stock** additionally restores a verified
 bitrate patch and removes the app's saved tuning overrides, saving the previous setup first.
-Host bitrate, refresh and stream-width
-settings are written to SteamVR and remain configuration settings after the session.
+
+A session writes its own bitrate, automatic bandwidth, link-joining and stream-width
+values to SteamVR. Returning to HEVC puts back the values you had before the session,
+including removing ones that were unset. If a session ends unexpectedly, the next session
+still restores those original values, unless you changed them in the meantime. The display
+refresh rate selected for the session remains configured on the PC and the Frame.
 
 If startup fails, read the codec status before retrying. Stale or unverified
 companion ownership blocks a second session. Use the restore action while the

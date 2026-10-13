@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.4.1 — Streaming reliability fixes
+
+### H.264 and AV1 sessions
+- SteamVR's rate control can lower a codec session's bitrate after bad-link events
+  instead of the session pinning the requested rate. The request is now a ceiling.
+- H.264 above 232 Mbps is refused on a verified original driver, like HEVC; an
+  unrecognized driver produces a warning.
+- Returning to HEVC restores the stream settings from before the session (bitrate,
+  automatic bandwidth, link joining, stream width), including after an interrupted session.
+- Quitting SteamVR restores the Frame and settings without relaunching SteamVR. The
+  90-minute limit no longer stops a running game; HEVC is restored when SteamVR exits or
+  before the Frame administrator session expires.
+- The companion checks SteamVR with Windows process handles instead of starting
+  PowerShell about twice a second for the whole session.
+- The PC adapter reuses its codec preset instead of querying it on every frame, and
+  protects the whole H.264 timing tile.
+
+### HEVC encoder controls
+- A rate-control policy that NVENC rejects at initialization falls back to Valve's
+  configuration and is not retried on every reconnect.
+- Conflicting advanced fields are rejected individually; a VBV-only override clamps
+  Valve's initial delay rather than rejecting every advanced setting.
+
+### Presets, Back to stock and Apply
+- Back to stock and presets leave tracking, OSC, eye-tracking sharing, NAT, dashboard,
+  shutdown and volume preferences alone. Older presets with those values still load.
+- Out-of-range overrides from older releases no longer block Back to stock or Save preset.
+- Apply validates the whole request before a preset stops SteamVR or changes the patch.
+- A codec session that has just closed is no longer treated as live.
+
+### Diagnostics
+- Encoder-stall capture recognizes SubmitFrame, reconfigure and submit-to-start
+  warnings, and frame-ID stream resets are recorded.
+- One failing source no longer stops the whole dashboard refresh or headset capture.
+  OpenVR reads stop waiting after three seconds if SteamVR hangs.
+- An unreadable codec status or driver backup no longer blocks actions or closing the app
+  when no codec service is running.
+- Captures repair a record cut short by a crash; a mid-read log error no longer replays
+  the log; an empty newest recovery trace keeps the previous summary.
+
 ## 1.4.0 — High-quality HEVC and USB connection status
 
 - Added an editable built-in High quality HEVC preset: 400 Mbps target, 90 Hz,
