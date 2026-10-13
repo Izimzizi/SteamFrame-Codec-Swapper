@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 — SteamFrame Advanced Options and HEVC presets
 
 - Renamed the project and app display name to SteamFrame Advanced Options.
 - Bundled Smooth HEVC (300 Mbps, single-pass VBR, original gaze quality) and
