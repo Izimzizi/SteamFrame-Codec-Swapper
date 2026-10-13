@@ -11,7 +11,8 @@ public sealed class EncoderControlsTests
             var policy = new EncodingPolicy(rate, pass);
             Assert.Equal(policy, EncodingPolicy.FromPacked(policy.Packed));
         }
-        foreach (uint invalid in new uint[] { 3, 7, 12, 16, uint.MaxValue })
+        Assert.Equal(14u, new EncodingPolicy(EncoderRateControl.Cbr, EncoderMultiPass.FullResolution).Packed);
+        foreach (uint invalid in new uint[] { 3, 7, 11, 15, 16, uint.MaxValue })
             Assert.Throws<ArgumentOutOfRangeException>(() => EncodingPolicy.FromPacked(invalid));
     }
     [Fact]

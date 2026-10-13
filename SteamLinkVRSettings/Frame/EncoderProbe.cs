@@ -392,7 +392,9 @@ public sealed partial class EncoderProbe
                 SpatialAq = Has(AdvancedEncodingFlags.SpatialAq) ? JsonBool(requested, "spatial_aq") : null,
                 AqStrength = requested.GetProperty("aq_strength").GetInt32(),
                 TemporalAq = Has(AdvancedEncodingFlags.TemporalAq) ? JsonBool(requested, "temporal_aq") : null,
-                Preset = Has(AdvancedEncodingFlags.Preset) ? requested.GetProperty("preset").GetInt32() : null
+                Preset = Has(AdvancedEncodingFlags.Preset) ? requested.GetProperty("preset").GetInt32() : null,
+                StrictGopTarget = Has(AdvancedEncodingFlags.StrictGopTarget) ? JsonBool(requested, "strict_gop_target") : null,
+                LowDelayKeyFrameScale = Has(AdvancedEncodingFlags.KeyFrameScale) ? requested.GetProperty("keyframe_scale").GetInt32() : null
             },
             AppliedFlags = (AdvancedEncodingFlags)json.GetProperty("applied_advanced_flags").GetUInt32(),
             PendingFlags = (AdvancedEncodingFlags)json.GetProperty("pending_advanced_flags").GetUInt32(),
@@ -400,7 +402,9 @@ public sealed partial class EncoderProbe
             QualityTarget = effective.GetProperty("cq256").GetUInt32() / 256.0, MaximumQpEnabled = JsonBool(effective, "max_qp_enabled"),
             MaximumQpI = effective.GetProperty("max_qp_i").GetUInt32(), MaximumQpP = effective.GetProperty("max_qp_p").GetUInt32(), MaximumQpB = effective.GetProperty("max_qp_b").GetUInt32(),
             SpatialAq = JsonBool(effective, "spatial_aq"), AqStrength = effective.GetProperty("aq_strength").GetUInt32(), TemporalAq = JsonBool(effective, "temporal_aq"),
-            CbQpOffset = effective.GetProperty("cb_qp_offset").GetInt32(), CrQpOffset = effective.GetProperty("cr_qp_offset").GetInt32()
+            CbQpOffset = effective.GetProperty("cb_qp_offset").GetInt32(), CrQpOffset = effective.GetProperty("cr_qp_offset").GetInt32(),
+            StrictGopTarget = effective.TryGetProperty("strict_gop_target", out _) ? JsonBool(effective, "strict_gop_target") : null,
+            LowDelayKeyFrameScale = effective.TryGetProperty("keyframe_scale", out var scale) ? scale.GetUInt32() : null
         };
     }
     private static EncoderCallbackTiming? ReadCallbackTiming(JsonElement json)

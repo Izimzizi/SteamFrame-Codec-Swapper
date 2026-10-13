@@ -78,7 +78,7 @@ int main() {
     { std::lock_guard<std::mutex> outer(controlMutex); hookInitialize(handle, &params); hookReconfigure(handle, &reconfigure); }
     hookInitialize(handle, &params);
     if (seenPointer != &params || stats.rejectedPolicyCalls != 2 || stats.appliedPolicy) return 11;
-    for (unsigned invalid : {3u, 7u, 12u, 16u}) if (SetEncodingPolicy(reinterpret_cast<void*>(static_cast<uintptr_t>(invalid))) != 1013) return 12;
+    for (unsigned invalid : {3u, 7u, 11u, 15u, 16u}) if (SetEncodingPolicy(reinterpret_cast<void*>(static_cast<uintptr_t>(invalid))) != 1013) return 12;
     // CBR initialized on a GPU without dynamic RC must survive Valve's VBR
     // reconfigure input; resetting the request waits for a fresh session.
     driverImage.code.push_back({0, std::vector<unsigned char>(65536)});
@@ -111,6 +111,24 @@ int main() {
     if (hookInitialize(other, &params) || initializeCalls != callsBefore + 1 || seenPointer != &params) return 20;
     SetEncodingPolicy(reinterpret_cast<void*>(2)); rejectCbr = false;
     if (hookInitialize(other, &params) || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR) return 21;
+    // Both codecs: full-resolution analysis is the only changed field with inherited RC.
+    for (const auto codec : { NV_ENC_CODEC_HEVC_GUID, NV_ENC_CODEC_H264_GUID }) {
+        params.encodeGUID = codec; reconfigure.reInitEncodeParams = params;
+        const auto untouchedParams = params; const auto untouchedReconfigure = reconfigure;
+        expected = config; expected.rcParams.multiPass = NV_ENC_TWO_PASS_FULL_RESOLUTION;
+        if (SetEncodingPolicy(reinterpret_cast<void*>(12))) return 39;
+        if (hookInitialize(handle, &params) || stats.appliedPolicy != 12 || stats.multiPass != NV_ENC_TWO_PASS_FULL_RESOLUTION ||
+            memcmp(&seenConfig, &expected, sizeof(expected))) return 40;
+        if (hookReconfigure(handle, &reconfigure) || memcmp(&seenConfig, &expected, sizeof(expected)) ||
+            memcmp(&params, &untouchedParams, sizeof(params)) || memcmp(&reconfigure, &untouchedReconfigure, sizeof(reconfigure)) ||
+            memcmp(&config, &originalConfig, sizeof(config))) return 41;
+        SetEncodingPolicy(nullptr); hookReconfigure(handle, &reconfigure);
+        if (stats.appliedPolicy || sessions[handle].customPolicy || memcmp(&seenConfig, &config, sizeof(config))) return 42;
+        policyResult = NV_ENC_ERR_GENERIC; SetEncodingPolicy(reinterpret_cast<void*>(12));
+        hookReconfigure(handle, &reconfigure);
+        if (stats.appliedPolicy || sessions[handle].customPolicy || stats.multiPass != NV_ENC_MULTI_PASS_DISABLED) return 43;
+        policyResult = NV_ENC_SUCCESS;
+    }
     // No caller-owned structure or unrequested parameter changed in this test.
     printf("PASS: public API policy copy, exact ABI/caller guards, no-padding CBR, preserved frame/GOP/VBV, failed-call telemetry, restoration-before-stop.\n");
     return 0;

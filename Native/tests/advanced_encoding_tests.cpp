@@ -2,10 +2,11 @@
 #include "../encoder_probe.cpp"
 NV_ENC_CONFIG observed{}, fixture{};
 NV_ENC_INITIALIZE_PARAMS observedParams{};
-unsigned calls{}; bool rejectCq{}, rejectVbv{};
+unsigned calls{}; bool rejectCq{}, rejectVbv{}, rejectKeyScale{};
 NVENCSTATUS NVENCAPI fakeInitializeAdvanced(void*, NV_ENC_INITIALIZE_PARAMS* params) {
     ++calls; observed = *params->encodeConfig; observedParams = *params;
-    return rejectCq && observed.rcParams.targetQuality == 27 ? NV_ENC_ERR_UNSUPPORTED_PARAM : NV_ENC_SUCCESS;
+    return (rejectCq && observed.rcParams.targetQuality == 27) || (rejectKeyScale && observed.rcParams.lowDelayKeyFrameScale == 4)
+        ? NV_ENC_ERR_UNSUPPORTED_PARAM : NV_ENC_SUCCESS;
 }
 NVENCSTATUS NVENCAPI fakeReconfigureAdvanced(void* handle, NV_ENC_RECONFIGURE_PARAMS* params) { return fakeInitializeAdvanced(handle, &params->reInitEncodeParams); }
 NVENCSTATUS NVENCAPI fakeCaps(void*, GUID, NV_ENC_CAPS_PARAM* parameter, int* value) {
@@ -50,7 +51,7 @@ int main() {
         stats.appliedAdvancedFlags || stats.lastAdvancedError != NV_ENC_ERR_UNSUPPORTED_PARAM || memcmp(&observed, &config, sizeof(config))) return 4;
     hookReconfigure(handle, &reconfigure); if (calls != before + 3) return 5;
     rejectCq = false;
-    auto invalid = value; invalid.flags = 1024; if (SetAdvancedEncoding(&invalid) != 1015) return 6;
+    auto invalid = value; invalid.flags = 2048; if (SetAdvancedEncoding(&invalid) != 1015) return 6;
     invalid = value; invalid.vbvDelayBits = invalid.vbvBits + 1; if (SetAdvancedEncoding(&invalid) != 1015) return 7;
     invalid = value; invalid.cq256 = 51 * 256 + 1; if (SetAdvancedEncoding(&invalid) != 1015) return 8;
     value = {}; value.flags = AdvancedChroma | AdvancedSpatialAq | AdvancedTemporalAq | AdvancedPreset;
@@ -111,6 +112,37 @@ int main() {
     if (!ApplyAdvancedEncoding(value, copy) || copy.rcParams.vbvBufferSize != 1000000 || copy.rcParams.vbvInitialDelay != 1000000) return 25;
     value = {}; value.flags = AdvancedDelay; value.vbvDelayBits = 3000000; copy = config;
     if (AdvancedConflicts(value, copy) != AdvancedDelay || ApplyAdvancedEncoding(value, copy)) return 26;
+    // Version 1 retains its reserved-word contract; version 2 bounds the new fields.
+    value = {}; value.version = 1;
+    if (!AdvancedEncodingValid(value)) return 44;
+    value.strictGopTarget = 1; if (AdvancedEncodingValid(value)) return 45;
+    value = {}; value.version = 3; if (AdvancedEncodingValid(value)) return 46;
+    value = {}; value.flags = AdvancedKeyFrameScale;
+    if (AdvancedEncodingValid(value)) return 47;
+    value.lowDelayKeyFrameScale = 5; if (AdvancedEncodingValid(value)) return 48;
+    value = {}; value.strictGopTarget = 2; if (AdvancedEncodingValid(value)) return 49;
+    rejectVbv = false; config = originalConfig; config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+    reconfigure.reInitEncodeParams = params;
+    AdvancedEncoding empty{}; SetAdvancedEncoding(&empty); hookDestroy(handle); hookInitialize(handle, &params);
+    value = {}; value.flags = AdvancedStrictGop | AdvancedKeyFrameScale; value.strictGopTarget = 1; value.lowDelayKeyFrameScale = 2;
+    SetAdvancedEncoding(&value); hookReconfigure(handle, &reconfigure);
+    if (stats.pendingAdvancedFlags != value.flags || stats.appliedAdvancedFlags || observed.rcParams.strictGOPTarget) return 50;
+    hookDestroy(handle); hookInitialize(handle, &params);
+    auto pacingExpected = config; pacingExpected.rcParams.strictGOPTarget = 1; pacingExpected.rcParams.lowDelayKeyFrameScale = 2;
+    if (stats.pendingAdvancedFlags || stats.appliedAdvancedFlags != value.flags || memcmp(&observed, &pacingExpected, sizeof(observed)) ||
+        !stats.effectiveRc.strictGOPTarget || stats.effectiveRc.lowDelayKeyFrameScale != 2) return 51;
+    auto changed = value; changed.strictGopTarget = 0; changed.lowDelayKeyFrameScale = 1;
+    SetAdvancedEncoding(&changed); hookReconfigure(handle, &reconfigure);
+    if (stats.pendingAdvancedFlags != value.flags || memcmp(&observed, &pacingExpected, sizeof(observed))) return 52;
+    SetAdvancedEncoding(&empty); hookReconfigure(handle, &reconfigure);
+    if (stats.pendingAdvancedFlags != value.flags || StopProbe(nullptr) != 1014) return 53;
+    hookDestroy(handle); hookInitialize(handle, &params);
+    if (stats.appliedAdvancedFlags || stats.pendingAdvancedFlags || sessions[handle].customPolicy || memcmp(&observed, &config, sizeof(config))) return 54;
+    changed.lowDelayKeyFrameScale = 4; SetAdvancedEncoding(&changed); rejectKeyScale = true;
+    const auto beforeRejected = calls; hookDestroy(handle);
+    if (hookInitialize(handle, &params) || calls != beforeRejected + 2 || stats.rejectedAdvancedFlags != changed.flags ||
+        stats.appliedAdvancedFlags || memcmp(&observed, &config, sizeof(config))) return 55;
+    hookInitialize(handle, &params); if (calls != beforeRejected + 3) return 56;
     printf("PASS: advanced ABI/ranges, copied fields, rejection fallback/blocking, consistent presets, reconnect/restoration, min-QP/RC guards and telemetry.\n");
     return 0;
 }

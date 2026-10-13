@@ -33,22 +33,34 @@ versions must match the vendored public declarations exactly. Synchronous calls 
 copied parameter/config structs; caller memory is preserved. Rate-control and multipass
 change only when selected. Custom CBR disables codec filler and picture-timing SEI that
 can request HRD padding. The separate advanced controls selectively override CQ,
-maximum QP, peak bitrate, VBV, chroma-QP offsets and AQ. An explicit peak also bounds
+maximum QP, peak bitrate, VBV, chroma-QP offsets, AQ, GOP bitrate consistency and
+low-delay keyframe bit ratio. An explicit peak also bounds
 Valve's transient per-frame average so the submitted average never exceeds that peak.
-GOP, frame rate, lookahead, references and resource formats remain preserved. Default calls pass through unchanged. Unknown ABI
+GOP length, frame rate, lookahead, references and resource formats remain preserved. Default calls pass through unchanged. Unknown ABI
 and unrelated callers pass through without modification. Failed calls never become
 accepted-policy telemetry.
 
-`SetAdvancedEncoding` uses a fixed 64-byte/version-1 little-endian contract. Missing
+Multipass choices are inherited, disabled, quarter-resolution two-pass and
+full-resolution two-pass (experimental). Packed values 0–2 keep their existing
+meanings; pass value 3 maps to `NV_ENC_TWO_PASS_FULL_RESOLUTION`.
+
+`SetAdvancedEncoding` uses a fixed 64-byte/version-2 little-endian contract. Words
+14/15 carry strict GOP target (0/1) and keyframe I/P bit ratio (1–4 when overridden),
+with flags 512/1024. Version-1 requests are accepted only with their original flags
+and zero reserved words. App/helper identity checks require a SteamVR restart when
+the loaded helper differs from the bundled build. Missing
 overrides preserve Valve values; zero can be an explicit setting such as automatic CQ.
 Custom VBV, temporal AQ and dynamic bitrate/RC changes are capability checked. Chroma,
-AQ and presets are initialization-only; pending changes never mutate an existing
+AQ, presets, GOP consistency and keyframe ratio are initialization-only; pending changes never mutate an existing
 session's initialized bundle. Presets use a matching codec/tuning query and GUID, a
 small whole-field quality whitelist, and preserve Valve's codec/layout/latency policy.
 The active preset snapshot is immutable across later pending preset queries.
 Rejected experiments retain the original caller configuration as fallback and block
 that request until a new explicit Apply. Accepted metadata is the successful submitted
 configuration, not an NVIDIA effective-config query or proof of visual improvement.
+The keyframe ratio is documented for CBR with a single-frame VBV; NVENC may ignore
+it in other configurations. The app limits this experiment to ratios 1–4. These
+settings do not add padding, impose a minimum bitrate or change GOP length.
 
 Explicit Start can arm callbacks before the first session by loading the installed
 NVIDIA API from System32 only. Obtaining its public function table creates no encode

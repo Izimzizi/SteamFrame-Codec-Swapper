@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SteamLinkVRSettings.Frame;
 
 if (args.Length != 1) throw new ArgumentException("Pass the built native helper path.");
@@ -23,8 +24,29 @@ if (exports.ContainsKey("SetAdvancedEncoding"))
             .Invoke(null, [document.RootElement]);
         var timing = (EncoderCallbackTiming?)typeof(EncoderProbe).GetMethod("ReadCallbackTiming", BindingFlags.NonPublic | BindingFlags.Static)!
             .Invoke(null, [document.RootElement]);
-        if (advanced is not { Supported: true } || !advanced.Requested.IsDefault || advanced.AppliedFlags != 0 || timing is null || timing.EncodeCalls != 0)
+        if (advanced is not { Supported: true, StrictGopTarget: false, LowDelayKeyFrameScale: 0 } || !advanced.Requested.IsDefault || advanced.AppliedFlags != 0 || timing is null || timing.EncodeCalls != 0)
             throw new Exception("Advanced native/managed metadata contract mismatch.");
+        var fixture = JsonNode.Parse(document.RootElement.GetRawText())!;
+        fixture["requested_advanced"]!["flags"] = 1536;
+        fixture["requested_advanced"]!["strict_gop_target"] = 0;
+        fixture["requested_advanced"]!["keyframe_scale"] = 2;
+        fixture["effective"]!["strict_gop_target"] = true;
+        fixture["effective"]!["keyframe_scale"] = 1;
+        var parse = typeof(EncoderProbe).GetMethod("ReadAdvancedEncoding", BindingFlags.NonPublic | BindingFlags.Static)!;
+        using var updated = JsonDocument.Parse(fixture.ToJsonString());
+        var pending = (AdvancedEncodingSnapshot)parse.Invoke(null, [updated.RootElement])!;
+        if (pending.Requested.StrictGopTarget != false || pending.Requested.LowDelayKeyFrameScale != 2 ||
+            pending.StrictGopTarget != true || pending.LowDelayKeyFrameScale != 1)
+            throw new Exception("Requested and accepted pacing settings were conflated.");
+        fixture["requested_advanced"]!["flags"] = 0;
+        fixture["requested_advanced"]!.AsObject().Remove("strict_gop_target");
+        fixture["requested_advanced"]!.AsObject().Remove("keyframe_scale");
+        fixture["effective"]!.AsObject().Remove("strict_gop_target");
+        fixture["effective"]!.AsObject().Remove("keyframe_scale");
+        using var legacy = JsonDocument.Parse(fixture.ToJsonString());
+        var missing = (AdvancedEncodingSnapshot)parse.Invoke(null, [legacy.RootElement])!;
+        if (!missing.Requested.IsDefault || missing.StrictGopTarget is not null || missing.LowDelayKeyFrameScale is not null)
+            throw new Exception("Missing legacy metadata must remain unknown.");
     }
     finally { NativeLibrary.Free(library); if (File.Exists(statusPath)) File.Delete(statusPath); }
 }

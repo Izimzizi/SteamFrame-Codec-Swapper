@@ -8,7 +8,7 @@ public sealed class AdvancedControlsTests
     {
         var defaults = new AdvancedEncoding().ToNativeBytes();
         Assert.Equal(64, defaults.Length);
-        Assert.Equal(64u, Read(defaults, 0)); Assert.Equal(1u, Read(defaults, 1)); Assert.Equal(0u, Read(defaults, 2));
+        Assert.Equal(64u, Read(defaults, 0)); Assert.Equal(2u, Read(defaults, 1)); Assert.Equal(0u, Read(defaults, 2));
         Assert.Equal(0u, Read(defaults, 14)); Assert.Equal(0u, Read(defaults, 15));
         var request = new AdvancedEncoding { QualityTarget = 0, MaximumQp = 0, SpatialAq = false, TemporalAq = false,
             CbQpOffset = -7, CrQpOffset = 3, PeakMbps = 250, VbvMbit = .001, VbvDelayMbit = 0, Preset = 2 };
@@ -19,6 +19,11 @@ public sealed class AdvancedControlsTests
         Assert.Equal(-7, unchecked((int)Read(bytes, 8))); Assert.Equal(3u, Read(bytes, 9));
         Assert.Equal(0u, Read(bytes, 10)); Assert.Equal(0u, Read(bytes, 12)); Assert.Equal(2u, Read(bytes, 13));
         Assert.True(request.Flags.HasFlag(AdvancedEncodingFlags.SpatialAq));
+        var pacing = new AdvancedEncoding { StrictGopTarget = false, LowDelayKeyFrameScale = 1 };
+        Assert.Equal(1536u, Read(pacing.ToNativeBytes(), 2));
+        Assert.Equal(0u, Read(pacing.ToNativeBytes(), 14)); Assert.Equal(1u, Read(pacing.ToNativeBytes(), 15));
+        pacing = pacing with { StrictGopTarget = true, LowDelayKeyFrameScale = 4 };
+        Assert.Equal(1u, Read(pacing.ToNativeBytes(), 14)); Assert.Equal(4u, Read(pacing.ToNativeBytes(), 15));
     }
     [Fact]
     public void Fractional_quality_request_is_canonicalized_before_readback_comparison()
@@ -38,7 +43,8 @@ public sealed class AdvancedControlsTests
             new AdvancedEncoding { MaximumQp = -1 }, new AdvancedEncoding { PeakMbps = 501 },
             new AdvancedEncoding { VbvMbit = 0 }, new AdvancedEncoding { VbvMbit = 1, VbvDelayMbit = 2 },
             new AdvancedEncoding { CbQpOffset = 0 }, new AdvancedEncoding { CbQpOffset = 13, CrQpOffset = 0 },
-            new AdvancedEncoding { AqStrength = 16 }, new AdvancedEncoding { Preset = 8 }
+            new AdvancedEncoding { AqStrength = 16 }, new AdvancedEncoding { Preset = 8 },
+            new AdvancedEncoding { LowDelayKeyFrameScale = 0 }, new AdvancedEncoding { LowDelayKeyFrameScale = 5 }
         }) Assert.ThrowsAny<ArgumentException>(() => request.ToNativeBytes());
     }
     [Fact]

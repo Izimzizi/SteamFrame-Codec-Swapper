@@ -61,17 +61,21 @@ public sealed class PresetAndStockTests : IDisposable
     {
         var path = Path.Combine(_root, "presets.json"); var store = new PresetStore(path);
         var original = new TuningProfile { Codec = StreamCodec.Av1, TargetMbps = 100, Fps = 90, QualityEnabled = true, GazeOffset = -12, PeripheralOffset = 20, BitratePatch = true,
-            RateControl = EncoderRateControl.Vbr, MultiPass = EncoderMultiPass.SinglePass, Advanced = new() { MaximumQp = 24, VbvMbit = 2 },
+            RateControl = EncoderRateControl.Cbr, MultiPass = EncoderMultiPass.FullResolution, Advanced = new() { MaximumQp = 24, VbvMbit = 2, StrictGopTarget = false, LowDelayKeyFrameScale = 2 },
             Driver = new() { ["targetBandwidth"] = JsonSerializer.SerializeToElement(100d), ["enableQoS"] = JsonSerializer.SerializeToElement(true) }, Video = new() { ["allowSupersampleFiltering"] = JsonSerializer.SerializeToElement(false) } };
         await store.SaveAsync("Balanced", original); var reopened = new PresetStore(path); var first = Assert.Single(await reopened.ReadAsync());
         Assert.Equal(original.Advanced, first.Profile.Advanced); Assert.Equal(original.GazeOffset, first.Profile.GazeOffset); Assert.True(first.Profile.BitratePatch);
+        Assert.Equal(EncoderMultiPass.FullResolution, first.Profile.MultiPass);
         await reopened.SaveAsync("BALANCED", original with { Fps = 120 }); var updated = Assert.Single(await store.ReadAsync()); Assert.Equal(first.Id, updated.Id); Assert.Equal(120, updated.Profile.Fps);
     }
     [Fact]
     public async Task BuiltInHighQualityRestoresCompleteSetupAndKeepsPairing()
     {
         await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":false,"unrelatedPairingValue":"keep"},"steamvr":{"preferredRefreshRate":120,"showMirrorView":true}}""");
-        var preset = Assert.Single(BuiltInPresets.Create());
+        var presets = BuiltInPresets.Create();
+        Assert.Equal(3, presets.Select(p => p.Id).Distinct().Count());
+        foreach (var entry in presets) { StockProfiles.Validate(entry.Profile); Assert.True(entry.IsBuiltIn); }
+        var preset = Assert.Single(presets, p => p.Name == "High quality HEVC");
         StockProfiles.Validate(preset.Profile);
         var preferences = new FramePreferences { SshHost = "paired-device" };
         await Profiles.RestoreAsync(preset.Profile, preferences);
@@ -93,7 +97,8 @@ public sealed class PresetAndStockTests : IDisposable
     {
         var path = Path.Combine(_root, "presets.json"); var store = new PresetStore(path);
         Assert.Empty(await store.ReadAsync());
-        var preset = Assert.Single(BuiltInPresets.Create());
+        var builtIns = BuiltInPresets.Create();
+        var preset = Assert.Single(builtIns, p => p.Name == "High quality HEVC");
         Assert.True(preset.IsBuiltIn); Assert.False(File.Exists(path));
         await store.SaveAsync("Existing", new());
         preset.Profile.Driver["targetBandwidth"] = JsonSerializer.SerializeToElement(350d);
@@ -105,11 +110,25 @@ public sealed class PresetAndStockTests : IDisposable
         var edited = Assert.Single(saved, p => p.Name == preset.Name);
         Assert.False(edited.IsBuiltIn); Assert.Equal(350, edited.Profile.TargetMbps); Assert.Equal(120, edited.Profile.Fps);
         Assert.False(edited.Profile.Driver["asyncSend"].GetBoolean());
-        var fresh = Assert.Single(BuiltInPresets.Create());
+        var fresh = Assert.Single(BuiltInPresets.Create(), p => p.Id == preset.Id);
         Assert.Equal(preset.Id, fresh.Id); Assert.NotEqual(fresh.Id, edited.Id);
         Assert.Equal(400, fresh.Profile.TargetMbps); Assert.Equal(400d, fresh.Profile.Driver["targetBandwidth"].GetDouble());
         Assert.True(fresh.Profile.Driver["asyncSend"].GetBoolean()); Assert.Equal(90d, fresh.Profile.Video["preferredRefreshRate"].GetDouble());
         Assert.DoesNotContain("IsBuiltIn", await File.ReadAllTextAsync(path));
+        // Editing one built-in cannot alter the other profiles in the same catalog.
+        var full = Assert.Single(builtIns, p => p.Profile.MultiPass == EncoderMultiPass.FullResolution);
+        Assert.Equal(400d, full.Profile.Driver["targetBandwidth"].GetDouble());
+        Assert.True(full.Profile.Driver["asyncSend"].GetBoolean());
+        Assert.Equal(90d, full.Profile.Video["preferredRefreshRate"].GetDouble());
+        var smooth = Assert.Single(builtIns, p => p.Name == "Smooth HEVC");
+        // Applying the fallback clears previous experimental fields and custom gaze bias.
+        var preferences = new FramePreferences { AdvancedEncoding = new() { StrictGopTarget = true, LowDelayKeyFrameScale = 4 } };
+        await Profiles.RestoreAsync(full.Profile, preferences);
+        await Profiles.RestoreAsync(smooth.Profile, preferences);
+        Assert.Equal(300, preferences.CodecTargetMbps); Assert.False(preferences.QualityEnabled);
+        Assert.Equal(EncoderRateControl.Vbr, preferences.RateControl); Assert.Equal(EncoderMultiPass.SinglePass, preferences.MultiPass);
+        Assert.True(preferences.AdvancedEncoding.IsDefault);
+        Assert.Equal(false, (await Driver.LoadUserOverridesAsync())["asyncSend"]);
     }
     [Fact]
     public void PresetNumbersKeepTheSettingsApisFloatAndIntegerTypes()

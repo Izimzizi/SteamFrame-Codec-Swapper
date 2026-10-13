@@ -28,7 +28,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
 
-        Title = Elevation.IsElevated ? "Steam Link VR Settings (Administrator)" : "Steam Link VR Settings";
+        Title = Elevation.IsElevated ? "SteamFrame Advanced Options (Administrator)" : "SteamFrame Advanced Options";
         TitleText.Text = Title;
         RestoreWindowSize();
 

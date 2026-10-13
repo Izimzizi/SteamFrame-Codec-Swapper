@@ -4,7 +4,7 @@
 // Public API 11.1 only. This helper does not modify presets, GOP, lookahead,
 // reference frames, frame rate, VBV, or a caller-owned parameter structure.
 inline bool EncodingPolicyValid(unsigned policy) {
-    return !(policy & ~0xfu) && (policy & 3u) <= 2u && ((policy >> 2) & 3u) <= 2u;
+    return !(policy & ~0xfu) && (policy & 3u) <= 2u;
 }
 inline bool EncodingParametersValid(const NV_ENC_INITIALIZE_PARAMS* params) {
     return params && params->version == NV_ENC_INITIALIZE_PARAMS_VER && params->encodeConfig &&
@@ -29,5 +29,6 @@ inline void ApplyEncodingPolicy(unsigned policy, const NV_ENC_INITIALIZE_PARAMS&
     switch ((policy >> 2) & 3u) {
     case 1: config.rcParams.multiPass = NV_ENC_MULTI_PASS_DISABLED; break;
     case 2: config.rcParams.multiPass = NV_ENC_TWO_PASS_QUARTER_RESOLUTION; break;
+    case 3: config.rcParams.multiPass = NV_ENC_TWO_PASS_FULL_RESOLUTION; break;
     }
 }

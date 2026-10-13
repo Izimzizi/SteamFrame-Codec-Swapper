@@ -590,17 +590,17 @@ extern "C" __declspec(dllexport) DWORD WINAPI WriteStatus(void* parameter) {
         copy.frameRateNum, copy.frameRateDen, copy.filler ? "true" : "false", copy.preset, copy.policyCalls, copy.policyErrors, copy.rejectedPolicyCalls);
     const auto& rc = copy.effectiveRc;
     const int advancedWritten = fprintf(file,
-        "\"codec_source\":\"%s\",\"bit_depth\":%u,\"advanced_supported\":true,\"requested_advanced\":{\"flags\":%u,\"cq256\":%u,\"max_qp\":%u,\"peak_bitrate\":%u,\"vbv_bits\":%u,\"vbv_delay_bits\":%u,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"spatial_aq\":%u,\"aq_strength\":%u,\"temporal_aq\":%u,\"preset\":%u},"
+        "\"codec_source\":\"%s\",\"bit_depth\":%u,\"advanced_supported\":true,\"requested_advanced\":{\"flags\":%u,\"cq256\":%u,\"max_qp\":%u,\"peak_bitrate\":%u,\"vbv_bits\":%u,\"vbv_delay_bits\":%u,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"spatial_aq\":%u,\"aq_strength\":%u,\"temporal_aq\":%u,\"preset\":%u,\"strict_gop_target\":%u,\"keyframe_scale\":%u},"
         "\"applied_advanced_flags\":%u,\"pending_advanced_flags\":%u,\"rejected_advanced_flags\":%u,\"last_advanced_error\":%u,"
-        "\"effective\":{\"cq256\":%u,\"max_qp_enabled\":%s,\"max_qp_i\":%u,\"max_qp_p\":%u,\"max_qp_b\":%u,\"spatial_aq\":%s,\"aq_strength\":%u,\"temporal_aq\":%s,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d},"
+        "\"effective\":{\"cq256\":%u,\"max_qp_enabled\":%s,\"max_qp_i\":%u,\"max_qp_p\":%u,\"max_qp_b\":%u,\"spatial_aq\":%s,\"aq_strength\":%u,\"temporal_aq\":%s,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"strict_gop_target\":%s,\"keyframe_scale\":%u},"
         "\"advanced_capabilities\":{\"queried\":%s,\"dynamic_bitrate\":%s,\"custom_vbv\":%s,\"temporal_aq\":%s},"
         "\"timing\":{\"reconfigure_calls\":%llu,\"reconfigure_total_us\":%llu,\"reconfigure_max_us\":%llu,\"reconfigure_over_2ms\":%llu,\"encode_calls\":%llu,\"encode_total_us\":%llu,\"encode_max_us\":%llu,\"encode_over_2ms\":%llu,\"completion_calls\":%llu,\"completion_total_us\":%llu,\"completion_max_us\":%llu,\"completion_over_2ms\":%llu}}\n",
         copy.codecSource, copy.bitDepth, request.flags, request.cq256, request.maxQp, request.peakBitrate, request.vbvBits, request.vbvDelayBits,
-        request.cbQpOffset, request.crQpOffset, request.spatialAq, request.aqStrength, request.temporalAq, request.preset,
+        request.cbQpOffset, request.crQpOffset, request.spatialAq, request.aqStrength, request.temporalAq, request.preset, request.strictGopTarget, request.lowDelayKeyFrameScale,
         copy.appliedAdvancedFlags, copy.pendingAdvancedFlags, copy.rejectedAdvancedFlags, copy.lastAdvancedError,
         (static_cast<uint32_t>(rc.targetQuality) << 8) | rc.targetQualityLSB, rc.enableMaxQP ? "true" : "false",
         rc.maxQP.qpIntra, rc.maxQP.qpInterP, rc.maxQP.qpInterB, rc.enableAQ ? "true" : "false", rc.aqStrength,
-        rc.enableTemporalAQ ? "true" : "false", rc.cbQPIndexOffset, rc.crQPIndexOffset,
+        rc.enableTemporalAQ ? "true" : "false", rc.cbQPIndexOffset, rc.crQPIndexOffset, rc.strictGOPTarget ? "true" : "false", static_cast<uint32_t>(rc.lowDelayKeyFrameScale),
         copy.capsQueried ? "true" : "false", copy.dynamicBitrate ? "true" : "false", copy.customVbv ? "true" : "false", copy.temporalAq ? "true" : "false",
         copy.reconfigureCalls, copy.reconfigureTotalUs, copy.reconfigureMaxUs, copy.reconfigureOver2Ms,
         copy.encodeCalls, copy.encodeTotalUs, copy.encodeMaxUs, copy.encodeOver2Ms,

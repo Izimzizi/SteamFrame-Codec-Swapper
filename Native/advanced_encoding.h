@@ -6,19 +6,23 @@
 enum AdvancedFlag : uint32_t {
     AdvancedCq = 1, AdvancedMaxQp = 2, AdvancedPeak = 4, AdvancedVbv = 8,
     AdvancedDelay = 16, AdvancedChroma = 32, AdvancedSpatialAq = 64,
-    AdvancedTemporalAq = 128, AdvancedPreset = 256
+    AdvancedTemporalAq = 128, AdvancedPreset = 256, AdvancedStrictGop = 512, AdvancedKeyFrameScale = 1024
 };
-constexpr uint32_t AdvancedAll = 511;
-constexpr uint32_t AdvancedInitialization = AdvancedChroma | AdvancedSpatialAq | AdvancedTemporalAq | AdvancedPreset;
+constexpr uint32_t AdvancedAll = 2047;
+constexpr uint32_t AdvancedInitialization = AdvancedChroma | AdvancedSpatialAq | AdvancedTemporalAq | AdvancedPreset | AdvancedStrictGop | AdvancedKeyFrameScale;
 // Explicit little-endian x64 protocol. Do not marshal C++ bools or SDK structs.
 struct AdvancedEncoding {
-    uint32_t size = 64, version = 1, flags{}, cq256{}, maxQp{}, peakBitrate{}, vbvBits{}, vbvDelayBits{};
+    uint32_t size = 64, version = 2, flags{}, cq256{}, maxQp{}, peakBitrate{}, vbvBits{}, vbvDelayBits{};
     int32_t cbQpOffset{}, crQpOffset{};
-    uint32_t spatialAq{}, aqStrength{}, temporalAq{}, preset{}, reserved0{}, reserved1{};
+    uint32_t spatialAq{}, aqStrength{}, temporalAq{}, preset{}, strictGopTarget{}, lowDelayKeyFrameScale{};
 };
 static_assert(sizeof(AdvancedEncoding) == 64);
 inline bool AdvancedEncodingValid(const AdvancedEncoding& value) {
-    return value.size == 64 && value.version == 1 && !(value.flags & ~AdvancedAll) && !value.reserved0 && !value.reserved1 &&
+    // Old requests remain readable; their formerly reserved words must stay zero.
+    return value.size == 64 && (value.version == 2 || (value.version == 1 && !(value.flags & ~511u) &&
+        !value.strictGopTarget && !value.lowDelayKeyFrameScale)) && !(value.flags & ~AdvancedAll) &&
+        value.strictGopTarget <= 1 && value.lowDelayKeyFrameScale <= 4 &&
+        (!(value.flags & AdvancedKeyFrameScale) || value.lowDelayKeyFrameScale >= 1) &&
         value.cq256 <= 51 * 256 && value.maxQp <= 51 &&
         (!(value.flags & AdvancedPeak) || (value.peakBitrate >= 25000000 && value.peakBitrate <= 500000000)) &&
         (!(value.flags & AdvancedVbv) || (value.vbvBits >= 1000 && value.vbvBits <= 64000000)) &&
@@ -60,6 +64,7 @@ inline uint32_t AdvancedConflicts(const AdvancedEncoding& value, const NV_ENC_CO
 inline bool ApplyAdvancedEncoding(const AdvancedEncoding& value, NV_ENC_CONFIG& config) {
     auto& rc = config.rcParams;
     if (AdvancedConflicts(value, config)) return false;
+    // Keyframe ratio only affects CBR + single-frame VBV; retain it through mode changes.
     const auto size = value.flags & AdvancedVbv ? value.vbvBits : rc.vbvBufferSize;
     const auto delay = value.flags & AdvancedDelay ? value.vbvDelayBits : rc.vbvInitialDelay;
     if ((value.flags & AdvancedDelay) && size && delay > size) return false;
@@ -78,6 +83,8 @@ inline bool ApplyAdvancedEncoding(const AdvancedEncoding& value, NV_ENC_CONFIG& 
     if (value.flags & AdvancedChroma) { rc.cbQPIndexOffset = static_cast<int8_t>(value.cbQpOffset); rc.crQPIndexOffset = static_cast<int8_t>(value.crQpOffset); }
     if (value.flags & AdvancedSpatialAq) { rc.enableAQ = value.spatialAq; rc.aqStrength = value.aqStrength; }
     if (value.flags & AdvancedTemporalAq) rc.enableTemporalAQ = value.temporalAq;
+    if (value.flags & AdvancedStrictGop) rc.strictGOPTarget = value.strictGopTarget;
+    if (value.flags & AdvancedKeyFrameScale) rc.lowDelayKeyFrameScale = static_cast<uint8_t>(value.lowDelayKeyFrameScale);
     return true;
 }
 inline bool AdvancedInitializationEqual(const AdvancedEncoding& a, const AdvancedEncoding& b) {
@@ -86,7 +93,9 @@ inline bool AdvancedInitializationEqual(const AdvancedEncoding& a, const Advance
     return (!(flags & AdvancedChroma) || (a.cbQpOffset == b.cbQpOffset && a.crQpOffset == b.crQpOffset)) &&
         (!(flags & AdvancedSpatialAq) || (a.spatialAq == b.spatialAq && a.aqStrength == b.aqStrength)) &&
         (!(flags & AdvancedTemporalAq) || a.temporalAq == b.temporalAq) &&
-        (!(flags & AdvancedPreset) || a.preset == b.preset);
+        (!(flags & AdvancedPreset) || a.preset == b.preset) &&
+        (!(flags & AdvancedStrictGop) || a.strictGopTarget == b.strictGopTarget) &&
+        (!(flags & AdvancedKeyFrameScale) || a.lowDelayKeyFrameScale == b.lowDelayKeyFrameScale);
 }
 inline AdvancedEncoding AdvancedForReconfigure(const AdvancedEncoding& request, const AdvancedEncoding& initialized) {
     auto effective = request;
@@ -94,6 +103,7 @@ inline AdvancedEncoding AdvancedForReconfigure(const AdvancedEncoding& request, 
     effective.cbQpOffset = initialized.cbQpOffset; effective.crQpOffset = initialized.crQpOffset;
     effective.spatialAq = initialized.spatialAq; effective.aqStrength = initialized.aqStrength;
     effective.temporalAq = initialized.temporalAq; effective.preset = initialized.preset;
+    effective.strictGopTarget = initialized.strictGopTarget; effective.lowDelayKeyFrameScale = initialized.lowDelayKeyFrameScale;
     return effective;
 }
 // Only whole, explicitly allowed quality fields may follow a preset. All codec,

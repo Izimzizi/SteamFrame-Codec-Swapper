@@ -1,4 +1,4 @@
-# Steam Link VR Settings — Steam Frame edition
+# SteamFrame Advanced Options
 
 A Windows app for tuning and diagnosing **Steam Frame** streaming from a PC.
 It sets the stream's bitrate and foveation, measures what the encoder actually
@@ -31,13 +31,14 @@ including the ones SteamVR doesn't show in its own UI.
 | **Driver patcher** | Raises the driver's 232/350 Mbps ceilings to 500 Mbps and selects HEVC level 6.2, with verified backups and one-click restore. |
 | **Connection tools** | Shows the dongle's negotiated USB 2/USB 3 speed, reads headset link status over paired wireless SSH or ADB, and can restart a stalled Frame USB connection. |
 | **Additional settings** | Search less common `driver_vrlink` options. Settings already in Stream settings or Advanced are excluded to avoid duplicate controls. |
-| **Complete presets** | Includes High quality HEVC: 400 Mbps target, 90 Hz, 10-bit, 2048 width, CBR, quarter-resolution multipass and asynchronous sending. Edit any control or save a personal preset; built-ins remain available. |
+| **Complete presets** | Includes Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass) and Full-resolution HEVC — Experimental (400 Mbps, full-resolution multipass). All use 90 Hz, 10-bit and 2048 width. Edit any control or save a personal preset; built-ins remain available. |
 | **Back to stock** | Save the current tuning, end experimental codecs, restore a verified original driver and remove app tuning overrides. Load previous tuning to return to it. Pairing and unrelated settings stay intact. |
 
 ## Download and run
 
-1. Download `SteamLinkVRSettings-SteamFrame-win-x64.zip` from the
-   [latest release](../../releases/latest).
+1. Download the Windows x64 ZIP from the [latest release](../../releases/latest).
+   New builds use `SteamFrame-Advanced-Options-win-x64.zip`; older releases use
+   `SteamLinkVRSettings-SteamFrame-win-x64.zip`.
 2. Extract the **whole** folder anywhere. The ZIP bundles the .NET and Windows App SDK
    runtimes, so nothing else needs to be installed.
 3. Run `SteamLinkVRSettings.exe`.
@@ -65,12 +66,15 @@ Passwords, developer pairing paths and temporary awake-test leases are not saved
 presets. **Back to stock** saves the currently applied tuning before restoring Valve
 defaults; **Load previous tuning** fills the editor with that saved setup.
 
-Choose **High quality HEVC (built-in)** to load the tested high-quality setup.
+Choose **Smooth HEVC (built-in)** for the 300 Mbps single-pass baseline, or
+**High quality HEVC (built-in)** to load the tested high-quality setup.
 Its 400 Mbps target is a request, not guaranteed throughput: one Galactic Racer
 observation averaged about 275 Mbps of coded video. Review individual options in
 Stream settings and Advanced before applying. See the
 [high-quality HEVC guide](docs/hevc-high-quality.md) for every control and the
-measurement limits.
+measurement limits. **Full-resolution HEVC — Experimental** changes only the
+analysis-pass mode from High quality HEVC; improved quality or bitrate has not
+been verified, and the extra work can worsen frame timing.
 
 For AV1 or H.264, follow the [codec setup guide](docs/codec-modes.md) first.
 The release includes the companion runtime and AV1 decoder, so supported devices

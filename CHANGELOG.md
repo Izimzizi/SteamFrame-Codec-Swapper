@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Renamed the project and app display name to SteamFrame Advanced Options.
+- Bundled Smooth HEVC (300 Mbps, single-pass VBR, original gaze quality) and
+  Full-resolution HEVC — Experimental (400 Mbps, full-resolution multipass).
+  Both are editable and keep GOP/keyframe-ratio overrides unset.
+- Added experimental full-resolution multipass alongside Valve default, single
+  pass and quarter-resolution multipass, with analysis/latency guidance.
+- Added opt-in GOP bitrate consistency and keyframe I/P bit ratio controls,
+  saved in personal presets and reported separately as requested/pending/accepted.
+  Both require a new encoder session; the keyframe ratio is intended for CBR with
+  single-frame VBV. The measured High quality HEVC preset is unchanged.
+
 ## 1.4.1 — Streaming reliability fixes
 
 ### H.264 and AV1 sessions

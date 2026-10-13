@@ -1,11 +1,30 @@
-# High-quality HEVC
+# HEVC presets
 
 Select **Stream settings → High quality HEVC (built-in)**. This fills the editor;
 use Apply after reviewing the values. Loading the preset does not change the stream.
 Every setting remains editable, and **Save preset…** saves your own version without
 replacing the built-in. Existing personal presets remain available.
 
-## Included settings
+## Bundled choices
+
+All three presets request 90 Hz, 2048-pixel stream width and 10-bit HEVC. They
+disable automatic bitrate/width selection, retain Valve's NVENC preset, VBV and
+AQ policy, and leave the GOP-consistency/keyframe-ratio overrides unset. Each
+includes the compatible bitrate-ceiling override and Reapply after restart.
+
+| Preset | Target / encoding passes | Quality and sending | Intended use |
+| --- | --- | --- | --- |
+| Smooth HEVC | 300 Mbps / VBR, single pass | Valve gaze quality; synchronous sending | Fallback based on the smooth baseline, with less encoding work than multipass |
+| High quality HEVC | 400 Mbps / CBR, quarter-resolution multipass | Center −2 / outside gaze −6; asynchronous sending | The measured high-quality setup |
+| Full-resolution HEVC — Experimental | 400 Mbps / CBR, full-resolution multipass | Same as High quality HEVC | Compare the analysis pass alone; quality/bitrate gains remain unverified and frame timing can worsen |
+
+Selecting a preset fills the editor; Apply activates it. All controls remain
+editable. Smooth HEVC explicitly requests the VBR/single-pass behavior observed
+in the baseline instead of depending on the driver's current defaults. The
+measurements below describe the earlier high-quality run, not the full-resolution
+experiment or a guarantee for either new preset.
+
+## High quality HEVC settings
 
 | Setting | Value | Where to edit |
 | --- | --- | --- |
@@ -39,6 +58,41 @@ Unsupported driver layouts are refused.
 The gaze offsets change compression quality, not the physical gaze-region size.
 Multipass changes encoder analysis. Native HEVC still uses one decoder; the
 multistream research prototype is separate from the app's game-streaming path.
+
+## Multipass and rate allocation experiments
+
+In **Advanced → Encoding method**, select Valve default, single pass,
+quarter-resolution multipass or **full-resolution multipass (experimental)**.
+Both multipass modes encode the final image at full resolution. The choice changes
+the resolution used by the first analysis pass; it does not change stream width or
+decoder count. NVENC exposes these two multipass modes, not an arbitrary pass count.
+Full-resolution analysis adds work and is not guaranteed to improve on quarter
+resolution for moving VR content. Compare actual video rate and encoder completion
+time in Diagnostics, alongside how the headset feels. The built-in High quality HEVC
+preset retains the measured quarter-resolution setup.
+
+**Advanced → Encoder quality and buffering** also offers:
+
+- **Consistent bitrate between GOPs**: requests reduced bitrate variation between
+  groups of pictures. It does not alter keyframe frequency or enforce a minimum rate.
+- **Keyframe bit ratio (I / P)**: an experimental 1–4 ratio, documented for CBR and
+  a single-frame VBV. A ratio of 1 requests similar I/P budgets; larger values allow
+  larger keyframes. Other rate-control/buffer configurations may ignore this field.
+  A single-frame VBV is the encoder's accepted Mbps divided by fps, in Mbit. For
+  example, 400 Mbps at 90 fps is about 4.44 Mbit. SteamVR can change the encoder
+  budget, so a fixed VBV override does not automatically stay one frame long.
+
+These two overrides need a new encoder session. Enable Override, apply, then reconnect
+with Reapply enabled. When updating the native helper, restart SteamVR first.
+Clear Override and reconnect to restore the driver's values. Saved personal presets
+include the new mode and controls. Requested, pending, rejected and last accepted
+values remain distinct in Diagnostics; successful submission is not a guarantee of
+picture quality or higher Mbps. Existing CQ, QP, VBV, AQ and P1–P7 controls remain
+independently adjustable.
+
+See the [NVIDIA encoder programming guide](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/)
+for multipass tradeoffs, and the vendored NVENC declarations for
+`strictGOPTarget` and `lowDelayKeyFrameScale`.
 
 ## What was measured
 

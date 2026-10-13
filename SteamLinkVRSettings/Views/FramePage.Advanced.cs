@@ -80,6 +80,8 @@ public sealed partial class FramePage
         AddAdvancedRow(AdvancedEncoderHost, "peak", "Peak bitrate (Mbps)", "Custom peak also caps Valve's transient encoder average. This is an encoder budget, not an instantaneous network-traffic limit. Higher peaks can overwhelm the wireless/decoder budget.", 25, 500, 5, 230);
         AddAdvancedRow(AdvancedEncoderHost, "vbv", "VBV buffer budget (Mbit)", "Encoder rate-control buffer budget; this is not the headset's decoded-frame queue.", .001, 64, .1, 2);
         AddAdvancedRow(AdvancedEncoderHost, "delay", "VBV initial delay budget (Mbit)", "Initial VBV budget in bits, not a measured display-delay time. Keep it within the configured buffer.", 0, 64, .1, 2);
+        AddAdvancedRow(AdvancedEncoderHost, "strictgop", "Consistent bitrate between GOPs", "Reconnect required. Requests less bitrate variation between groups of pictures. Does not change keyframe frequency or enforce a minimum video bitrate.", boolean: true);
+        AddAdvancedRow(AdvancedEncoderHost, "keyscale", "Keyframe bit ratio (I / P)", "Reconnect required. Experimental, 1–4. Documented for CBR with a single-frame VBV budget (encoder Mbps ÷ fps in Mbit). 1 requests similar I/P budgets; higher values allow larger keyframes. Other modes may ignore it.", 1, 4, 1, 1);
         AddAdvancedRow(AdvancedEncoderHost, "cb", "Cb chroma QP offset", "Reconnect required. Negative values allocate more bits to the blue-difference channel; chroma offsets are applied as a pair.", -12, 12, 1, 0);
         AddAdvancedRow(AdvancedEncoderHost, "cr", "Cr chroma QP offset", "Reconnect required. Negative values allocate more bits to the red-difference channel; use both Override boxes together.", -12, 12, 1, 0);
         AddAdvancedRow(AdvancedEncoderHost, "spatial", "Spatial adaptive quantization", "Reconnect required. Experimental with Valve's delta-QP map; API acceptance and actual picture/stutter determine usefulness.", boolean: true);
@@ -106,6 +108,7 @@ public sealed partial class FramePage
             Number("cq", request.QualityTarget); Number("maxqp", request.MaximumQp); Number("peak", request.PeakMbps);
             Number("vbv", request.VbvMbit); Number("delay", request.VbvDelayMbit); Number("cb", request.CbQpOffset); Number("cr", request.CrQpOffset);
             Bool("spatial", request.SpatialAq); Bool("temporal", request.TemporalAq);
+            Bool("strictgop", request.StrictGopTarget); Number("keyscale", request.LowDelayKeyFrameScale);
             Number("strength", request.SpatialAq == true ? request.AqStrength : null);
             var preset = _encoderRows["preset"]; preset.Override.IsChecked = request.Preset is > 0;
             if (request.Preset is > 0) preset.Choice!.SelectedIndex = request.Preset.Value - 1;
@@ -129,7 +132,8 @@ public sealed partial class FramePage
             QualityTarget = Number("cq"), MaximumQp = Integer("maxqp"), PeakMbps = Number("peak"), VbvMbit = Number("vbv"), VbvDelayMbit = Number("delay"),
             CbQpOffset = Integer("cb"), CrQpOffset = Integer("cr"), SpatialAq = Bool("spatial"), TemporalAq = Bool("temporal"),
             AqStrength = _encoderRows["strength"].Override.IsChecked == true ? Integer("strength") ?? 8 : 8,
-            Preset = _encoderRows["preset"].Override.IsChecked == true ? _encoderRows["preset"].Choice!.SelectedIndex + 1 : null
+            Preset = _encoderRows["preset"].Override.IsChecked == true ? _encoderRows["preset"].Choice!.SelectedIndex + 1 : null,
+            StrictGopTarget = Bool("strictgop"), LowDelayKeyFrameScale = Integer("keyscale")
         };
         if (_encoderRows["strength"].Override.IsChecked == true && request.SpatialAq != true)
             throw new ArgumentException("AQ strength requires spatial AQ Override to be on.");
@@ -327,6 +331,7 @@ public sealed partial class FramePage
             AdvancedRequestedReadback.Text = $"Requested overrides: {advanced.Requested.Flags}. Pending: {advanced.PendingFlags}; rejected: {advanced.RejectedFlags}; last NVENC rejection: {advanced.LastError}.";
             AdvancedAcceptedReadback.Text = snapshot.EncodingPolicy is { Observed: true } ?
                 $"Last successful submitted config: CQ {advanced.QualityTarget:0.###}; max QP {(advanced.MaximumQpEnabled ? $"I {advanced.MaximumQpI} / P {advanced.MaximumQpP} / B {advanced.MaximumQpB}" : "disabled")}; Cb {advanced.CbQpOffset}, Cr {advanced.CrQpOffset}; spatial AQ {(advanced.SpatialAq ? "on" : "off")} strength {advanced.AqStrength}; temporal AQ {(advanced.TemporalAq ? "on" : "off")}.\n" +
+                $"GOP consistency {(advanced.StrictGopTarget is bool strict ? (strict ? "on" : "off") : "unavailable")}; keyframe I/P ratio {advanced.LowDelayKeyFrameScale?.ToString() ?? "unavailable"} (only meaningful with CBR and single-frame VBV).\n" +
                 $"Applied override flags: {advanced.AppliedFlags}. Peak {snapshot.EncodingPolicy.MaxBitrate / 1_000_000.0:0.0} Mbps; VBV {snapshot.EncodingPolicy.VbvSize / 1_000_000.0:0.00}/{snapshot.EncodingPolicy.VbvDelay / 1_000_000.0:0.00} Mbit; preset {snapshot.EncodingPolicy.Preset}." + (snapshot.Active ? "" : " Stream inactive; readback is historical.")
                 : "Last successfully submitted configuration: not yet observed. These values are API submission readbacks, not an NVIDIA effective-configuration getter.";
             AdvancedLiveReadback.Text = $"Advanced overrides: applied {advanced.AppliedFlags}; pending {advanced.PendingFlags}; rejected {advanced.RejectedFlags}.";

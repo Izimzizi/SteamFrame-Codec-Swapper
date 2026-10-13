@@ -1,4 +1,4 @@
-param([switch]$SkipBuild, [ValidatePattern('^SteamLinkVRSettings-[A-Za-z0-9-]+$')][string]$PortableFolder = 'SteamLinkVRSettings-SteamFrame-win-x64')
+param([switch]$SkipBuild, [ValidatePattern('^(SteamFrame-Advanced-Options|SteamLinkVRSettings)-[A-Za-z0-9-]+$')][string]$PortableFolder = 'SteamFrame-Advanced-Options-win-x64')
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {

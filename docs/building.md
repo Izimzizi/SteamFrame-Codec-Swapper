@@ -38,7 +38,7 @@ see a warning, and encoder monitoring stays unavailable until `Native\build.ps1`
 ```
 
 Produces a self-contained portable folder and ZIP under `artifacts\`:
-`SteamLinkVRSettings-SteamFrame-win-x64\` and `SteamLinkVRSettings-SteamFrame-win-x64.zip`.
+`SteamFrame-Advanced-Options-win-x64\` and `SteamFrame-Advanced-Options-win-x64.zip`.
 The package includes the .NET and Windows App SDK runtimes, the README, user guides
 and third-party licenses. The codec-enabled release also requires a staged
 `artifacts\CodecLab` companion. Use `-SkipBuild` to package an existing build.

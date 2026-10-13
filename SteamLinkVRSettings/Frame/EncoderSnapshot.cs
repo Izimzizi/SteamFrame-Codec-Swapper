@@ -47,7 +47,7 @@ public sealed record EncoderSnapshot
 }
 
 public enum EncoderRateControl { ValveDefault, Vbr, Cbr }
-public enum EncoderMultiPass { ValveDefault, SinglePass, QuarterResolution }
+public enum EncoderMultiPass { ValveDefault, SinglePass, QuarterResolution, FullResolution }
 
 /// <summary>Only explicit public NVENC policy fields. Zero leaves Valve's configuration unchanged.</summary>
 public sealed record EncodingPolicy(EncoderRateControl RateControl = EncoderRateControl.ValveDefault,
@@ -56,7 +56,7 @@ public sealed record EncodingPolicy(EncoderRateControl RateControl = EncoderRate
     public uint Packed => IsValid ? (uint)RateControl | ((uint)MultiPass << 2) : throw new ArgumentOutOfRangeException(nameof(RateControl));
     public bool IsValid => Enum.IsDefined(RateControl) && Enum.IsDefined(MultiPass);
     public bool IsDefault => Packed == 0;
-    public string Description => $"{RateControl switch { EncoderRateControl.Vbr => "VBR", EncoderRateControl.Cbr => "CBR without padding", _ => "Valve rate control" }} / {MultiPass switch { EncoderMultiPass.SinglePass => "single pass", EncoderMultiPass.QuarterResolution => "quarter-resolution multipass", _ => "Valve multipass" }}";
+    public string Description => $"{RateControl switch { EncoderRateControl.Vbr => "VBR", EncoderRateControl.Cbr => "CBR without padding", _ => "Valve rate control" }} / {MultiPass switch { EncoderMultiPass.SinglePass => "single pass", EncoderMultiPass.QuarterResolution => "quarter-resolution multipass", EncoderMultiPass.FullResolution => "full-resolution multipass", _ => "Valve multipass" }}";
     public static EncodingPolicy FromPacked(uint packed)
     {
         var policy = new EncodingPolicy((EncoderRateControl)(packed & 3), (EncoderMultiPass)((packed >> 2) & 3));

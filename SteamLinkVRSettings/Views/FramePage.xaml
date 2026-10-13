@@ -252,14 +252,16 @@
                                 <ComboBoxItem Content="Valve default" />
                                 <ComboBoxItem Content="Single pass" />
                                 <ComboBoxItem Content="Quarter-resolution multipass" />
+                                <ComboBoxItem Content="Full-resolution multipass (experimental)" />
                             </ComboBox>
+                            <TextBlock Text="Single pass uses less encoding work. Quarter-resolution multipass analyzes a smaller image first, then encodes at full resolution. Full-resolution multipass analyzes and encodes at full resolution; compare detail and frame timing before keeping it." Style="{StaticResource Hint}" />
                             <TextBlock Text="Extra encoding work can increase latency. Bitrate targets describe useful video, without filler traffic. Multipass changes encoder analysis; native HEVC still uses one decoder." Style="{StaticResource Hint}" />
                             <CheckBox x:Name="ReapplyInput" Content="Reapply my HEVC encoder and gaze settings after SteamVR restarts" Checked="Bandwidth_Toggled" Unchecked="Bandwidth_Toggled" />
                         </StackPanel>
                     </Expander>
                     <Expander Header="Encoder quality and buffering" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                         <StackPanel Spacing="12" Padding="0,12,0,0">
-                            <TextBlock Text="Enable Override only for values you want to change. Preset, chroma and adaptive-quantization changes need a new encoder session." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Enable Override only for values you want to change. Preset, chroma, adaptive quantization, GOP consistency and keyframe-ratio changes need a new encoder session." Style="{StaticResource Hint}" />
                             <StackPanel x:Name="AdvancedEncoderHost" Spacing="16" />
                         </StackPanel>
                     </Expander>
@@ -286,7 +288,7 @@
                     <TextBlock Text="Pair once. Use the dongle for streaming." FontSize="18" FontWeight="SemiBold" />
                     <TextBlock x:Name="ConnectionUsbStatus" Text="Checking the dongle's USB connection…" TextWrapping="Wrap" />
                     <TextBlock Text="Enable Developer Mode and pair this PC with SteamOS Devkit. Keep the Frame awake and its Wi-Fi enabled." Style="{StaticResource Hint}" />
-                    <HyperlinkButton Content="Open the pairing guide" NavigateUri="https://github.com/elliotttate/SteamLinkVRSettings-SteamFrame/blob/main/docs/connection-setup.md" HorizontalAlignment="Left" Padding="0" />
+                    <HyperlinkButton Content="Open the pairing guide" NavigateUri="https://github.com/elliotttate/SteamFrame-Advanced-Options/blob/main/docs/connection-setup.md" HorizontalAlignment="Left" Padding="0" />
                     <TextBox x:Name="SshHostInput" Header="Frame address" PlaceholderText="10.35.78.1 for the dedicated dongle" />
                     <Button Content="Use dongle address" Click="UseDongleAddress_Click" HorizontalAlignment="Left" />
                     <Expander Header="Trusted SSH files" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
