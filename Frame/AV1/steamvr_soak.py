@@ -38,9 +38,17 @@ def read():
  if p.returncode:raise RuntimeError('Frame compositor counter read failed')
  return {'pc':pc,'frame':json.loads(p.stdout)}
 samples=[]
+OUT.parent.mkdir(parents=True,exist_ok=True)
 for i in range(options.seconds//10+1):
  if i:time.sleep(10)
- sample=read();samples.append(sample)
+ try:sample=read()
+ except Exception as error:
+  OUT.write_text(json.dumps({'observed_at':datetime.datetime.now().astimezone().isoformat(),
+   'pid':PID,'completed':False,'error':str(error),'samples':samples},indent=2))
+  raise
+ samples.append(sample)
+ # Preserve each observation if a later disconnect interrupts the run.
+ OUT.write_text(json.dumps({'pid':PID,'completed':False,'samples':samples},indent=2))
  print(json.dumps({'sample':i,'encoder_frames':sample['pc']['locks'],
   'frame_submits':sample['frame']['compositor']['frame_submits'],
   'frame_presents':sample['frame']['compositor']['frame_presents']}),flush=True)
@@ -56,6 +64,6 @@ for name,v in a['frame']['interfaces'].items():
   'rx_Mbps':(int(w['statistics/rx_bytes'])-int(v['statistics/rx_bytes']))*8/summary['frame_duration_seconds']/1e6,
   'rx_error_delta':int(w['statistics/rx_errors'])-int(v['statistics/rx_errors']),
   'rx_drop_delta':int(w['statistics/rx_dropped'])-int(v['statistics/rx_dropped'])}
-OUT.write_text(json.dumps({'observed_at':datetime.datetime.now().astimezone().isoformat(),'pid':PID,
+OUT.write_text(json.dumps({'observed_at':datetime.datetime.now().astimezone().isoformat(),'pid':PID,'completed':True,
  'summary':summary,'samples':samples,'limitations':'Local reprojects/adapter drops are not unique streaming losses; screenshots establish visible content separately.'},indent=2))
 print(json.dumps({'output':str(OUT),'summary':summary}),flush=True)

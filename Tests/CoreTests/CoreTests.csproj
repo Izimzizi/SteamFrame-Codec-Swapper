@@ -20,10 +20,12 @@
     <Compile Include="../../SteamLinkVRSettings/Frame/SettingOwnership.cs" Link="SettingOwnership.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/StockProfiles.cs" Link="StockProfiles.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/PresetStore.cs" Link="PresetStore.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/BuiltInPresets.cs" Link="BuiltInPresets.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.Advanced.cs" Link="OpenVrSettings.Advanced.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/QuantizerTracker.cs" Link="QuantizerTracker.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/TemporaryPowerLease.cs" Link="TemporaryPowerLease.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/FrameTransport.cs" Link="FrameTransport.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/UsbDongleConnection.cs" Link="UsbDongleConnection.cs" />
     <Compile Include="../../SteamLinkVRSettings/Services/SettingsService.cs" Link="SettingsService.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -14,7 +14,11 @@ NVENCSTATUS NVENCAPI fakeReconfigure(void* handle, NV_ENC_RECONFIGURE_PARAMS* pa
     auto result = fakeInitialize(handle, params ? &params->reInitEncodeParams : nullptr);
     seenPointer = params; return result;
 }
-NVENCSTATUS NVENCAPI fakePolicyCaps(void*, GUID, NV_ENC_CAPS_PARAM*, int* value) { *value = 7; return NV_ENC_SUCCESS; }
+NVENCSTATUS NVENCAPI fakePolicyCaps(void*, GUID, NV_ENC_CAPS_PARAM* parameter, int* value) {
+    *value = parameter->capsToQuery == NV_ENC_CAPS_SUPPORTED_RATECONTROL_MODES
+        ? NV_ENC_PARAMS_RC_VBR | NV_ENC_PARAMS_RC_CBR : 1;
+    return NV_ENC_SUCCESS;
+}
 int main() {
     originalInitialize = fakeInitialize; originalReconfigure = fakeReconfigure;
     getCaps = fakePolicyCaps;
@@ -72,6 +76,30 @@ int main() {
     hookInitialize(handle, &params);
     if (seenPointer != &params || stats.rejectedPolicyCalls != 2 || stats.appliedPolicy) return 11;
     for (unsigned invalid : {3u, 7u, 12u, 16u}) if (SetEncodingPolicy(reinterpret_cast<void*>(static_cast<uintptr_t>(invalid))) != 1013) return 12;
+    // CBR initialized on a GPU without dynamic RC must survive Valve's VBR
+    // reconfigure input; resetting the request waits for a fresh session.
+    driverImage.code.push_back({0, std::vector<unsigned char>(65536)});
+    reconfigure.version = NV_ENC_RECONFIGURE_PARAMS_VER;
+    sessions[handle].dynamicRc = false;
+    SetEncodingPolicy(reinterpret_cast<void*>(6));
+    hookReconfigure(handle, &reconfigure);
+    if (stats.appliedPolicy || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_VBR) return 13;
+    hookInitialize(handle, &params);
+    if (stats.appliedPolicy != 6 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR) return 14;
+    hookReconfigure(handle, &reconfigure);
+    if (stats.appliedPolicy != 6 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR ||
+        memcmp(&config, &originalConfig, sizeof(config))) return 15;
+    SetEncodingPolicy(nullptr);
+    hookReconfigure(handle, &reconfigure);
+    if (stats.appliedPolicy != 2 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR ||
+        !sessions[handle].customPolicy || StopProbe(nullptr) != 1014) return 16;
+    // A rejected call must never replace the last accepted mode.
+    policyResult = NV_ENC_ERR_GENERIC;
+    hookInitialize(handle, &params);
+    if (sessions[handle].acceptedRc != NV_ENC_PARAMS_RC_CBR) return 17;
+    policyResult = NV_ENC_SUCCESS;
+    hookInitialize(handle, &params);
+    if (stats.appliedPolicy || sessions[handle].customPolicy || sessions[handle].acceptedRc != NV_ENC_PARAMS_RC_VBR) return 18;
     // No caller-owned structure or unrequested parameter changed in this test.
     printf("PASS: public API policy copy, exact ABI/caller guards, no-padding CBR, preserved frame/GOP/VBV, failed-call telemetry, restoration-before-stop.\n");
     return 0;

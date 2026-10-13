@@ -1,6 +1,8 @@
 # Stream controls and foveation
 
 The **Stream settings** page sets how SteamVR encodes and sends video to the Frame.
+The editable [High quality HEVC preset](hevc-high-quality.md) loads a complete
+400 Mbps target / 90 Hz setup, with encoder and network controls under Advanced.
 
 ## Bitrate and encoders
 
@@ -8,6 +10,7 @@ The **Stream settings** page sets how SteamVR encodes and sends video to the Fra
 | --- | --- | --- |
 | Video target | `targetBandwidth` | 25–500 Mbps. A stock driver caps manual targets at 232 Mbps while wireless is present; the [driver patcher](driver-patcher.md) raises that. |
 | Automatic bandwidth | `automaticBandwidth` | When on, SteamVR picks the target itself. |
+| Display refresh rate | `steamvr/preferredRefreshRate` | 90 or 120 Hz, including HEVC. Sets the SteamVR preference; reconnecting may be needed. |
 | Allow AMD AMF encoder | `enableAmfEncoder` | Needs compatible AMD hardware. Takes effect after reconnecting or restarting SteamVR. |
 | Allow additional streaming links | `allowMultipleLinks` | Permits available dedicated wireless, local-network and USB links. Combined throughput is not guaranteed; confirm active links in the dashboard. |
 | Stream format width | `streamFormatWidth` | 512–4096 pixels, in multiples of 32. A larger width may improve center detail while increasing encoder/decoder work; reconnecting may be needed. |
@@ -16,8 +19,9 @@ The **Stream settings** page sets how SteamVR encodes and sends video to the Fra
 | NVENC encoding passes | Public NVENC parameter hook | Experimental Valve default, single pass or quarter-resolution multipass. Extra work may add latency or stutter. |
 | Advanced Supersample Filtering | `steamvr/allowSupersampleFiltering` | Toggle Valve's filtering setting with live readback, or save it for the next SteamVR session. |
 
-The **Advanced Supersample Filtering** toggle applies when changed and shows the
-value SteamVR accepted. When SteamVR is stopped, it saves the override atomically.
+The **Advanced Supersample Filtering** toggle is applied with the other stream
+settings when you click Apply, then shows the value SteamVR accepted. When
+SteamVR is stopped, it saves the override atomically.
 The codec session must finish reconnecting before changing it.
 
 The target is a request, not a guaranteed minimum. Variable bitrate can drop well below

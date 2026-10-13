@@ -3,6 +3,15 @@
 Headset link status, receiver diagnostics and USB recovery all talk to the Frame itself.
 Set them up on the **Connection** page.
 
+The **Dongle USB** readout on Overview, Diagnostics and Connection checks the actual
+PC-to-dongle connection every five seconds. **USB 2** highlights a bandwidth bottleneck;
+connect the dongle directly to a USB 3 port and check any hub or extension. **USB 3**
+confirms SuperSpeed operation but does not guarantee a particular wireless video bitrate.
+The readout needs neither headset pairing nor administrator access. It queries
+[Windows USB hub operating-speed flags](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/usbioctl/ns-usbioctl-_usb_node_connection_information_ex_v2_flags),
+not the network adapter's configured USB mode or Wi-Fi rate. Failed reads show **unknown**,
+and stale results expire after 15 seconds.
+
 ## Wireless monitoring (recommended)
 
 1. Enable **Developer Mode** on the Frame and pair this PC using **SteamOS Devkit**.

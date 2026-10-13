@@ -18,18 +18,22 @@ public sealed partial class FramePage
 
     private async Task RefreshPresetsAsync(string? selectName = null)
     {
+        _syncingPresets = true;
         try
         {
-            var presets = await _presetStore.ReadAsync();
-            _syncingPresets = true;
+            var presets = BuiltInPresets.Create().ToList();
+            string? loadError = null;
+            try { presets.AddRange(await _presetStore.ReadAsync()); }
+            catch (Exception error) { loadError = error.Message; }
             PresetSelection.Items.Clear();
             foreach (var preset in presets)
             {
-                var item = new ComboBoxItem { Content = preset.Name, Tag = preset };
+                var item = new ComboBoxItem { Content = preset.IsBuiltIn ? preset.Name + " (built-in)" : preset.Name, Tag = preset };
                 PresetSelection.Items.Add(item);
-                if (selectName != null && preset.Name.Equals(selectName, StringComparison.OrdinalIgnoreCase)) PresetSelection.SelectedItem = item;
+                if (!preset.IsBuiltIn && selectName != null && preset.Name.Equals(selectName, StringComparison.OrdinalIgnoreCase)) PresetSelection.SelectedItem = item;
             }
-            PresetSummary.Text = presets.Count == 0 ? "Save your current setup as a complete preset." : "Choose one complete setup. It loads into the editor before you apply it.";
+            PresetSummary.Text = loadError == null ? "Choose a built-in or saved setup. Every setting can be edited before applying."
+                : "Built-in presets are available. Saved presets could not be loaded: " + loadError;
         }
         catch (Exception error) { PresetSummary.Text = "Presets could not be loaded: " + error.Message; }
         finally { _syncingPresets = false; ReloadPresetButton.Visibility = PresetSelection.SelectedItem == null ? Visibility.Collapsed : Visibility.Visible; }
@@ -41,7 +45,7 @@ public sealed partial class FramePage
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot, Title = "Save complete preset", PrimaryButtonText = "Save preset", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary,
-            Content = new StackPanel { Spacing = 12, Children = { name, new TextBlock { Text = "Includes codec, bitrate, refresh, picture quality, encoder and additional driver settings. Saving does not change the stream. A matching name replaces that preset.", TextWrapping = TextWrapping.Wrap, MaxWidth = 400 } } }
+            Content = new StackPanel { Spacing = 12, Children = { name, new TextBlock { Text = "Includes codec, bitrate, refresh, picture quality, encoder and additional driver settings. A matching name replaces your saved preset. Built-in presets stay available unchanged.", TextWrapping = TextWrapping.Wrap, MaxWidth = 400 } } }
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         await ActionAsync(async () =>
@@ -55,13 +59,14 @@ public sealed partial class FramePage
     {
         if (_syncingPresets || PresetSelection.SelectedItem is not ComboBoxItem { Tag: NamedPreset preset }) return;
         ReloadPresetButton.Visibility = Visibility.Visible;
-        await ActionAsync(async () => { await LoadProfileIntoEditorAsync(preset.Profile); PresetSummary.Text = $"“{preset.Name}” loaded. Review the controls, then apply."; return $"Preset “{preset.Name}” loaded; the running stream has not changed."; });
+        await ActionAsync(async () => { await LoadProfileIntoEditorAsync(preset.Profile); PresetSummary.Text = PresetLoadedText(preset); return $"Preset “{preset.Name}” loaded; the running stream has not changed."; });
     }
     private async void ReloadPreset_Click(object sender, RoutedEventArgs e)
     {
         if (PresetSelection.SelectedItem is not ComboBoxItem { Tag: NamedPreset preset }) return;
-        await ActionAsync(async () => { await LoadProfileIntoEditorAsync(preset.Profile); PresetSummary.Text = $"“{preset.Name}” loaded. Review the controls, then apply."; return $"Preset “{preset.Name}” reloaded into the editor."; });
+        await ActionAsync(async () => { await LoadProfileIntoEditorAsync(preset.Profile); PresetSummary.Text = PresetLoadedText(preset); return $"Preset “{preset.Name}” reloaded into the editor."; });
     }
+    private static string PresetLoadedText(NamedPreset preset) => (preset.Description is null ? "" : preset.Description + "\n") + $"“{preset.Name}” loaded. Edit Stream settings or Advanced, then use Apply stream settings to apply the complete preset.";
     private async Task<TuningProfile> CaptureEditorProfileAsync()
     {
         if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value % 1 != 0) throw new ArgumentException("Use a whole-number bitrate target before saving a preset.");
@@ -81,7 +86,7 @@ public sealed partial class FramePage
         }
         var video = new Dictionary<string, JsonElement>(_pendingPreset?.Video ?? saved.Video) { [OpenVrSettings.SupersampleFilteringKey] = JsonSerializer.SerializeToElement(SupersampleFilteringInput.IsOn) };
         var fps = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
-        if (paired) video["preferredRefreshRate"] = JsonSerializer.SerializeToElement(fps);
+        video["preferredRefreshRate"] = JsonSerializer.SerializeToElement(fps);
         var profile = saved with
         {
             Driver = driver, Video = video, BitratePatch = _pendingPreset?.BitratePatch ?? saved.BitratePatch, Codec = SelectedCodec, TargetMbps = checked((int)BitrateInput.Value), Fps = fps,

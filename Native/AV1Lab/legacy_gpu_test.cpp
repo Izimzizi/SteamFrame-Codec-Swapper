@@ -15,8 +15,9 @@ using Microsoft::WRL::ComPtr;
 void check(NVENCSTATUS n,const char* action){if(n!=NV_ENC_SUCCESS)throw std::runtime_error(std::string(action)+": "+std::to_string(n));}
 int main(int argc,char** argv){
  const bool async=argc>1&&std::string(argv[1])=="async";
- const bool fixed=argc>2&&(std::string(argv[2])=="fixed200"||std::string(argv[2])=="fixed100");
- const uint32_t target=argc>2&&std::string(argv[2])=="fixed100"?100000000:200000000;
+ const std::string budget=argc>2?argv[2]:"";
+ const bool fixed=budget=="fixed100"||budget=="fixed200"||budget=="fixed400"||budget=="fixed500";
+ const uint32_t target=budget=="fixed100"?100000000:budget=="fixed400"?400000000:budget=="fixed500"?500000000:200000000;
  const uint32_t fps=argc>3&&std::string(argv[3])=="90"?90:120;
  const bool h264=argc>4&&std::string(argv[4])=="h264";
  const uint32_t width=fixed?(h264?1024:1536):512,height=fixed?(h264?4096:6144):512;

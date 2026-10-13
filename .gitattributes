@@ -1,0 +1,2 @@
+# Preserve the vendored SDK exactly as downloaded, including upstream whitespace.
+Native/vendor/openvr.h -text -whitespace

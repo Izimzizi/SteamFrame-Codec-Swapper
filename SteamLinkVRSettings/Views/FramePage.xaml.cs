@@ -230,6 +230,7 @@ public sealed partial class FramePage : Page
         try
         {
             var at = Now;
+            PollUsbDongle(at);
             var runningTask = Task.Run(() => OpenVrSettings.IsRunning);
             // A paired switch installs its backend into the fresh process before ordinary hooks may start.
             var codecService = await _codecController.ReadStatusAsync(lifetime.Token);
@@ -465,7 +466,7 @@ public sealed partial class FramePage : Page
             $"Last accepted: {policy.RateControlName} / {policy.MultiPassName} / preset {policy.Preset} • {policy.AverageBitrate / 1_000_000.0:0.0} Mbps encoder target\n" +
             $"{policy.Width} × {policy.Height} at {(policy.FrameRateDen > 0 ? policy.FrameRateNum / (double)policy.FrameRateDen : 0):0.0} fps • bit depth {(snapshot.BitDepth is uint depth ? depth.ToString() : "unavailable")} • VBV {policy.VbvSize / 1_000_000.0:0.00} Mbit / initial {policy.VbvDelay / 1_000_000.0:0.00} Mbit • padding {(policy.Filler ? "enabled" : "disabled")}\n" +
             (snapshot.PairedCodecTrialPresent ? "Paired codec adapter configuration observed." : policy.Requested == policy.Applied ? "Requested policy accepted." : "Policy change pending; reconnect if it does not apply.") +
-            $" Calls {policy.Calls}, errors {policy.Errors}, rejected ABI calls {policy.RejectedCalls}." + (snapshot.Active ? "" : " Stream currently inactive.");
+            $" Calls {policy.Calls}, errors {policy.Errors}, rejected policy/ABI calls {policy.RejectedCalls}." + (snapshot.Active ? "" : " Stream currently inactive.");
         var qp = snapshot.Active ? _quantizers.Sample(snapshot.Generation, snapshot.QuantizerSamples, snapshot.QuantizerSum) : null;
         QuantizerReadback.Text = $"Whole-frame QP: {(qp is double value ? value.ToString("0.00") + " interval mean" : "waiting for new samples")} • last frame {(snapshot.QuantizerSamples > 0 ? snapshot.LastFrameQp?.ToString() : "unavailable")} • {snapshot.LastFrameBytes / 1024.0:0.0} KiB/frame";
         CenterMapReadback.Text = snapshot.LastQualityMap is not { TimestampSeconds: > 0 } map ? "Gaze map deltas: unavailable" :
@@ -564,7 +565,7 @@ public sealed partial class FramePage : Page
             await ApplyPendingPresetAsync(paired: true);
             await ApplySupersampleAsync();
             _presetRestartNeeded = false;
-            _bandwidthEdited = _codecEdited = false; UpdateStreamEditStatus(); return message;
+            _bandwidthEdited = _codecEdited = _refreshEdited = false; UpdateStreamEditStatus(); return message;
         }
         if (_codecService.Live) { await EndCodecSessionAsync(); await WaitForHevcSettingsAsync(); }
         if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value < 25 || BitrateInput.Value > 500) throw new ArgumentException("Choose a bitrate between 25 and 500 Mbps.");
@@ -588,6 +589,8 @@ public sealed partial class FramePage : Page
         var requestedReapply = ReapplyInput.IsChecked == true;
         var requestedWidth = (int)StreamWidthInput.Value;
         var requestedAutomaticWidth = AutomaticWidthInput.IsOn;
+        var requestedFps = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+        var requestedRefreshEdited = _refreshEdited;
         var requestedPolicy = new EncodingPolicy(_pendingPreset != null ? (EncoderRateControl)RateControlInput.SelectedIndex : _preferences.RateControl, _pendingPreset != null ? (EncoderMultiPass)MultiPassInput.SelectedIndex : _preferences.MultiPass);
         _ = requestedPolicy.Packed;
         // Check the driver selected in Patches & Recovery, not only the auto-discovered path.
@@ -643,14 +646,18 @@ public sealed partial class FramePage : Page
         _preferences.RateControl = requestedPolicy.RateControl;
         _preferences.MultiPass = requestedPolicy.MultiPass;
         _preferences.RequestedCodec = StreamCodec.Hevc;
+        _preferences.CodecTargetMbps = (int)requestedTarget;
+        _preferences.CodecFps = requestedFps;
+        if (requestedRefreshEdited && _pendingPreset == null) await ApplyHevcRefreshAsync(requestedFps);
         await _preferences.SaveAsync();
         if (_basicEditRevision == requestRevision) _bandwidthEdited = false;
         if (_linkEditRevision == requestLinkRevision) _linkEdited = false;
         await ApplyPendingPresetAsync(paired: false);
         await ApplySupersampleAsync();
+        if (_basicEditRevision == requestRevision) _refreshEdited = false;
         if (_presetRestartNeeded) { SteamVrRuntime.Start(_paths); _presetRestartNeeded = false; }
         _codecEdited = false; UpdateStreamEditStatus();
-        return (running ? "Stream settings accepted by SteamVR. Encoder selection and width changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + qualityMessage;
+        return (running ? "Stream settings accepted by SteamVR. Encoder, width and refresh changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + qualityMessage;
     });
     private void QualityPreset_Click(object sender, RoutedEventArgs e) { QualityInput.IsOn = true; GazeInput.Value = -4; PeripheralInput.Value = 8; }
     private void QualityDefault_Click(object sender, RoutedEventArgs e) { QualityInput.IsOn = false; GazeInput.Value = 0; PeripheralInput.Value = 0; }

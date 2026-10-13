@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.4.0 — High-quality HEVC and USB connection status
+
+- Added an editable built-in High quality HEVC preset: 400 Mbps target, 90 Hz,
+  10-bit, 2048-pixel width, CBR without padding, quarter-resolution multipass,
+  asynchronous sending and center/peripheral quality offsets of −2/−6.
+- Preserved personal presets separately from built-ins. Added HEVC refresh-rate
+  editing and complete-preset application from the Advanced page.
+- Fixed NVENC rate-control capability checks and preserved the last accepted
+  mode when a runtime cannot change it until encoder reinitialization.
+- Added negotiated USB 2/USB 3 dongle status to Connection and Diagnostics,
+  including unknown/stale states and USB 2 throughput guidance.
+- Improved H.264 high-bitrate bitstream restrictions and entropy selection, and
+  preserved encoder initialization diagnostics before codec recovery.
+- Made companion heartbeat writes tolerate transient Windows file-reader races.
+- Added standalone SteamVR multistream and HEVC decoder/timing research tools.
+  The app's normal HEVC/H.264 paths remain single stream. Synthetic 400+ Mbps
+  throughput is not a claim of smooth 400+ Mbps gameplay.
+- Documented observed HEVC gameplay rates and every preset control. Release
+  packages include the high-quality HEVC guide; local captures and personal
+  configuration are excluded.
+
+## 1.3.0 — Complete presets, stock recovery and H.264 bitrate controls
+
+- Added complete named presets, stock recovery with previous-tuning capture,
+  and unified navigation for stream settings, diagnostics and advanced controls.
+- Extended experimental H.264 requests to 25–500 Mbps; AV1 retains 25–200 Mbps.
+- Improved monitoring-button stability, display scaling and settings availability
+  after codec rollback. Actual bitrate and frame cadence remain workload-dependent.
+
 ## 1.2.0 — Experimental AV1 and H.264 sessions
 
 - Added a codec dropdown for HEVC, AV1 and H.264, with a 25–200 Mbps request and

@@ -20,6 +20,13 @@ public sealed partial class FramePage
         try
         {
             var values = await SteamVrVideoSettings().LoadMergedAsync();
+            if (!_codecEdited && _pendingPreset == null && SelectedCodec == StreamCodec.Hevc &&
+                values.TryGetValue("preferredRefreshRate", out var refresh) && Convert.ToDouble(refresh) is 90 or 120)
+            {
+                _syncingCodec = true;
+                try { CodecRefreshInput.SelectedIndex = Convert.ToDouble(refresh) == 120 ? 1 : 0; }
+                finally { _syncingCodec = false; }
+            }
             if (values.TryGetValue(OpenVrSettings.SupersampleFilteringKey, out var value) && value is bool enabled)
                 ShowSupersampleValue(enabled, "Saved setting");
             else SupersampleFilteringReadback.Text = "Saved setting unavailable; start SteamVR for a live readback.";
@@ -54,5 +61,12 @@ public sealed partial class FramePage
             await SteamVrVideoSettings().SaveUserOverridesAsync(new() { [OpenVrSettings.SupersampleFilteringKey] = requested });
             ShowSupersampleValue(requested, "Saved for the next SteamVR session");
         }
+    }
+
+    private async Task ApplyHevcRefreshAsync(int fps)
+    {
+        if (await Task.Run(() => OpenVrSettings.IsRunning))
+            await Task.Run(() => OpenVrSettings.SetPreferredRefreshRate(_paths, fps));
+        else await SteamVrVideoSettings().SaveUserOverridesAsync(new() { ["preferredRefreshRate"] = (double)fps });
     }
 }

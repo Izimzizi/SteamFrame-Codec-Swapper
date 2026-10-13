@@ -164,7 +164,13 @@ public sealed partial class FramePage
     }
     private static string FormatSetting(object? value) => value switch { null => "unset; driver fallback", bool b => b ? "on" : "off", double d => d.ToString("0.###"), _ => value.ToString() ?? "unset" };
 
-    private async void ApplyAdvanced_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
+    private async void ApplyAdvanced_Click(object sender, RoutedEventArgs e)
+    {
+        // A loaded preset owns the complete setup, including any edits on this page.
+        if (_pendingPreset != null) { Apply_Click(sender, e); return; }
+        await ApplyAdvancedSettingsAsync();
+    }
+    private Task ApplyAdvancedSettingsAsync() => ActionAsync(async () =>
     {
         await EnsureCodecStableAsync();
         var request = ReadAdvancedEncoderInputs(); var revision = _encoderAdvancedRevision;
@@ -206,6 +212,8 @@ public sealed partial class FramePage
             else await new SettingsService().SaveUserOverridesAsync(writes, removes);
         }
         string message = "Advanced driver settings accepted" + (running ? " by OpenVR." : " for the next SteamVR session.");
+        if (running && AdvancedDriverSettings.Definitions.Any(d => d.Reconnect && (writes.ContainsKey(d.Key) || removes.Contains(d.Key))))
+            message += " Reconnect to activate changes to encoder or sender initialization settings.";
         if (encoderEdited)
         {
             message += await ApplyAdvancedEncoderAsync(request, running);

@@ -26,7 +26,16 @@ def creation_epoch():
  return values[0].value/10000000-11644473600
 def atomic_json(path,value):
  temporary=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
- temporary.write_text(json.dumps(value),encoding='utf-8');os.replace(temporary,path)
+ try:
+  temporary.write_text(json.dumps(value),encoding='utf-8')
+  # A short-lived Windows reader can omit FILE_SHARE_DELETE. Do not lose the
+  # service heartbeat permanently because one atomic replacement races it.
+  for attempt in range(10):
+   try:os.replace(temporary,path);return
+   except PermissionError:
+    if attempt==9:raise
+    time.sleep(.02)
+ finally:temporary.unlink(missing_ok=True)
 
 class Supervisor:
  def __init__(self,directory,config):
@@ -61,7 +70,9 @@ class Supervisor:
   with self.mutex:
    self.status.update(values);self.status['updated_epoch']=time.time();atomic_json(self.directory/'status.json',self.status)
  def heartbeat(self):
-  while not self.stop_heartbeat.wait(1):self.update()
+  while not self.stop_heartbeat.wait(1):
+   try:self.update()
+   except OSError:pass # Leave the status stale and retry; never report false readiness.
  def command(self,args,input=None,timeout=30):
   p=subprocess.run(list(map(str,args)),input=input,capture_output=True,text=True,timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
   if p.returncode:raise RuntimeError('A paired codec command failed; check connection and installation.')
@@ -146,6 +157,14 @@ class Supervisor:
   raise RuntimeError('PC codec installation timed out.')
  def stats(self,action='stats'):
   return json.loads(self.command([self.backend/'trial_control.exe',self.pid,self.backend/'SteamFrameAV1Backend.dll',action],timeout=12))
+ def check_encoder_errors(self,state,codec,target,fps):
+  if not state['errors']:return
+  # Preserve the counter-only diagnosis before recovery destroys the encoder.
+  atomic_json(self.directory/'encoder-failure.json',{'observed_epoch':time.time(),
+   'codec':codec,'target_mbps':target,'fps':fps,'encoder':state})
+  raise RuntimeError('Encoder errors after codec change: initialization status '+str(state['initialize_status'])+
+   ', source '+str(state['width'])+'x'+str(state['height'])+' at '+str(state['source_fps_num'])+'/'+str(state['source_fps_den'])+
+   ' fps. See encoder-failure.json in the codec session directory.')
  def switch(self,codec,target,fps,operation_id=''):
   validate_mode(codec,target,fps)
   self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,
@@ -174,7 +193,7 @@ class Supervisor:
    if receiver['current_driver']==expected and receiver['open_decoder_users']:
     if codec=='HEVC':ready=True;break
     state=self.stats();identity=self.stats('identity')
-    if state['errors']:raise RuntimeError('Encoder errors after codec change.')
+    self.check_encoder_errors(state,codec,target,fps)
     if state['initializes'] and state['locks'] and identity['codec']==codec and state['source_fps_num']==fps*state['source_fps_den']:
      before=state['locks'];time.sleep(.5)
      if self.stats()['locks']>before:ready=True;break

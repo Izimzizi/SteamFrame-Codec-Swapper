@@ -110,6 +110,13 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
   auto& h264=config.encodeCodecConfig.h264Config;
   h264.level=requested_average>200000000?NV_ENC_LEVEL_AUTOSELECT:NV_ENC_LEVEL_H264_52;
   h264.idrPeriod=requested_fps;h264.chromaFormatIDC=1;
+  // Advertise the actual small DPB. Without VUI bitstream restrictions, the
+  // Frame driver derives 18 capture buffers from level 6.1; VRLink has only
+  // 16 backing surfaces and repeatedly fails QBUF at index 16.
+  h264.maxNumRefFrames=3;h264.h264VUIParameters.bitstreamRestrictionFlag=1;
+  // At high bitrates CABAC entropy decoding stalls before pixel throughput
+  // is exhausted. CAVLC passed the paired 400-Mbps/90-Hz hardware test.
+  if(requested_average>200000000)h264.entropyCodingMode=NV_ENC_H264_ENTROPY_CODING_MODE_CAVLC;
   h264.repeatSPSPPS=1;h264.disableSPSPPS=0;h264.outputAUD=1;h264.enableFillerDataInsertion=0;
   h264.sliceMode=3;h264.sliceModeData=1;
  }else{

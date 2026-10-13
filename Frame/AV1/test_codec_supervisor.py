@@ -1,6 +1,6 @@
 """Pure contract tests; never controls a real Frame or SteamVR process."""
-import pathlib,tempfile,unittest,uuid
-from unittest.mock import patch
+import json,pathlib,tempfile,unittest,uuid
+from unittest.mock import Mock,patch
 import codec_supervisor as service
 class CodecProtocolTests(unittest.TestCase):
  def test_supported_modes_and_rates(self):
@@ -31,4 +31,45 @@ class CodecProtocolTests(unittest.TestCase):
   with patch.object(instance,'powershell',return_value='') as call:
    self.assertEqual(instance.server_pid(),0)
    self.assertIn('exit 0',call.call_args.args[0])
+ def test_encoder_failure_is_preserved_before_recovery(self):
+  instance=object.__new__(service.Supervisor)
+  with tempfile.TemporaryDirectory() as directory:
+   instance.directory=pathlib.Path(directory)
+   instance.check_encoder_errors({'errors':0},'H.264',400,90)
+   self.assertFalse((instance.directory/'encoder-failure.json').exists())
+   state={'errors':1,'initialize_status':8,'width':1024,'height':4096,
+    'source_fps_num':90,'source_fps_den':1,'initialize_error':'unsupported parameters'}
+   with self.assertRaisesRegex(RuntimeError,'initialization status 8, source 1024x4096 at 90/1'):
+    instance.check_encoder_errors(state,'H.264',400,90)
+   saved=json.loads((instance.directory/'encoder-failure.json').read_text())
+   self.assertEqual(saved['encoder'],state)
+   self.assertEqual((saved['codec'],saved['target_mbps'],saved['fps']),('H.264',400,90))
+ def test_atomic_status_retries_transient_windows_reader(self):
+  with tempfile.TemporaryDirectory() as directory:
+   path=pathlib.Path(directory)/'status.json';path.write_text('{"old":true}')
+   replace=service.os.replace
+   attempts=0
+   def transient_reader(source,target):
+    nonlocal attempts
+    attempts+=1
+    if attempts==1:raise PermissionError()
+    return replace(source,target)
+   with patch.object(service.os,'replace',side_effect=transient_reader) as call,patch.object(service.time,'sleep'):
+    service.atomic_json(path,{'ready':True})
+    self.assertEqual(call.call_count,2)
+   self.assertEqual(json.loads(path.read_text()),{'ready':True})
+   self.assertEqual(list(path.parent.glob('*.tmp')),[])
+ def test_atomic_status_failure_preserves_previous_and_cleans_temp(self):
+  with tempfile.TemporaryDirectory() as directory:
+   path=pathlib.Path(directory)/'status.json';path.write_text('{"old":true}')
+   with patch.object(service.os,'replace',side_effect=PermissionError()),patch.object(service.time,'sleep'):
+    with self.assertRaises(PermissionError):service.atomic_json(path,{'ready':True})
+   self.assertEqual(json.loads(path.read_text()),{'old':True})
+   self.assertEqual(list(path.parent.glob('*.tmp')),[])
+ def test_heartbeat_survives_failed_status_write(self):
+  instance=object.__new__(service.Supervisor)
+  instance.stop_heartbeat=Mock();instance.stop_heartbeat.wait.side_effect=[False,False,True]
+  with patch.object(instance,'update',side_effect=[PermissionError(),None]) as update:
+   instance.heartbeat()
+   self.assertEqual(update.call_count,2)
 if __name__=='__main__':unittest.main()

@@ -2,7 +2,11 @@ using System.Text.Json;
 
 namespace SteamLinkVRSettings.Frame;
 
-public sealed record NamedPreset(string Id, string Name, TuningProfile Profile);
+public sealed record NamedPreset(string Id, string Name, TuningProfile Profile)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public bool IsBuiltIn { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public string? Description { get; init; }
+}
 public sealed class PresetStore(string? path = null)
 {
     private readonly string _path = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamLinkVRSettings", "presets.json");

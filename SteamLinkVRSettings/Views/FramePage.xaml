@@ -61,6 +61,7 @@
                                 <TextBlock Text="Video path" Style="{StaticResource Hint}" />
                                 <TextBlock x:Name="WiredReadback" Text="Unknown" FontSize="24" MaxWidth="210" TextWrapping="Wrap" HorizontalAlignment="Left" />
                                 <TextBlock x:Name="WifiReadback" Text="Wi-Fi: unknown" Style="{StaticResource Hint}" />
+                                <TextBlock x:Name="DongleUsbReadback" Text="Dongle USB: checking…" Style="{StaticResource Hint}" MaxWidth="210" />
                             </StackPanel>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -90,6 +91,7 @@
                             <TextBlock x:Name="LinkReadback" Text="Checking headset…" TextWrapping="Wrap" />
                             <TextBlock x:Name="LinkStatus" Text="" Style="{StaticResource Hint}" />
                             <TextBlock x:Name="UsbTraffic" Text="Checking adapters…" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DongleUsbDetail" Text="Checking the dongle's USB connection…" Style="{StaticResource Hint}" />
                             <TextBlock Text="Connection traffic includes error correction and overhead, so it can be higher than video bitrate." Style="{StaticResource Hint}" />
                         </StackPanel>
                     </Expander>
@@ -112,6 +114,7 @@
                         </Grid>
                         <TextBlock Text="Presets load into the editor. Apply when you are ready." Style="{StaticResource Hint}" x:Name="PresetSummary" />
                         <HyperlinkButton x:Name="ReloadPresetButton" Content="Reload selected preset" Click="ReloadPreset_Click" HorizontalAlignment="Left" Padding="0" Visibility="Collapsed" />
+                        <HyperlinkButton Content="Encoder, sending and driver options" Tag="advanced" Click="OpenSection_Click" HorizontalAlignment="Left" Padding="0" />
                         <TextBlock x:Name="CodecCurrentReadback" Text="Current encoder: checking…" TextWrapping="Wrap" Style="{StaticResource Hint}" />
                         <ComboBox x:Name="CodecSelectionInput" Header="Video codec" SelectedIndex="0" SelectionChanged="CodecSelection_Changed" HorizontalAlignment="Stretch">
                             <ComboBoxItem Content="HEVC" />
@@ -159,7 +162,7 @@
                                 <controls:NoWheelNumberBox x:Name="GazeInput" Header="Center quality offset" Minimum="-20" Maximum="12" SmallChange="1" Value="-4" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged" />
                                 <controls:NoWheelNumberBox x:Name="PeripheralInput" Grid.Column="1" Header="Outside-gaze quality offset" Minimum="-12" Maximum="31" SmallChange="1" Value="8" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged" />
                             </Grid>
-                            <TextBlock Text="Negative offsets improve detail. Positive offsets reduce detail; outside-gaze values above +12 are aggressive." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Negative offsets improve detail. Positive offsets reduce detail; outside-gaze values above +12 are aggressive. These change compression quality, not the physical size of the tracked gaze region." Style="{StaticResource Hint}" />
                             <StackPanel Spacing="12" Orientation="Horizontal">
                                 <Button Content="Quality focus" Click="QualityPreset_Click" />
                                 <Button Content="Valve gaze defaults" Click="QualityDefault_Click" />
@@ -199,6 +202,7 @@
                         <Button Content="Open report folder" Click="OpenCaptureFolder_Click" Grid.Column="1" />
                     </Grid>
                     <TextBlock x:Name="HealthSummary" Text="Watching for new streaming issues…" TextWrapping="Wrap" />
+                    <TextBlock x:Name="DiagnosticUsbStatus" Text="Dongle USB: checking…" TextWrapping="Wrap" />
                     <TextBlock x:Name="ReceiverStatus" Text="Checking the Frame receiver over wireless…" Style="{StaticResource Hint}" />
                     <TextBlock x:Name="ReceiverCounts" TextWrapping="Wrap" />
                     <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="4" Padding="14">
@@ -249,7 +253,7 @@
                                 <ComboBoxItem Content="Single pass" />
                                 <ComboBoxItem Content="Quarter-resolution multipass" />
                             </ComboBox>
-                            <TextBlock Text="Extra encoding work can increase latency. Bitrate targets describe useful video, without filler traffic." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Extra encoding work can increase latency. Bitrate targets describe useful video, without filler traffic. Multipass changes encoder analysis; native HEVC still uses one decoder." Style="{StaticResource Hint}" />
                             <CheckBox x:Name="ReapplyInput" Content="Reapply my HEVC encoder and gaze settings after SteamVR restarts" Checked="Bandwidth_Toggled" Unchecked="Bandwidth_Toggled" />
                         </StackPanel>
                     </Expander>
@@ -259,9 +263,9 @@
                             <StackPanel x:Name="AdvancedEncoderHost" Spacing="16" />
                         </StackPanel>
                     </Expander>
-                    <Expander Header="Driver experiments" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander Header="Driver and network settings" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                         <StackPanel Spacing="12" Padding="0,12,0,0">
-                            <TextBlock Text="Resolution bounds, scheduling, sharpening and network behavior." Style="{StaticResource Hint}" />
+                            <TextBlock Text="10-bit encoding, asynchronous sending, sharpening, QoS, retries and resolution bounds. Check Override to set a value; clear it to use Valve's default." Style="{StaticResource Hint}" />
                             <StackPanel x:Name="AdvancedDriverHost" Spacing="16" />
                         </StackPanel>
                     </Expander>
@@ -280,6 +284,7 @@
             <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="ConnectionView">
                 <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
                     <TextBlock Text="Pair once. Use the dongle for streaming." FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ConnectionUsbStatus" Text="Checking the dongle's USB connection…" TextWrapping="Wrap" />
                     <TextBlock Text="Enable Developer Mode and pair this PC with SteamOS Devkit. Keep the Frame awake and its Wi-Fi enabled." Style="{StaticResource Hint}" />
                     <HyperlinkButton Content="Open the pairing guide" NavigateUri="https://github.com/elliotttate/SteamLinkVRSettings-SteamFrame/blob/main/docs/connection-setup.md" HorizontalAlignment="Left" Padding="0" />
                     <TextBox x:Name="SshHostInput" Header="Frame address" PlaceholderText="10.35.78.1 for the dedicated dongle" />

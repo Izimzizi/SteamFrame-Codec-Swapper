@@ -38,6 +38,50 @@ public sealed class PresetAndStockTests : IDisposable
         await reopened.SaveAsync("BALANCED", original with { Fps = 120 }); var updated = Assert.Single(await store.ReadAsync()); Assert.Equal(first.Id, updated.Id); Assert.Equal(120, updated.Profile.Fps);
     }
     [Fact]
+    public async Task BuiltInHighQualityRestoresCompleteSetupAndKeepsPairing()
+    {
+        await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":false,"unrelatedPairingValue":"keep"},"steamvr":{"preferredRefreshRate":120,"showMirrorView":true}}""");
+        var preset = Assert.Single(BuiltInPresets.Create());
+        StockProfiles.Validate(preset.Profile);
+        var preferences = new FramePreferences { SshHost = "paired-device" };
+        await Profiles.RestoreAsync(preset.Profile, preferences);
+        var driver = await Driver.LoadUserOverridesAsync(); var video = await Video.LoadUserOverridesAsync();
+        Assert.Equal(400d, Convert.ToDouble(driver["targetBandwidth"]));
+        Assert.Equal(2048, Convert.ToInt32(driver["streamFormatWidth"]));
+        Assert.Equal(true, driver["asyncSend"]); Assert.Equal(true, driver["10bit"]);
+        Assert.Equal(false, driver["automaticBandwidth"]); Assert.Equal(false, driver["automaticStreamFormatWidth"]);
+        Assert.Equal(false, driver["allowMultipleLinks"]);
+        Assert.Equal(90d, Convert.ToDouble(video["preferredRefreshRate"])); Assert.Equal(false, video["allowSupersampleFiltering"]);
+        Assert.Equal(StreamCodec.Hevc, preferences.RequestedCodec); Assert.Equal(400, preferences.CodecTargetMbps); Assert.Equal(90, preferences.CodecFps);
+        Assert.Equal(EncoderRateControl.Cbr, preferences.RateControl); Assert.Equal(EncoderMultiPass.QuarterResolution, preferences.MultiPass);
+        Assert.True(preferences.QualityEnabled); Assert.Equal(-2, preferences.GazeOffset); Assert.Equal(-6, preferences.PeripheralOffset);
+        Assert.True(preferences.ReapplyAfterRestart); Assert.True(preferences.AdvancedEncoding.IsDefault); Assert.True(preset.Profile.BitratePatch);
+        Assert.Equal("paired-device", preferences.SshHost); Assert.Equal("keep", driver["unrelatedPairingValue"]); Assert.Equal(true, video["showMirrorView"]);
+    }
+    [Fact]
+    public async Task SavingEditedBuiltInDoesNotReplaceAppPresetOrOtherSavedPresets()
+    {
+        var path = Path.Combine(_root, "presets.json"); var store = new PresetStore(path);
+        Assert.Empty(await store.ReadAsync());
+        var preset = Assert.Single(BuiltInPresets.Create());
+        Assert.True(preset.IsBuiltIn); Assert.False(File.Exists(path));
+        await store.SaveAsync("Existing", new());
+        preset.Profile.Driver["targetBandwidth"] = JsonSerializer.SerializeToElement(350d);
+        preset.Profile.Driver["asyncSend"] = JsonSerializer.SerializeToElement(false);
+        preset.Profile.Video["preferredRefreshRate"] = JsonSerializer.SerializeToElement(120d);
+        await store.SaveAsync(preset.Name, preset.Profile with { TargetMbps = 350, Fps = 120 });
+        var saved = await new PresetStore(path).ReadAsync();
+        Assert.Equal(2, saved.Count); Assert.Contains(saved, p => p.Name == "Existing");
+        var edited = Assert.Single(saved, p => p.Name == preset.Name);
+        Assert.False(edited.IsBuiltIn); Assert.Equal(350, edited.Profile.TargetMbps); Assert.Equal(120, edited.Profile.Fps);
+        Assert.False(edited.Profile.Driver["asyncSend"].GetBoolean());
+        var fresh = Assert.Single(BuiltInPresets.Create());
+        Assert.Equal(preset.Id, fresh.Id); Assert.NotEqual(fresh.Id, edited.Id);
+        Assert.Equal(400, fresh.Profile.TargetMbps); Assert.Equal(400d, fresh.Profile.Driver["targetBandwidth"].GetDouble());
+        Assert.True(fresh.Profile.Driver["asyncSend"].GetBoolean()); Assert.Equal(90d, fresh.Profile.Video["preferredRefreshRate"].GetDouble());
+        Assert.DoesNotContain("IsBuiltIn", await File.ReadAllTextAsync(path));
+    }
+    [Fact]
     public void PresetNumbersKeepTheSettingsApisFloatAndIntegerTypes()
     {
         var values = StockProfiles.Deserialize(new() { ["targetBandwidth"] = JsonSerializer.SerializeToElement(200d), ["streamFormatWidth"] = JsonSerializer.SerializeToElement(1536), ["enableTimedRetry"] = JsonSerializer.SerializeToElement(1), ["backoffRecoveryCoefficient"] = JsonSerializer.SerializeToElement(1.5) });

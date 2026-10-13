@@ -63,7 +63,8 @@ struct BufferStamp { uint64_t submitted{}, counted{}; double submittedAt{}; };
 struct Session {
     std::unordered_map<void*, BufferStamp> buffers;
     bool customPolicy{}, capsQueried{}, dynamicBitrate{}, dynamicRc{}, customVbv{}, temporalAq{};
-    uint32_t supportedRc{};
+    uint32_t supportedRc{}, acceptedRc{};
+    bool acceptedRcKnown{};
     AdvancedEncoding initializedAdvanced{};
     uint32_t queriedPreset{};
     NV_ENC_CONFIG baselinePreset{}, desiredPreset{};
@@ -134,6 +135,8 @@ void recordPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t
     if (found != sessions.end()) {
         found->second.codec = codecGuidName(params.encodeGUID);
         found->second.codecSource = "NVENC accepted codec GUID and encoded output";
+        found->second.acceptedRc = params.encodeConfig->rcParams.rateControlMode;
+        found->second.acceptedRcKnown = true;
         if (initialization) {
             found->second.initializedAdvanced = advanced; found->second.initializedAdvanced.flags &= AdvancedInitialization;
             found->second.initializedCodec = params.encodeGUID;
@@ -194,15 +197,25 @@ void queryAdvancedCaps(void* handle, const GUID& codec) {
     session.dynamicRc = dynamicRc; session.supportedRc = supportedRc;
 }
 uint32_t validatedPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t policy, bool initialization) {
-    if (!(policy & 3u)) return policy;
     queryAdvancedCaps(handle, params.encodeGUID);
-    const auto desired = (policy & 3u) == 1 ? NV_ENC_PARAMS_RC_VBR : NV_ENC_PARAMS_RC_CBR;
-    bool supported{};
+    const uint32_t desired = (policy & 3u) == 1 ? NV_ENC_PARAMS_RC_VBR : (policy & 3u) == 2 ? NV_ENC_PARAMS_RC_CBR
+        : params.encodeConfig->rcParams.rateControlMode;
     { std::lock_guard<std::mutex> lock(statsMutex); const auto& session = sessions[handle];
-        supported = (session.supportedRc & (1u << desired)) && (initialization || session.dynamicRc || params.encodeConfig->rcParams.rateControlMode == desired);
-        if (!supported) ++stats.rejectedPolicyCalls;
+        // Valve continues submitting its original VBR config even when the
+        // session was initialized in CBR. Compare against the last accepted
+        // mode, not that unmodified caller-owned config. On hardware without
+        // dynamic mode changes, keep the accepted mode until a new session.
+        const auto current = session.acceptedRcKnown ? session.acceptedRc : params.encodeConfig->rcParams.rateControlMode;
+        // NV_ENC_PARAMS_RC_MODE values are already bit flags (VBR=1, CBR=2).
+        const bool supported = !(policy & 3u) || (session.supportedRc & desired);
+        if (supported && (initialization || session.dynamicRc || current == desired)) return policy;
+        ++stats.rejectedPolicyCalls;
+        if (!initialization && session.acceptedRcKnown && current != static_cast<uint32_t>(params.encodeConfig->rcParams.rateControlMode)) {
+            const auto retained = current == NV_ENC_PARAMS_RC_CBR ? 2u : current == NV_ENC_PARAMS_RC_VBR ? 1u : 0u;
+            if (retained) return (policy & ~3u) | retained;
+        }
     }
-    return supported ? policy : 0;
+    return 0;
 }
 AdvancedEncoding prepareAdvanced(void* handle, bool initialization, NV_ENC_INITIALIZE_PARAMS& params, NV_ENC_CONFIG& config) {
     auto value = advancedRequest; value.flags &= ~advancedRejected;

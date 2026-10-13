@@ -29,9 +29,9 @@ including the ones SteamVR doesn't show in its own UI.
 | **Codec selector** | Switch between HEVC, AV1 and H.264, choose H.264 25–500 Mbps or AV1 25–200 Mbps at 90/120 Hz, and restore stock HEVC. AV1/H.264 are exact-build experiments and restart the stream. |
 | **Streaming issue capture** | Timestamps recovery requests, bad-link events, encoder stalls, PC presentation drops and headset receiver faults, and saves them as JSONL. |
 | **Driver patcher** | Raises the driver's 232/350 Mbps ceilings to 500 Mbps and selects HEVC level 6.2, with verified backups and one-click restore. |
-| **Connection tools** | Reads headset link status over paired wireless SSH or ADB, and can restart a stalled Frame USB connection. |
+| **Connection tools** | Shows the dongle's negotiated USB 2/USB 3 speed, reads headset link status over paired wireless SSH or ADB, and can restart a stalled Frame USB connection. |
 | **Additional settings** | Search less common `driver_vrlink` options. Settings already in Stream settings or Advanced are excluded to avoid duplicate controls. |
-| **Complete presets** | Save named setups covering codec, target, refresh, filtering, gaze, encoder options, driver overrides and the bitrate patch. Choose one from the dropdown to review, then apply. |
+| **Complete presets** | Includes High quality HEVC: 400 Mbps target, 90 Hz, 10-bit, 2048 width, CBR, quarter-resolution multipass and asynchronous sending. Edit any control or save a personal preset; built-ins remain available. |
 | **Back to stock** | Save the current tuning, end experimental codecs, restore a verified original driver and remove app tuning overrides. Load previous tuning to return to it. Pairing and unrelated settings stay intact. |
 
 ## Download and run
@@ -64,6 +64,13 @@ Passwords, developer pairing paths and temporary awake-test leases are not saved
 presets. **Back to stock** saves the currently applied tuning before restoring Valve
 defaults; **Load previous tuning** fills the editor with that saved setup.
 
+Choose **High quality HEVC (built-in)** to load the tested high-quality setup.
+Its 400 Mbps target is a request, not guaranteed throughput: one Galactic Racer
+observation averaged about 275 Mbps of coded video. Review individual options in
+Stream settings and Advanced before applying. See the
+[high-quality HEVC guide](docs/hevc-high-quality.md) for every control and the
+measurement limits.
+
 For AV1 or H.264, follow the [codec setup guide](docs/codec-modes.md) first.
 The release includes the companion runtime and AV1 decoder, so supported devices
 can be patched through the app without building the source or installing Python
@@ -76,6 +83,7 @@ own installed file. It refuses unknown headset builds.
 | Guide | Covers |
 | --- | --- |
 | [Stream controls and foveation](docs/stream-controls.md) | Bitrate, stream width, VBR/CBR, encoding passes, additional links, gaze offsets and temporary test power settings |
+| [High-quality HEVC preset](docs/hevc-high-quality.md) | Built-in profile, individual tuning controls, USB speed and observed performance |
 | [Advanced controls](docs/advanced-controls.md) | CQ, max QP, peak/VBV, chroma/AQ/presets, driver width/pooling/sharpening/sending experiments, readbacks and restoration |
 | [Codec modes](docs/codec-modes.md) | AV1/H.264 setup, supported builds, hardware requirements, switching, verification and rollback |
 | [Live dashboard and diagnostics](docs/live-dashboard.md) | Every readout, capture files, recovery traces, PC presentation counters |

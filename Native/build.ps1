@@ -27,7 +27,9 @@ try {
     $env:PATH = "$compilerDirectory;$sdkBinaries;$(Split-Path $ninja);$previousPath"
     $env:INCLUDE = "$($toolset.FullName)\include;$($sdk.FullName)\ucrt;$($sdk.FullName)\shared;$($sdk.FullName)\um;$($sdk.FullName)\winrt"
     $env:LIB = "$($toolset.FullName)\lib\x64;$WindowsSdkRoot\Lib\$($sdk.Name)\ucrt\x64;$WindowsSdkRoot\Lib\$($sdk.Name)\um\x64"
-    & $cmake -S $nativeRoot -B (Join-Path $nativeRoot 'build') -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_C_COMPILER=$compiler" "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_RC_COMPILER=$sdkBinaries\rc.exe" "-DCMAKE_MT=$sdkBinaries\mt.exe" -DCMAKE_BUILD_TYPE=Release
+    $cmakeCompiler = $compiler.Replace('\', '/')
+    $cmakeSdkBinaries = $sdkBinaries.Replace('\', '/')
+    & $cmake -S $nativeRoot -B (Join-Path $nativeRoot 'build') -G Ninja "-DCMAKE_MAKE_PROGRAM=$($ninja.Replace('\', '/'))" "-DCMAKE_C_COMPILER=$cmakeCompiler" "-DCMAKE_CXX_COMPILER=$cmakeCompiler" "-DCMAKE_RC_COMPILER=$cmakeSdkBinaries/rc.exe" "-DCMAKE_MT=$cmakeSdkBinaries/mt.exe" -DCMAKE_BUILD_TYPE=Release
     if ($LASTEXITCODE -ne 0) { throw 'Native configure failed.' }
     & $cmake --build (Join-Path $nativeRoot 'build')
     if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
