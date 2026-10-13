@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.1 — Automatic encoder helper upgrade recovery
+
+- Detect a previous encoder helper still loaded in SteamVR after an app update
+  and show a direct Restart SteamVR and resume action.
+- Starting monitoring handles this condition by restarting SteamVR once, waiting
+  for the replacement streaming driver, loading the updated helper and resuming
+  saved encoder tuning when Reapply is enabled. Unapplied edits remain staged.
+- Background monitoring never restarts SteamVR; startup has a bounded wait and
+  cannot loop through restarts or take over a paired codec session.
+- The upgrade message explains that restarting disconnects the headset and may
+  close a running game. A helper mismatch no longer suggests administrator access.
+- Clear a previous monitoring error once monitoring recovers, including after a
+  SteamVR restart performed outside the app.
+- A closed codec session no longer blocks monitoring as "reconnecting" when
+  Windows reuses its process ID and no codec supervisor holds the owner lock.
+
 ## 1.5.0 — SteamFrame Advanced Options and HEVC presets
 
 - Renamed the project and app display name to SteamFrame Advanced Options.

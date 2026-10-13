@@ -367,40 +367,21 @@ public sealed partial class FramePage : Page
                 TargetReadback.Text = "— Mbps";
                 TargetMode.Text = "Start SteamVR to read the live target";
             }
-            if (_preferences.ReapplyAfterRestart && !codecPaused && !snapshot.PairedCodecTrialPresent && snapshot.ProcessId > 0 && _configuredPid != snapshot.ProcessId && at >= _nextAutoApply && !CodecHooksPaused(await _codecController.ReadStatusAsync(lifetime.Token)))
+            if (_preferences.ReapplyAfterRestart && !codecPaused && !snapshot.RequiresSteamVrRestart && !snapshot.PairedCodecTrialPresent && snapshot.ProcessId > 0 && _configuredPid != snapshot.ProcessId && at >= _nextAutoApply && !CodecHooksPaused(await _codecController.ReadStatusAsync(lifetime.Token)))
             {
                 _nextAutoApply = at + 10;
                 snapshot = await _probe.StartAsync();
-                if (snapshot.Installed)
-                {
-                    snapshot = await _probe.SetQualityAsync(_preferences.QualityEnabled, _preferences.GazeOffset, _preferences.PeripheralOffset);
-                    var policy = new EncodingPolicy(_preferences.RateControl, _preferences.MultiPass);
-                    // Arm every native request before an OpenVR refresh. A fresh
-                    // server may have no connected Frame yet (OpenVR error216),
-                    // but the public NVENC hooks can already catch initialization.
-                    if (policy.IsValid) snapshot = await _probe.SetEncodingPolicyAsync(policy);
-                    var advanced = _preferences.AdvancedEncoding ?? new();
-                    if (snapshot.AdvancedEncoding is { Supported: true })
-                        snapshot = await _probe.SetAdvancedEncodingAsync(advanced);
-                    _configuredPid = snapshot.ProcessId;
-                    if (snapshot.Active)
-                    {
-                        try
-                        {
-                            await Task.Run(() => OpenVrSettings.RefreshEncoder(_paths));
-                            snapshot = await _probe.GetSnapshotAsync();
-                        }
-                        catch (Exception error) { ShowStatus("Native requests are armed; live refresh unavailable: " + error.Message + " Connect the Frame, or restart SteamVR if initialization-only changes stay pending.", false); }
-                    }
-                }
+                if (snapshot.Installed) snapshot = await ReapplySavedEncodingAsync(snapshot);
                 if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
             }
+            RenderEncoderRecovery(snapshot);
+            _monitorInstalled = snapshot.Installed;
             var measured = snapshot.Installed && snapshot.Active
                 ? _rate.Sample(snapshot.Generation, snapshot.EncodedBytes, snapshot.EncodedFrames, snapshot.TimestampSeconds)
                 : (Mbps: (double?)null, Fps: (double?)null);
             if (!snapshot.Installed || !snapshot.Active) { _rate.Reset(); _quantizers.Reset(); }
             VideoRate.Text = measured.Mbps is double mbps ? mbps.ToString("0.0") : "—";
-            VideoDetail.Text = measured.Fps is double fps ? $"{fps:0.0} frames/s" : snapshot.Installed ? "Waiting for encoded frames…" : "Start the live monitor during an NVENC stream.";
+            VideoDetail.Text = measured.Fps is double fps ? $"{fps:0.0} frames/s" : snapshot.RequiresSteamVrRestart ? "Restart SteamVR and resume to finish the app update." : snapshot.Installed ? "Waiting for encoded frames…" : "Start the live monitor during an NVENC stream.";
             var codec = StreamCodecStatus.From(snapshot);
             CodecReadback.Text = "Codec: " + codec.Value;
             CodecDetail.Text = codec.Detail;
@@ -507,19 +488,34 @@ public sealed partial class FramePage : Page
     private async void StartMonitor_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
         await EnsureCodecStableAsync();
-        var status = await _probe.StartAsync();
+        var result = await EncoderMonitorRecovery.StartAsync(_probe.StartAsync, _probe.GetSnapshotAsync,
+            async processId =>
+            {
+                var service = await _codecController.ReadStatusAsync();
+                if (CodecHooksPaused(service) || service.Live)
+                    throw new InvalidOperationException("A paired codec session is active or recovering. Finish switching to HEVC before restarting its encoder helper.");
+                _configuredPid = 0;
+                _rate.Reset(); _quantizers.Reset();
+                await Task.Run(() => SteamVrRuntime.RestartForEncoderAsync(_paths, processId));
+            }, message => ShowStatus(message, false), _lifetime?.Token ?? default);
+        var status = result.Snapshot;
+        RenderEncoderRecovery(status);
         _monitorInstalled = status.Installed;
         if (!status.Installed)
         {
             // A running, compatible SteamVR that still refuses the monitor may need more rights.
-            if (!Elevation.IsElevated && status.ProcessId > 0 && status.Supported)
+            if (!status.RequiresSteamVrRestart && !Elevation.IsElevated && status.ProcessId > 0 && status.Supported)
                 throw new ElevationSuggestedException(status.Message + " If this keeps happening, restart this app as administrator.");
             throw new InvalidOperationException(status.Message);
         }
+        if (_preferences.ReapplyAfterRestart && !status.PairedCodecTrialPresent && _configuredPid != status.ProcessId)
+            status = await ReapplySavedEncodingAsync(status);
         _rate.Reset();
         _configuredPid = status.ProcessId;
-        return "Live monitor started. Encoded bitrate appears after two samples.";
-    });
+        return result.Restarted
+            ? "SteamVR restarted and monitoring resumed with the updated helper. Encoded bitrate appears after the Frame reconnects and two samples arrive."
+            : "Live monitor started. Encoded bitrate appears after two samples.";
+    }, encoderAction: true);
     private async void StopMonitor_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
         await EnsureCodecStableAsync();
@@ -762,7 +758,7 @@ public sealed partial class FramePage : Page
         return result.Trim();
     });
 
-    private async Task ActionAsync(Func<Task<string>> action, bool reportSuccess = true)
+    private async Task ActionAsync(Func<Task<string>> action, bool reportSuccess = true, bool encoderAction = false)
     {
         if (_actionPending || _disposed) return;
         _actionPending = true;
@@ -771,7 +767,11 @@ public sealed partial class FramePage : Page
         AdvancedApplyButton.IsEnabled = AdvancedRestoreButton.IsEnabled = false;
         await _actions.WaitAsync();
         try { var message = await action(); if (reportSuccess) ShowStatus(message, false); }
-        catch (Exception ex) { ShowStatus(ex.Message, true, offerElevation: !Elevation.IsElevated && (ex is ElevationSuggestedException || Elevation.IsAccessDenied(ex))); }
+        catch (Exception ex)
+        {
+            ShowStatus(ex.Message, true, offerElevation: !Elevation.IsElevated && (ex is ElevationSuggestedException || Elevation.IsAccessDenied(ex)));
+            _encoderActionError = encoderAction;
+        }
         finally
         {
             _actions.Release();
@@ -784,6 +784,7 @@ public sealed partial class FramePage : Page
     }
     private void ShowStatus(string message, bool error, bool offerElevation = false)
     {
+        _encoderActionError = false;
         ActionStatus.ActionButton = offerElevation ? Elevation.CreateRestartButton(XamlRoot) : null;
         if (offerElevation && !message.Contains("administrator", StringComparison.OrdinalIgnoreCase))
             message += " Access was denied; restarting as administrator may be required.";

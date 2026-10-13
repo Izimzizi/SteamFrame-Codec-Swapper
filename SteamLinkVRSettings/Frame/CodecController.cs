@@ -89,7 +89,14 @@ public sealed class CodecController
             var created = _ownerCreation(status.OwnerPid);
             if (created is null) return status with { Live = false, CanStart = true, State = "closed", ActiveCodec = "Unknown", Message = "The previous codec service has exited. Start a new session to switch codecs." };
             if (Math.Abs(created.Value - status.OwnerCreatedEpoch) > 2)
+            {
+                // Windows can reuse a finished supervisor's PID for an unrelated
+                // app. A completed rollback with no owner lock must not leave HEVC
+                // monitoring permanently stuck at "reconnecting".
+                if (status.State == "closed" && !OwnerLockHeld())
+                    return CodecServiceStatus.NotStarted with { Message = "The previous codec session is closed; its process ID has been reused." };
                 return status with { Live = false, CanStart = false, ActiveCodec = "Unknown", Message = "Codec service ownership could not be verified. The saved status belongs to a different process." };
+            }
             // A closed session has already restored HEVC; its owner is only exiting.
             // Treat it as finished so a second close or restore is never sent to it.
             if (status.State == "closed")

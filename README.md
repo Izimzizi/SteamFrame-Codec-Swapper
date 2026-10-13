@@ -48,6 +48,13 @@ patching a driver in a protected folder, the status bar offers **Restart as
 administrator**. Opening the app never launches SteamVR, modifies a driver, or
 starts encoder monitoring on its own.
 
+After updating while SteamVR is running, an older encoder helper may still be
+loaded. The app shows **Restart SteamVR and resume**; selecting it (or starting
+monitoring) restarts SteamVR once and resumes with the updated helper. This
+briefly disconnects the headset and may close the running game. Saved encoder
+tuning is restored when **Reapply** is enabled. Background checks never trigger
+this restart, and unapplied edits stay in the editor.
+
 ## Quick start
 
 1. Keep Wi-Fi on the Frame enabled and start a VR stream.

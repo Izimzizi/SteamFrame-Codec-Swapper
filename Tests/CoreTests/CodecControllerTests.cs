@@ -88,6 +88,22 @@ public sealed class CodecControllerTests
         Assert.DoesNotContain("must-never-be-written", string.Join("", Directory.GetFiles(lab.Root, "*", SearchOption.AllDirectories).Select(File.ReadAllText)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Closed_session_with_reused_pid_only_unblocks_without_an_owner_lock(bool locked)
+    {
+        using var lab = new CodecTestDirectory(); lab.Status(state: "closed", codec: "HEVC", ok: true);
+        using var owner = new FileStream(Path.Combine(lab.Root, "owner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+        owner.WriteByte((byte)'0'); owner.Flush();
+        if (locked) owner.Lock(0, 1);
+        var controller = new CodecController(lab.Root, lab.Root, _ => 200, () => 1000);
+        var status = await controller.ReadStatusAsync(TestContext.Current.CancellationToken);
+        Assert.False(status.Live);
+        Assert.Equal(!locked, status.CanStart);
+        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
+    }
+
     [Fact]
     public async Task Stale_owner_gets_no_request_and_failed_operation_is_reported()
     {

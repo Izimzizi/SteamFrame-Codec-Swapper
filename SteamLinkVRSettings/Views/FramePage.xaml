@@ -32,7 +32,16 @@
                 <TextBlock x:Name="RuntimeText" Text="Checking SteamVR…" VerticalAlignment="Center" Style="{StaticResource Hint}" Margin="0" FontSize="12" MaxWidth="140" TextWrapping="Wrap" />
             </Border>
         </Grid>
-        <InfoBar x:Name="ActionStatus" Grid.Row="1" IsOpen="False" IsClosable="True" />
+        <StackPanel Grid.Row="1" Spacing="8">
+            <InfoBar x:Name="EncoderRestartNotice" IsOpen="False" IsClosable="False" Severity="Warning"
+                     Title="Finish the app update"
+                     Message="SteamVR is still using an older encoder helper. Restarting briefly disconnects the headset and may close the running game. The app will resume monitoring and reapply saved tuning when enabled.">
+                <InfoBar.ActionButton>
+                    <Button x:Name="RestartEncoderButton" Content="Restart SteamVR and resume" Click="StartMonitor_Click" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+            <InfoBar x:Name="ActionStatus" IsOpen="False" IsClosable="True" />
+        </StackPanel>
         <Grid Grid.Row="2">
             <ScrollViewer Visibility="Visible" VerticalScrollBarVisibility="Auto" x:Name="OverviewView">
                 <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">

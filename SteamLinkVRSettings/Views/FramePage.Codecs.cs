@@ -85,6 +85,7 @@ public sealed partial class FramePage
         StockRestoreButton.IsEnabled = idle;
         PreviousProfileButton.IsEnabled = idle && _previousProfile != null;
         MonitorButton.IsEnabled = idle && !_monitorInstalled;
+        RestartEncoderButton.IsEnabled = idle && _encoderRestartRequired && !_codecService.Live;
         StopMonitorButton.IsEnabled = idle && _monitorInstalled;
         RecoverButton.IsEnabled = idle;
         AdvancedApplyButton.IsEnabled = idle;

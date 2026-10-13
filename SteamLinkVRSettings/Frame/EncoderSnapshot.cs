@@ -7,6 +7,10 @@ public sealed record EncoderSnapshot
 {
     public int ProcessId { get; init; }
     public bool Supported { get; init; }
+    /// <summary>A loaded helper cannot be replaced safely until this SteamVR process exits.</summary>
+    public bool RequiresSteamVrRestart { get; init; }
+    /// <summary>SteamVR or its streaming driver has not finished starting.</summary>
+    public bool WaitingForDriver { get; init; }
     public bool QualitySupported { get; init; }
     public bool Installed { get; init; }
     public bool Enabled { get; init; }

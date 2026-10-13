@@ -35,10 +35,10 @@ public sealed partial class EncoderProbe
     public Task<EncoderSnapshot> GetSnapshotAsync() => RunAsync(() =>
     {
         using var process = DiscoverProcess();
-        if (process is null) { ResetAv1State(); return new() { Message = "SteamVR is not running." }; }
+        if (process is null) { ResetAv1State(); return new() { WaitingForDriver = true, Message = "SteamVR is not running." }; }
         var modules = ReadModules(process);
         var driver = modules.FirstOrDefault(m => m.Name.Equals("driver_vrlink.dll", StringComparison.OrdinalIgnoreCase));
-        if (driver is null) { ResetAv1State(); return new() { ProcessId = process.Id, Message = "Steam Link VR driver is not loaded." }; }
+        if (driver is null) { ResetAv1State(); return new() { ProcessId = process.Id, WaitingForDriver = true, Message = "Steam Link VR driver is not loaded." }; }
         var av1 = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameAV1Backend.dll", StringComparison.OrdinalIgnoreCase));
         if (av1 is not null) return ReadAv1Snapshot(process, av1);
         ResetAv1State();
@@ -69,11 +69,14 @@ public sealed partial class EncoderProbe
                     _protocolVerified = true;
                     return ReadSnapshot(process, modules, _session);
                 }
-                return new() { ProcessId = process.Id, Supported = true,
+                return new() { ProcessId = process.Id, Supported = true, RequiresSteamVrRestart = true,
                     Message = "The loaded encoder helper protocol was not validated. Restart SteamVR before monitoring." };
             }
-            if (supported && loaded is not null) return new() { ProcessId = process.Id, Supported = true,
-                Message = "An older encoder helper is loaded. Restart SteamVR to use this app's current monitoring and advanced controls." };
+            if (supported && loaded is not null) return new() { ProcessId = process.Id, Supported = true, RequiresSteamVrRestart = true,
+                Message = "SteamVR is still using a previous app version's encoder helper. Restart SteamVR and resume to finish the update." };
+            if (supported && modules.Any(m => m.Name.Equals("SteamFrameQuality.dll", StringComparison.OrdinalIgnoreCase)))
+                return new() { ProcessId = process.Id, Supported = true, RequiresSteamVrRestart = true,
+                    Message = "SteamVR is still using the legacy quality helper. Restart SteamVR and resume to use the current app." };
             return new() { ProcessId = process.Id, Supported = supported, Message = supported
                 ? "Select Start to monitor actual NVENC output. Other encoders provide transport statistics only."
                 : "This driver has an incompatible encoder layout; monitoring was not installed." };
@@ -85,16 +88,17 @@ public sealed partial class EncoderProbe
     public Task<EncoderSnapshot> StartAsync() => RunAsync(() =>
     {
         using var process = DiscoverProcess();
-        if (process is null) return new() { Message = "Start SteamVR before starting encoder monitoring." };
+        if (process is null) return new() { WaitingForDriver = true, Message = "Start SteamVR before starting encoder monitoring." };
         if (!Environment.Is64BitProcess) return new() { ProcessId = process.Id, Message = "Encoder monitoring requires the x64 application." };
         var modules = ReadModules(process);
         var av1 = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameAV1Backend.dll", StringComparison.OrdinalIgnoreCase));
         if (av1 is not null) { _av1Stopped = false; return ReadAv1Snapshot(process, av1); }
         var driver = modules.FirstOrDefault(m => m.Name.Equals("driver_vrlink.dll", StringComparison.OrdinalIgnoreCase));
-        if (driver is null || !IsSupportedDriver(driver.Path)) return new() { ProcessId = process.Id,
+        if (driver is null) return new() { ProcessId = process.Id, WaitingForDriver = true, Message = "Waiting for SteamVR's streaming driver." };
+        if (!IsSupportedDriver(driver.Path)) return new() { ProcessId = process.Id,
             Message = "This driver has an incompatible encoder layout; monitoring was not installed." };
         if (modules.Any(m => m.Name.Equals("SteamFrameQuality.dll", StringComparison.OrdinalIgnoreCase)))
-            return new() { ProcessId = process.Id, Supported = true, Message = "Restart SteamVR to remove the older SteamFrameQuality helper before using this encoder probe." };
+            return new() { ProcessId = process.Id, Supported = true, RequiresSteamVrRestart = true, Message = "Restart SteamVR to remove the older SteamFrameQuality helper before using this encoder probe." };
         var source = Path.Combine(AppContext.BaseDirectory, "Native", HelperName);
         if (!File.Exists(source)) return new() { ProcessId = process.Id, Supported = true,
             Message = "The native encoder helper is missing. Build or reinstall the application." };
@@ -117,7 +121,7 @@ public sealed partial class EncoderProbe
         else _sessionFaulted = false;
         var alreadyLoaded = modules.FirstOrDefault(m => m.Name.Equals(HelperName, StringComparison.OrdinalIgnoreCase));
         if (alreadyLoaded is not null && !FileHash(alreadyLoaded.Path).Equals(hash, StringComparison.OrdinalIgnoreCase))
-            return new() { ProcessId = process.Id, Supported = true, Message = "Restart SteamVR before loading a different encoder helper version." };
+            return new() { ProcessId = process.Id, Supported = true, RequiresSteamVrRestart = true, Message = "SteamVR is still using a previous app version's encoder helper. Restart SteamVR and resume to finish the update." };
         using var handle = OpenTarget(process.Id);
         ValidateIdentity(handle, creation);
         var session = new Session(process.Id, creation, alreadyLoaded?.Path ?? helperPath, exports,
@@ -141,7 +145,7 @@ public sealed partial class EncoderProbe
         }
         var helper = FindHelper(modules, session);
         if (Invoke(handle, Address(helper, exports, "GetProbeVersion"), 0) != 1)
-            return new() { ProcessId = process.Id, Supported = true, Message = "The loaded encoder helper protocol is unsupported. Restart SteamVR." };
+            return new() { ProcessId = process.Id, Supported = true, RequiresSteamVrRestart = true, Message = "The loaded encoder helper protocol is unsupported. Restart SteamVR." };
         _protocolVerified = true;
         var result = Invoke(handle, Address(helper, exports, "StartProbe"), 0);
         if (result != 0) return new() { ProcessId = process.Id, Supported = true, Message = NativeError(result) };
