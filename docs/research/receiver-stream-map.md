@@ -1454,8 +1454,8 @@ clock-bracket coverage, session-marker continuity, owned cleanup, full parser
 validity and a bounded inode-pinned appended log slice. Neither matching
 allocation pointers nor an error-free log slice proves a unique decoder
 generation or complete logging. The private runner integration and related
-regressions passed 221 offline tests; no matched thirteen-event capture had
-been run at this publication cutoff.
+regressions passed 221 offline tests. At that earlier canary checkpoint, no
+matched thirteen-event capture had run; the completed follow-up is below.
 
 The [cross-slice-filter screen](host-stream-map.md#phase-specific-cross-slice-filter-trial-and-emitted-pps)
 separately verified an emitted PPS change but still ran near 82 FPS. This normal
@@ -1481,4 +1481,99 @@ The unchanged thirteen-event worker hash is
 `6b8dace4600d762155a99db3ce78502b86591b0029ea6191d4db573e1f4c4816`;
 the corrected parser hash is
 `311ca8682c07381166435ffcb8bbc435750737d19df57a06b6aae478d86e688c`.
-The source review and normal canary do not establish a matched high-load result.
+The source review and normal canary alone do not establish a high-load result.
+
+## Matched thirteen-event observation: small observed lock and PM spans
+
+The completed ten-second record retained **24,418 events** and 2,946,750 trace
+bytes over 10.000685 seconds. Exact event formats/filters, source identity,
+runtime-PM identity and all-eight-CPU loss accounting passed, with no reported
+loss. Root controls/filters/enables were preserved and the owned instance was
+removed. The same decoder markers bound the trace; no foreign instance was
+written. Successful tracing is separate from stream performance: the host's
+short counter interval failed at **304.190 useful Mbps and 68.526 FPS**.
+
+Phase boundaries use receiver monotonic-raw markers and 100 ms outer trims.
+Acceptance is bracketed within 774.258 ms; cancellation also has an uncertainty
+interval. The middle phase includes cancellation/recovery, so it is not a pure
+fixed-rate cohort. Counts and rates use that phase's own time window.
+
+| Phase | Seconds | Full kernel transactions | Output responses/s | Queue to input median | Input to output median |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Normal preroll | 2.201423 | 197 | 89.942 | 13.402 ms | 3.373 ms |
+| Activation uncertainty | 0.774258 | 56 | 73.619 | 40.370 ms | 3.360 ms |
+| Accepted through post-cancel, mixed | 3.975520 | 280 | 71.437 | 54.179 ms | 3.347 ms |
+| Post-cancel tail | 2.749484 | 246 | 90.199 | 13.959 ms | 3.374 ms |
+
+Most extra residence precedes input-response handling. This is a buffer-return
+event, **not a proven entropy-engine completion boundary**. Device response-ready
+time, engine start/finish and presentation remain unobserved.
+
+In the mixed phase, 817 complete PM calls all return 1; median is 2 microseconds,
+maximum 5, total union 1.529 ms. This interval excludes the preceding Iris PM
+mutex and wrapper spinlock and does not establish hardware power transitions.
+There are 69 fully bounded successful task-context mutex acquisitions: median
+14 microseconds, p99 211 microseconds and maximum 1.615 ms. Including one
+initially censored observed lower-bound span gives a 3.252 ms contention union;
+one additional intersecting span remains censored. Printed tokens do not name
+the mutexes or their owners.
+
+Combined lock/PM union is **4.781 ms across the 3.976-second mixed phase**.
+Temporal overlap with individual queue-to-input intervals has median
+29 microseconds and maximum 1.723 ms. Concurrent transactions can overlap the
+same scope, so this is not causal per-frame attribution. Nevertheless, these
+observed spans do not account for the broad approximately 41 ms median increase.
+The added lock/PM and scheduler filters cover the IRQ thread, not the producer
+threads, and do not cover uncontended critical sections or all driver work.
+
+Mixed-phase input-response dispatches have median final entry wait 40.5
+microseconds, maximum 3.452 ms, and median switch-in-to-input 22 microseconds,
+maximum 8.283 ms. Scheduled-running duty changes 7.225% -> 11.687% -> 8.517%.
+It includes nested interrupts and other kernel work. A response need not already
+exist at a recorded wake, so these are not response-ready delay measurements.
+Complete observed scheduler-state coverage is not complete device-state coverage.
+
+The pairing core admits 811 consecutive frame identities. It rejects two
+start-boundary keys without unique submissions and thirteen other keys lacking
+unique response pairs instead of inventing zero latency. All 261 retained
+AFTM rows join uniquely, covering part of activation/high-load history; none
+cover preroll or the recovery tail. The kernel trace supports the full phase
+comparison. The pinned, bounded appended receiver log contains a 31-packet
+repair request, but no named reset/stuck/backtrack/repair-list-overflow event.
+That does not establish complete logging or loss-free wireless delivery.
+
+### What the existing producer timestamps already bound
+
+Installed ordering places `vidc_qbuf`'s outer instance mutex, PM and power-scaling
+work before the HFI queue trace. The queue trace itself precedes the core mutex,
+session packet assembly and synchronous command-ring write/doorbell. The client
+records its post-submit timestamp only after the virtual submit call returns.
+The existing 261 joins therefore provide a useful bound without another probe:
+queue-event to post-submit-return median **18 microseconds**, maximum **94**.
+For the strict 120-frame host-counter overlap, maximum is **81 microseconds**.
+
+On the normal synchronous successful path, core-lock acquisition, command
+publication, doorbell and QBUF unwind lie in that short interval. The marker
+is still recorded on failed submit, so this is a conditional timing bound,
+not direct proof of successful QBUF or firmware acceptance. It excludes the
+producer's earlier instance-lock, PM, scaling and deferred-admission waits.
+No preroll/tail AFTM joins extend that bound to those phases.
+
+The unresolved discriminators are successful command publication and subsequent
+message-ring availability/consumption, with exact packet/session correlation.
+Existing verified events do not timestamp firmware response readiness. Selected
+function-entry support does not establish safe independent graph/probe controls;
+no additional instrumentation is declared ready by this finding.
+
+Normal Main10 restoration, original receiver instructions, all-thread detachment
+and activity cleanup were independently verified. Observer cost remains a
+qualification: clean buffers and 90-Hz preroll/tail do not prove zero added cost
+under load. Prior screens used different pictures/conditions, and this run's
+mean picture is about 8.4% larger than the preceding nine-event screen. Neither
+radio firmware nor the four additional tracepoints can be assigned the
+difference without a matched comparison.
+
+See the [experiment register](experiment-register.md#private-evidence-provenance)
+for retained input/analysis hashes, and the [codec-route audit](codec-stream-options.md)
+for why input-return handling and multiple decoder sessions do not identify
+independent hardware engines.

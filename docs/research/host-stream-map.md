@@ -1009,3 +1009,97 @@ the revised codec helper hash is
 `21f1ffeca01c24b1a090378c2d9a121472f78af8ec22235f9a0623217cebac7e`.
 The latter's accepted request and emitted syntax checks remain separate from
 the failed performance result.
+
+## Loaded lock/PM trial: full pictures but insufficient cadence
+
+The later matched thirteen-event experiment held the accepted encoder tuple at
+400,000,000 average, 460,000,000 peak and 5,111,111 VBV bits, Main10 1664 x 6656,
+P2, unpadded CBR and quarter-resolution multipass. Its exact 1.999240-second
+counter interval contains **137 pictures and 76,018,645 useful bytes**:
+**304.190 Mbps at 68.526 FPS**. Every picture and byte reconciles with the
+independent host-slot pairs. The guard aborted; this is not a sustained result.
+
+Mean picture size was 554,881 bytes. Original nominal frame-rate requests span
+85--94, mean 89.613. Their `400M/(8*FPS)` allocation averages only 0.449% above
+fixed-90 arithmetic; encoded bytes total 99.432% of that nominal allocation.
+The same mean picture size at 90 FPS would imply 399.514 Mbps arithmetically.
+That is not a capacity measurement, but it shows why low wall-clock rate here
+is primarily associated with reduced cadence rather than undersized pictures.
+
+The 120 retained AFTM records overlapping those 137 pictures have medians of
+6.155 ms encoder completion, 0.307 ms packetization/enqueue, 7.840 ms transport
+and 57.726 ms decoder turnaround. Maximum transport is 15.873 ms; maximum
+turnaround is 75.256 ms. All host preparation-to-packetization intervals are
+6.215--6.931 ms. There are no new encode, lock or rejected-API counters. Forty-two
+of 136 consecutive generated-picture intervals exceed 16.667 ms, although
+their present IDs remain contiguous; this is not evidence of lost application
+present IDs.
+
+Of 80 queue observations, 69 passed publication checks. Queue depth was six
+in 39 and seven in 12, with holdoff in 19. No reset or FEC-pending work was
+observed in those stable samples. The native controller requested a median
+32 Mbps in the strict AFTM cohort while the experiment kept accepted 400.
+The unchanged admission controller still reacts to delayed decode feedback.
+It was not disabled by the encoder budget override.
+
+The send ring was empty in 54 of 79 stable cursor observations; occupied head
+age was at most 5.128 ms. Retry-send count did not increase in the exact counter
+window, and no consecutive-send failure was sampled. The [radio follow-up](radio-stream-map.md#loaded-follow-ups-do-not-show-a-sustained-host-send-backlog)
+separates earlier delivery excursions from the initial receiver backlog.
+The [receiver phase analysis](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans)
+uses a longer trace and must not be substituted for this two-second cohort.
+
+## Minimum32 coding-unit trial: accepted and emitted but cadence still failed
+
+A separate fresh-session experiment changed only the copied HEVC minimum coding
+unit from the SDK's 16 enum to its 32 enum beyond the existing normal policy.
+Maximum CU32, cross-slice filtering and the QP-map implementation stayed
+unchanged. Initial capacity and warm-frame guards were kept distinct. Initial
+or later API rejection, reinitialization, session mismatch or guard failure
+stops fixed-budget eligibility. Cancellation restores the adaptive budget,
+but the initialized codec property requires a new normal encoder session.
+
+Separate 160-byte accepted-request telemetry and a 216-byte first-failure
+diagnostic leave the ordinary Stats layout unchanged. Five native fixtures
+matched the pure decoder; exact build/export/descriptor and buffer-size checks
+were independently reviewed. The minimum-CU and cross-slice-filter experiments
+cannot be selected together. These are private experiment safeguards, not
+shipped application controls or evidence of a performance benefit.
+
+One initialization and the subsequent warm reconfigurations were accepted
+without guard, API or fallback failures. Same-generation emitted parameter
+sets were reparsed from their bytes: Main10 1664 x 6656, minimum coding block
+32, CTU32, 52 x 208 = **10,816 CTBs**, with cross-slice filtering enabled.
+Tiles, WPP and dependent-slice segments remained disabled. This verifies the
+intended syntax change, not full-picture validity, complete slice coverage,
+image-quality equivalence or hardware parallelism.
+
+The fixed-400 interval still failed its cadence guard: **138 pictures and
+76,926,754 bytes over 1.9994545 seconds**, or **307.791 useful Mbps at
+69.019 FPS**. All picture identities and bytes reconcile. Mean picture size
+was 557,440 bytes; nominal FPS was 84--94, mean 89.507. Denominator variation
+adds only 0.574% to average nominal allocation, and encoded bytes fill 99.767%
+of that arithmetic allocation. At 90 FPS the same mean size would imply
+401.357 Mbps; this is expressly not a demonstrated sustainable rate.
+
+The strict 120-of-138 AFTM overlap has median encoder completion **4.732 ms**,
+packetization/enqueue 0.383 ms, transport **7.693 ms** and decoder turnaround
+**61.597 ms**. Maximum transport is 14.614 ms and turnaround 75.657 ms. No
+simultaneous kernel-stage trace was collected, so total turnaround cannot be
+assigned to a particular decoder engine or firmware stage. Shorter encoding
+than earlier screens does not establish a causal improvement across changed
+scenes, sessions and coded structure.
+
+Stable samples again show admission pressure: queue six in 40, seven in 16
+and five in seven, with holdoff in 15 of 63. Forty-eight of 76 send-ring samples
+are empty, maximum occupied head age is 3.910 ms, and no send failure is sampled.
+The retry-send counter increases by three. Waterfall remains about
+379.59--382.08 binary Mbps at 69 FPS: its high byte counter does not satisfy the
+smoothness goal. Normal Main10 helper restart, original receiver instructions,
+thread detachment and activity cleanup were verified after the abort.
+
+The source/capture hashes and exact comparison scopes are recorded in the
+[experiment register](experiment-register.md#private-evidence-provenance).
+The separately prepared Coherent350v2 lower-budget helper has not produced a
+live result at this cutoff. Requested 350 Mbps must not be reported as measured
+350 Mbps of useful video.

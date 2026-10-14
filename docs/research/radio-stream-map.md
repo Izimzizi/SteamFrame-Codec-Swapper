@@ -672,8 +672,48 @@ The separate [normal thirteen-event canary](receiver-stream-map.md#normal-thirte
 validated scoped IRQ-thread mutex and runtime-PM events without a cadence
 failure. It preserved root trace state and removed its owned instance; foreign
 instances were not written, but their full state was not compared. Fast normal
-PM/lock intervals do not eliminate those stages under the higher load. A future
-matched observation must retain the measured event caps, phase coverage and
-first-acquisition censoring. It would narrow a receiver software boundary,
+PM/lock intervals do not eliminate those stages under the higher load. The later
+matched observation retained the measured event caps, phase coverage and
+first-acquisition censoring. The completed observation below narrows that boundary,
 while firmware response readiness, exact command publication and rare wireless
 delivery tails remain distinct unresolved measurements.
+
+## Loaded follow-ups do not show a sustained host send backlog
+
+The [loaded lock/PM trial](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans)
+failed at 304.190 useful Mbps and 68.526 FPS. Its exact 137-picture counter
+window has 120 retained completed timings: transport median 7.840 ms,
+maximum 15.873 ms, versus decoder turnaround median 57.726 ms. The send ring
+is empty in 54 of 79 stable cursor samples, with occupied head age at most
+5.128 ms. Retry-send count is unchanged in that window and no consecutive
+send failure is sampled. These facts do not show a sustained host send backlog.
+They do not measure queues below the socket or 802.11 retry counts.
+
+The broader retained history includes a 43.404 ms transport excursion before
+the counter window, after receiver residence had already risen. Turnaround
+temporarily falls from 65.175 ms on the preceding picture to 33.287 ms on that
+picture and 29.056 ms on the next. A later 24.930 ms delivery excursion has a
+pre-window increase of 20 host retry sends. Those are real separate delivery
+tails, but their ordering does not explain initial sustained receiver backlog.
+The 121.98-second queue file mostly follows cancellation; its aggregate retry
+delta must not be labeled a fixed-400 result.
+
+The later [minimum32-CU screen](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed)
+also fails cadence, at 307.791 Mbps and 69.019 FPS. Its strict transport median
+is 7.693 ms, maximum 14.614 ms, while decoder turnaround median is 61.597 ms.
+The send ring is empty in 48 of 76 stable observations; occupied head age is
+at most 3.910 ms and retry-send count increases by three. Neither screen changed
+radio/USB/aggregation/firmware controls or isolates a radio capacity ceiling.
+
+Both fixed-rate tests continue to show admission holdoff and a native controller
+request near 32 Mbps while the accepted encoder budget remains 400. Their
+individual pictures nearly fill nominal allocation, but reduced cadence lowers
+useful bytes per wall-clock second. Their high Waterfall counters include parity
+and protocol overhead and cannot substitute for useful-video cadence.
+
+Normal preroll and post-cancel output near 90 Hz under the same thirteen-event
+observer argue against a constant observer-induced low-FPS ceiling. They do not
+exclude workload-dependent instrumentation cost. The trials are not randomized,
+same-content comparisons; differing frame sizes and codec settings prevent
+attributing their rate differences to trace overhead or wireless behavior.
+The [experiment register](experiment-register.md) preserves those scope limits.

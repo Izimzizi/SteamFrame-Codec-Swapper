@@ -14,6 +14,8 @@ commit or in a new release. Temporary live overrides remain private experiments.
 - [PC shared-texture ownership and handoff](pc-texture-handoff.md)
 - [Headset reception, decoding and presentation](receiver-stream-map.md)
 - [USB, radio driver and firmware scheduling](radio-stream-map.md)
+- [Experiment register: completed tests, failures and untested candidates](experiment-register.md)
+- [H.264 and multiple decoder streams: implemented paths and remaining work](codec-stream-options.md)
 - [Measurements and encoder experiments](../encoder-and-codec-research.md)
 
 ```mermaid
@@ -57,12 +59,48 @@ its frame-phase controller, transport repair or receiver image selection.
 | Is every captured pause caused by wireless delivery? | No. Two frames waited 100.741 and 347.890 ms before encoder submission while the encoder and send queue were empty. SteamVR logged shared-texture acquisition timeouts in those intervals. | The initial reason for losing texture ownership remains under investigation. A separate transport burst did grow the send queue, so one explanation does not cover every tail. |
 | Are all generated parity chunks equally repairable? | In one-parity mode, the host retransmit check uses a sent-chunk count as if parity indices were contiguous. Valid later even indices can be rejected, while some initially unsent odd indices are below that bound. | The mismatch is established in code, but not tied to the captured fault. A fix must avoid serving stale, not-yet-generated slot contents. |
 | Does a 17 ms decoder interval imply a 59 FPS ceiling? | No. Submitted frames can overlap, and the interval includes driver/queue/scheduling time until userspace observes completion. | Pure hardware decoder occupancy and execution time are not yet isolated. |
-| Does the current path use multiple decoder streams? | It uses one packed HEVC picture/session. The traced host requests four constrained slices within each picture. | Requested slices do not establish the emitted bitstream inventory, multiple decoder sessions or hardware parallelism. |
+| Does the current path use multiple decoder streams? | It uses one packed HEVC picture/session. The traced host requests four constrained slices within each picture. A separate H.264 game prototype exists. | Slices are not sessions. The [prototype audit](codec-stream-options.md) finds no validated replacement preserving current Main10/foveation quality; older high-rate game runs still dropped frames. |
 | Does `Submit Illumination` prove actual presentation time? | No. The traced receiver sends its chosen future display target before submitting the image. | Physical display timing requires separate compositor/display evidence. |
 
 ## Current connected reference
 
-The latest cross-slice-filter screen verified that the requested codec change
+The latest two completed fixed-400 screens both failed smoothness:
+
+| Completed screen | Useful encoded video | Encoded cadence | What it established |
+| --- | ---: | ---: | --- |
+| Matched thirteen-event lock/PM observation | 304.190 Mbps | 68.526 FPS | Most added receiver residence precedes input-response handling; observed IRQ-thread contention and PM spans are too small to account for the broad increase. |
+| Minimum coding unit 32, with unchanged CTU32 grid | 307.791 Mbps | 69.019 FPS | The requested minimum-CU change reached the emitted SPS, but did not produce a smooth fixed-400 result. |
+
+Both rate figures cover approximately two seconds before their guards aborted,
+not sustained operation. All encoded pictures and useful bytes in each counter
+window reconcile with independently observed host frame pairs. Mean pictures
+nearly fill the nominal per-picture allocation; lost cadence is the large
+wall-clock bitrate deficit. These are separate sessions, not a matched quality
+or performance comparison. Normal Main10 streaming and receiver/activity
+cleanup were verified afterward. See the [experiment register](experiment-register.md)
+for timing cohorts, negative results and the lower-load candidate's status.
+
+The [loaded lock/PM observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans)
+had 24,418 retained events and no reported trace loss. Normal preroll and tail
+returned about 90 output responses per second; the mixed high-load/cancellation
+phase was 71.44. Its median queue-to-input-response residence rose from 13.40 to
+54.18 ms, while input-to-output remained about 3.35 ms. The measured PM and
+contended-mutex spans narrow those software explanations, but do not isolate
+firmware/device service or prove zero observer overhead.
+
+The [minimum-CU screen](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed)
+verified minimum coding block 32, CTU32, the unchanged 10,816-CTB grid and
+cross-slice filtering still enabled. Its 120 strictly overlapping AFTM records
+had 4.732 ms median encoder completion, 7.693 ms transport and 61.597 ms decoder
+turnaround. That screen had no simultaneous kernel-stage trace. Syntax acceptance
+does not establish equal image quality or a decoder throughput improvement.
+
+**Steady useful 350/400 Mbps remains unproved.** A separately prepared 350 Mbps
+helper is an offline candidate at this publication cutoff, not a measured
+350 Mbps useful-video result. No radio, firmware, clock or thermal setting
+was changed by these two screens.
+
+The earlier cross-slice-filter screen verified that the requested codec change
 reached the actual emitted PPS, but still triggered the fixed-400
 decoder-delay/backlog guard:
 **336.35 useful Mbps at 82.02 FPS** over about two seconds. Waterfall remained
@@ -88,8 +126,8 @@ validated thirteen existing events and cleanup: 179 output responses over
 2.000389 seconds, zero reported trace loss, and approximately 90 FPS in adjacent
 host counters. Complete PM calls were at most 5 microseconds and bounded mutex
 contentions at most 96 microseconds in that normal capture. Four acquisitions
-remain censored. The observer can now test those stages under a matched load;
-normal intervals do not establish their behavior during the fixed-400 failure.
+remain censored. That canary preceded the matched load observation above;
+its normal intervals alone do not establish higher-load behavior.
 No firmware, thermal, scheduling-priority or clock control was changed.
 
 The preceding matched **400 Mbps** trial added existing IRQ and scheduler events
