@@ -128,8 +128,14 @@ runtime change follows from this research.
 
 ## Current connected reference
 
-After the square-native startup experiments, normal HEVC Main10 was restored.
-A [20-second passive reference](codec-stream-options.md#restored-normal-hevc-why-400-requested-became-about-240-useful)
+After the latest native attempt, normal HEVC Main10 was restored. A later
+read-only current-scene sample measured **261.176 useful Mbps / 89.725 FPS** over
+8.804690 seconds, with zero encode, lock or rejected-API error deltas. This is
+not a game/panel test or a sustained-rate guarantee. The current 1664-wide,
+−20/−12 quality-offset, synchronous-send configuration differs from the bundled
+High quality preset's 2048-wide, −2/−6, asynchronous-send configuration.
+
+An earlier [20-second passive reference](codec-stream-options.md#restored-normal-hevc-why-400-requested-became-about-240-useful)
 measured **240.007 useful Mbps / 89.818 FPS** with the saved 400-Mbps target.
 Queue feedback reduced the mean sampled encoder request to 238.157 Mbps;
 ping feedback was one. Waterfall averaged 291.487 binary Mib/s, or 305.647 decimal
@@ -138,13 +144,31 @@ over a different counter window. These are different quantities, not conflicting
 measurements of picture detail. One presentation timeout remains; this is not
 a smooth result at 350 Mbps of useful video or evidence of a 240-Mbps hardware cap.
 
-The square native 150-Mbps canary proved accepted encoding, capture allocation
-16 and bounded progress. It did not independently validate native image
-reconstruction or presentation. Two fresh 350 starts and a later 150-Mbps warmup
-aborted during receiver startup recovery before any 350 measurement; the planned
-warmup-to-350 ramp was not invoked. All completed attempts restored normal
-streaming. The source-supported startup clock explanation still needs exact
-first-input and return timestamps; no recovery threshold was relaxed.
+Two subsequent square H.264 warmups now directly verify a
+[bounded startup-age correction](receiver-stream-map.md#native-square-h264-bounded-startup-age-correction).
+Initialization preceded first successful input by 754.671 and 744.857 ms. The
+first watchdog checks therefore saw native ages near 750 ms only 8 and 1
+microseconds after that input. The candidate adjusted those effective ages
+without replacing native progress clocks or the 330/800-ms thresholds. Both
+warmups reached 16/16 buffers and decoder completions without known recovery
+or reset patterns in their bounded logs. This does not prove that either exact
+unmodified run inevitably would have reset.
+
+Neither warmup reached the 350-Mbps ramp. The first stopped on a PC reader
+header check; the next [passed that check against the loaded target](host-stream-map.md#native-access-unit-reader-header-validation-and-capture-exhaustion)
+but found its bounded access-unit capture exhausted. Its rejection cause is
+not available in runtime telemetry. Normal Main10 was restored after both.
+Native image reconstruction, eye/pose correctness, physical presentation and
+sustained useful 350 Mbps remain unproved.
+
+V5 also stopped before the ramp, this time because the log observer did not
+establish capture allocation. Retrospective logs contain the square 16-buffer
+allocation; an offline reproduction identifies a path that silently skips a
+reused log identity. Its separate startup telemetry shows native ages of
+815.819 ms reduced to 21 microseconds at the first check. A sealed PC capture
+diagnostic records 180 identity rejections, with first/last reasons MissingSource.
+No native payload was retrieved. These are observation/capture failures and
+direct startup evidence, not a native high-rate result.
 
 The preceding completed HEVC allocation experiment used **full-resolution
 multipass at a fixed 350 Mbps budget**. It reached measurement, then failed the

@@ -1483,3 +1483,46 @@ address space, and the inspected phase routine lacks the same comparison-manifes
 coverage. Aliases, bulk metadata copies, other diagnostic consumers and firmware
 are not exhaustively resolved. This is not a whole-program absence proof or a
 reason to bypass decoded-ACK, radio or thermal controls.
+
+## Native access-unit reader: header validation and capture exhaustion
+
+Two later square H.264 attempts passed their bounded 150-Mbps receiver warmup
+but stopped before requesting the planned 350-Mbps step. V3's passive PC
+access-unit reader rejected its mapped image/header comparison. V4 corrected
+that check narrowly: only the eight-byte PE ImageBase field is normalized to
+the pinned loaded module base. In the actual target, the four raw differences
+fell inside that field; the normalized comparison had zero differences, with
+module size, mapped base and all other header bytes matching. This header
+check is now runtime-verified, rather than merely tested on local fixtures.
+
+The next four-byte read returned capture state 3, Exhausted. The build-bound
+capture source enters that state after inspecting 180 encoder locks without
+publishing an acceptable access unit. The reader closed after two reads
+totalling 1,028 bytes and performed no target writes, NVENC calls, remote
+threads or module loads. A failure-path read found the same state. No payload
+or rejection-category counters were retrieved, so the state does not identify
+whether association, syntax or size criteria prevented publication. A proposed
+association correction is source-supported work, not a runtime rejection
+diagnosis or evidence that the decoder failed.
+
+All retained accepted host samples still request 150 Mbps, square geometry,
+CAVLC, four slices, DPB three and 90/1 Hz. The final cumulative warmup counts
+are 100 locks in V3 and 150 in V4; no matched counter interval justifies turning
+those totals into throughput or FPS. The [receiver map](receiver-stream-map.md#native-square-h264-bounded-startup-age-correction)
+records direct first-input/return telemetry, memory geometry and its limited
+presentation evidence. Both attempts restored normal Main10 streaming. The
+capture fix must be verified separately before the guarded native 350-Mbps
+ramp; no successful ramp or high-rate native payload is claimed here.
+
+V5 adds a sealed rejection diagnostic after its separate log-allocation gate
+stopped warmup. The loaded-header guard passed again. All 180 inspected locks
+are counted as identity rejections, with zero size or syntax rejections. First
+and last reasons are MissingSource (8); the final lookup reports no source
+record. The middle 178 reasons are not individually retained. First/last API
+slice counts are both four, so optional zero slice reporting is not the
+observed stopping condition. The last output timestamp is 184 and frame index
+179, while source fields remain unset. This narrows the association problem;
+it does not prove which earlier source-record operation caused it. Syntax was
+not reached for those rejections, so a zero syntax-rejection count is not a
+syntax pass. No access-unit payload was accepted, no bitstream/image validation
+completed, and the 350-Mbps ramp was not invoked. Normal streaming was restored.

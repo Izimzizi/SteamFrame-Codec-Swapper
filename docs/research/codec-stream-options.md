@@ -432,11 +432,40 @@ age after QBUF. It requests recovery after 330 ms and resets after 800 ms;
 successful input submission does not itself refresh those return-progress
 clocks. In the v2 receipt, the reset was only 28.775 ms after the first source
 event, with an I-frame request 292 microseconds before that event. This supports
-startup-age investigation, not an observed 800-ms post-decode stall. Exact first
-QBUF/return clocks were not captured, and a source event alone does not prove
-capture setup or decode completion. AU scan/copy/hash cost was not timed, so
+startup-age investigation, not an observed 800-ms post-decode stall. In that v2
+attempt, exact first QBUF/return clocks were not captured, and a source event
+alone does not prove capture setup or decode completion. AU scan/copy/hash cost was not timed, so
 its possible marginal startup contribution remains unknown. Earlier failures
 without that capture show it is not necessary for this failure class.
+
+Later V3 and V4 warmups used the same 150-Mbps request with a finite,
+generation-scoped startup-age correction. Both reached native completion with
+16 OUTPUT and 16 CAPTURE buffers, 3328 x 3328 packed dimensions and 1664 x 1664
+regional metadata. First successful input followed initialization by 754.671
+and 744.857 ms; first CAPTURE returns followed input by 44.125 and 45.515 ms.
+Their bounded logs contain no known recovery request or hard reset. The
+[receiver evidence](receiver-stream-map.md#native-square-h264-bounded-startup-age-correction)
+separates direct correction telemetry from the unproved claim that these exact
+unmodified runs would necessarily reset. This is a startup result, not a
+throughput comparison or proof of correct decoded eye images.
+
+V3 stopped at a PC access-unit reader header comparison. V4 passed the narrowly
+normalized header comparison in the loaded target, then reported capture
+exhaustion without a payload or rejection breakdown. Both stopped before the
+350-Mbps ramp. A capture association fix remains a source-supported next step;
+its proposed cause is not established by that state alone. The
+[host capture boundary](host-stream-map.md#native-access-unit-reader-header-validation-and-capture-exhaustion)
+records what was actually checked.
+
+V5 stopped at the log-allocation evidence gate before a ramp or AFTM/memory
+measurement. Retrospective logs contain the square 16-buffer setup, while the
+in-run observer omitted the current generation; an offline fix is prepared.
+Startup telemetry still records original ages 815.819 ms reduced to 21
+microseconds at the first check, followed by successful return hooks. A sealed
+PC diagnostic narrows capture failure to identity association: 180 identity
+rejections, with first/last reasons MissingSource and reported slices four.
+No payload was recovered or validated. Native useful 350 Mbps remains untested
+after successful startup; the isolated CAVLC result does not fill that gap.
 
 Every completed trial restored normal Main10 streaming, terminated its candidate
 host and closed the temporary receiver lease. No native useful-350 interval,
@@ -475,6 +504,13 @@ captured reset or texture failure, but one receiver presentation timeout.
 Retained transport and decoder-turnaround tails reached 54.272 and 43.171 ms.
 This short normal reference does not establish zero jitter or sustained
 350 Mbps of useful video.
+
+A later read-only sample after V5 restoration measured 287,446,466 coded bytes
+and 790 frames over 8.8046896 seconds: **261.175786 useful Mbps / 89.724912 FPS**,
+with zero encode, lock and rejected-API error deltas. It describes the current
+scene, not a game/panel test or a sustained guarantee. The current 1664-wide,
+−20/−12 offset, synchronous-send configuration is distinct from the bundled
+High quality preset's 2048-wide, −2/−6, asynchronous-send configuration.
 
 ## Tested, proposed and still unknown
 

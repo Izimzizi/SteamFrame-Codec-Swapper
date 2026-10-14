@@ -15,6 +15,7 @@ It links the detailed maps rather than replacing their build and timing limits.
 | Did full-resolution multipass fill the missing useful bits? | [Accepted configuration, persistent underfill and latency failure](host-stream-map.md#full-resolution-multipass-measured-underfill-and-latency-failure) |
 | Does the low original budget throttle packets after an override? | [Bounded consumer audit and separate transport controls](host-stream-map.md#original-budget-labels-and-independent-transport-controls) |
 | Could H.264 retain the current area with square packing? | [Completed isolated CAVLC test](codec-stream-options.md#full-area-square-h264-isolated-cavlc-capacity-and-cadence-pass) and [native startup limits](codec-stream-options.md#native-square-prototype-functional-startup-not-steady-350-mbps) |
+| Did the native startup correction execute, and did it reach 350? | [Two bounded startup passes](receiver-stream-map.md#native-square-h264-bounded-startup-age-correction) and [the separate access-unit capture failures](host-stream-map.md#native-access-unit-reader-header-validation-and-capture-exhaustion) |
 | Why did the signed timer repair still permit an overflow? | [Reused-slot publication and timed request capacity](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization) |
 | What did the latest minimum-CU change actually do? | [Accepted request, emitted SPS and failed cadence](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed) |
 | Do mutexes, PM or IRQ dispatch explain the receiver backlog? | [Matched thirteen-event observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans) |
@@ -127,7 +128,11 @@ counted as a hardware capacity test.
 | Native square 150-Mbps functional canary | Bounded progress, 399 encode calls / 401 completed locks | Counter baseline precedes the reported timer's observer gap; no bitrate/FPS derived. Accepted square policy and capture allocation 16, without independent image/presentation proof. |
 | Two fresh native 350-Mbps starts | Seven completed locks each before abort | Receiver recovery/reset during startup; no throughput window and zero recorded NVENC errors. |
 | Native v2 warmup then planned ramp | Ten locks at 150-Mbps request before abort | Ramp to 350 and AU dump never invoked. Startup failure, not a fixed 350-Mbps result. |
+| Native V3 warmup with bounded startup correction | 100 cumulative locks; CAPTURE completion sequence 126 | Direct clock/adjustment evidence, 16/16 buffers and no known reset pattern. PC header comparison stopped the run before the 350 ramp; no throughput inferred. |
+| Native V4 warmup with the same correction | 150 cumulative locks; CAPTURE completion sequence 176 | Second startup pass. Loaded-target header normalization passed; capture state was Exhausted without a payload/rejection breakdown. No 350 ramp. |
+| Native V5 warmup | 114 cumulative locks; no measurement window | Log-allocation evidence gate stopped the run; retrospective logs show square count 16. Startup ages 815.819 ms became 21 microseconds. Sealed AU diagnostic has 180 identity rejections, first/last MissingSource; no ramp or payload. |
 | Restored normal HEVC reference | 20.463580300 s, 240.007320 useful Mbps / 89.818105 FPS | Requested 400, adaptive mean target 238.157 Mbps; one presentation timeout, no captured reset/texture/API failure. |
+| Later current-scene HEVC sample after V5 | 8.8046896 s, 261.175786 useful Mbps / 89.724912 FPS | Zero encode/lock/rejected-API deltas. Read-only short scene sample, not a game, panel or sustained-rate test; current settings differ from bundled High quality. |
 
 The isolated capacity windows credit IDs 2--899 between callbacks 1 and 899,
 using actual AU bytes: 438,195,978 for CABAC and 436,759,516 for CAVLC. Source
@@ -140,10 +145,15 @@ ended their candidate hosts, closed receiver leases and restored normal HEVC.
 The installed startup watchdog uses OUTPUT/CAPTURE return-progress clocks
 initialized before first input, with 330-ms recovery and 800-ms reset thresholds.
 In the v2 failure, a reset follows the first source event by only 28.775 ms.
-This supports startup-age investigation; missing first-QBUF/return clocks and
-unmeasured AU-capture overhead prevent complete causal attribution. An actual
-native IDR AU was not retrieved. Neither watchdog thresholds nor failure guards
-were relaxed for a throughput pass.
+That v2 run lacked first-QBUF/return clocks. Later V3/V4 telemetry directly
+measures 754.671/744.857 ms from initialization to first successful input and
+shows the bounded effective-age correction executing at the first checks.
+The native clock stores and thresholds remain unchanged. Both warmups have
+bounded logs with no known recovery or reset patterns, but first returns occur before 800 ms from
+initialization; neither proves that its exact unmodified run would inevitably
+reset. Neither reached the planned 350 step, and no native IDR AU was retrieved.
+Capture overhead and rejection reasons remain unmeasured. No throughput pass
+was claimed by tolerating a reset or dropping a failure guard.
 
 The normal reference reconciles three different measurements: encoded video
 240.007320 decimal Mbps; mean rolling Waterfall 291.487297 Mib/s = 305.646584
@@ -754,7 +764,9 @@ the third 150-Mbps attempt establishes only bounded functional progress. Its cou
 baseline and timer do not cover identical windows, so no rate is inferred.
 Later 350-Mbps and v2 attempts establish startup failures and verified restoration,
 not high-rate native measurement. The v2 capture/ramp source passed offline
-checks but its live warmup did not reach either action.
+checks but its live warmup did not reach either action. The subsequent V3/V4
+results below supersede the startup-only evidence gap, while preserving the
+absence of a native 350-Mbps measurement.
 
 The normal reference report recomputes counter deltas, binary/decimal units,
 controller factors and adaptive parity from saved evidence. It does not assign
@@ -807,3 +819,67 @@ are included.
 | `H264/square-350-lab/review/normal-after-native-v2-1-analysis.json` | `ef2cd1a41927a66dfd7130c18a7bb8d906912e48b198294e3cc27e5f1a98223e` |
 | `H264/square-350-lab/review/normal-after-native-v2-1-analysis.md` | `53e368a4d47f27ffedb6a23b7d8454e9116b6d43b48134ced28b6610252b3d5f` |
 | `H264/square-350-lab/review/analyze_normal_after_native_v2_1.py` | `8192fe34e497cbf53991bdda13a2be090e096c9503ec750776bc265c5da95b48` |
+
+
+### Native V3/V4 startup correction and capture boundaries
+
+The exact-build startup candidate and its integration have separate offline
+freezes/reviews. Their historical offline-only status does not describe the
+later live results: the two coordinator receipts and saved-only analysis now
+establish bounded native startup, actual allowance execution and restoration.
+Neither contains a 350-Mbps ramp. First-return hooks are userspace boundaries;
+retained AFTM snapshots are not matched counter windows or panel timestamps.
+
+V5 is recorded separately below: it reaches the same startup allowance but
+stops at a log-allocation evidence gap. Retrospective logs support the square
+allocation; they do not turn the empty in-run log into contemporaneous fault
+coverage. Its new sealed AU diagnostic supplies identity-rejection evidence
+that V4 lacked. No ramp or validated native payload follows from these results.
+
+V3 stops at a PC header comparison. V4 passes the narrowly normalized header
+comparison against the loaded target, then reads Exhausted from the bounded
+capture. The exact capture-source digest binds that state's 180-lock meaning;
+no runtime rejection breakdown establishes its cause. Raw source, payloads,
+private identities and captures remain private. The published digests identify
+evidence rather than making those files part of this repository.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `H264/square-350-lab/review/startup-baseline-v1/freeze.json` | `d393371543eafc6fd94681db7e5dc09744f821a5a455b12ae4e361134cdd76c3` |
+| `H264/square-350-lab/review/startup-baseline-v1/design.md` | `5880741bce0224085173fdb7d1ff573ae624a10cc35a8380848f7e2da513e1d6` |
+| `H264/square-350-lab/review/startup-baseline-v1/state-schema.json` | `8e0ffa92b524551206769e38bfabdebe37e35fc0205422ec278ef3fcfbd3fd63` |
+| `H264/square-350-lab/review/startup-baseline-implementation-independent-review-v1.json` | `1115bbc2324d4f8ce7b5669bee609524140a74511a57f6309b77452a6bb4fa06` |
+| `H264/square-350-lab/review/native-client-lease-v3-freeze.json` | `08ae8d39cab46dc388457141ced32f048408a0fa72277e047be0e41f66fea61d` |
+| `H264/square-350-lab/review/native-v3-integration-independent-review-v1.json` | `d3ec05b012ea98f4c25ca80461f992a2c5ce7e6d946230d8ef612dd1a890f073` |
+| `H264/square-350-lab/native-v3-350-1-coordination.json` | `e3f72c1632af185997aa4825d54ab44e1fd0859c6c11ea146abfb21ac9c6194d` |
+| `H264/square-350-lab/review/analyze_native_v3_startup.py` | `a0d37e8a8171daa53c8ca368ffd5fd2a7731330cfa003418910f2a7a25b61277` |
+| `H264/square-350-lab/review/native-v3-350-1-startup-analysis.json` | `4a7aa75d9a469be54e06345e153ec073b429d8a2d42a47860c45a4db7bdeff22` |
+| `H264/square-350-lab/review/native-v3-350-1-startup-analysis.md` | `cb99d8ecc1724820d37515be14b5ed03506e9ddfb7467f4c42eb3d62091ca654` |
+| `H264/square-350-lab/native-v4-350-1-coordination.json` | `823beea107645b0aa7adc9257b0a77bc399b1630eb5e2e6c3a7794120310858c` |
+| `H264/square-350-lab/native-v4-350-1-native-au/diagnostic.json` | `96d598929882e9c7ff9b025cf55f4253a56eb369bbaf372fd6b3bf85e1835ae6` |
+| `H264/square-350-lab/native-v4-350-1-failed-native-au/diagnostic.json` | `96d598929882e9c7ff9b025cf55f4253a56eb369bbaf372fd6b3bf85e1835ae6` |
+| `H264/square-350-lab/review/analyze_native_v4_startup.py` | `64f66b4114a0e9c896c0100392225ae4323d4cf020f3983f3f6160bf2ab444fc` |
+| `H264/square-350-lab/review/native-v4-350-1-startup-analysis.json` | `46722c5a815d26f848f2fb74c06c79e8b49442663ea8a855a5a58d1e6044e948` |
+| `H264/square-350-lab/review/native-v4-350-1-startup-analysis.md` | `5eff015c36b8c47a466833f8b6ccd93e802571309a902d662bf275a724c24d57` |
+| `H264/square-350-lab/native-plan/bridge-v2/au_capture.h` | `cbff3340d814cc14894184acf994b47787fca3c0a8ade15e4ba6bcb4dad09859` |
+| `H264/square-350-lab/review/native-au-v3-coordinator-v4-independent-review.json` | `5bfb453939421c56bf5fcc81a3f9d066717c26d417b1a5ad24045d890f9791a7` |
+
+### V5 observer/capture failure and restored current-scene evidence
+
+The V5 saved-only replay preserves the failed in-run log gate, retrospective
+log coverage, startup telemetry and sealed capture rejection categories as
+separate evidence. The observer-V4 freeze is offline-only and does not claim
+a target-validated fix. The later HEVC counter sample is a short current-scene
+reference, not a native H.264 or sustained 350-Mbps result.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `H264/square-350-lab/native-v5-350-1-coordination.json` | `d41fe453169dfb005195b4141f4a509bf36fc36c92783a8fd725d20fc2f07693` |
+| `H264/square-350-lab/native-v5-350-1-failed-native-au/diagnostic.json` | `9524383aaf60d25756a38edcb12fcd1fa1c615736593dbf7cb95fd7c0c9de130` |
+| `H264/square-350-lab/review/analyze_native_v5_startup.py` | `fe64d42fa78552384dc10bcd2581b6e4559cde4be8767f2dd4f8f609093a7287` |
+| `H264/square-350-lab/review/native-v5-350-1-startup-analysis.json` | `f2797e8f11c95179479450935d9dedcfc3e2626ee550b627d39a0343dac5a05f` |
+| `H264/square-350-lab/review/native-v5-350-1-startup-analysis.md` | `ba5b7ba05b85b4a8700fab03316363900fab870781605214b8e7daad01e91224` |
+| `H264/square-350-lab/review/native-v5-retained-logs-1.json` | `adc77936da2d9dc5ac14c60614968a0e4fbe1691d7d2e4830b26266ac89c0e1c` |
+| `H264/square-350-lab/review/native-observer-v4-freeze.json` | `7ee10f41f0aa7c766650085a952104c985e7487d2059dbe4a92fdfdeefb2aed0` |
+| `H264/square-350-lab/review/playable-hevc-current-1.json` | `5b196bba63f39d359260241ebcc43ba5413ca6e893c0dcbae4deb73aacce9bef` |
+| `H264/square-350-lab/native-plan/bridge-v3/au_capture.h` | `410f904c4b73b1afce4ea6983b4562a94be4b3afd744e022eefebf4fac6cdd76` |

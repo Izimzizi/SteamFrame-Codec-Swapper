@@ -2048,3 +2048,117 @@ sequence could separate that bitstream's demand from native transport and
 presentation, but a reviewed complete-payload capture is not yet supplied by
 the current headers/AFTM evidence. No replay or follow-on runtime experiment is
 claimed here. Sustained smooth useful 350 Mbps remains unproved.
+
+## Native square H.264: bounded startup-age correction
+
+The V3 and V4 native square warmups directly observed a startup-age problem at
+the successful-input boundary. Both still requested 150 Mbps, 3328 x 3328,
+CAVLC, four slices, DPB three and 90/1 Hz. Neither reached its intended 350-Mbps
+ramp: separate PC access-unit capture checks stopped the coordinator first.
+The native quality map remained disabled in this prototype, so it is also not
+an equal-quality comparison with normal Main10 streaming.
+
+The exact-build candidate gives each explicit Initialize generation one
+allowance, published by its first successful OUTPUT QBUF. For at most 800 ms
+after that input, a valid older native age can be replaced locally by the
+elapsed time since input. It does not overwrite either native progress clock,
+change the 330/800-ms thresholds or renew on later inputs. Ambiguous/future
+modular ages retain their original behavior. Shutdown invalidates the
+allowance; four non-reused records bound this experiment, with later
+generations receiving no allowance. A check already past final validation can
+finish with its old local result during concurrent shutdown, but cannot renew
+state or write a new generation's record.
+
+The private patch preserves native instructions and register state around its
+hooks, uses separate executable code and nonexecutable writable telemetry, and
+passed 28 generated-code, ELF and native-path tests plus independent review.
+This describes a temporary, hash-pinned experiment, not a persistent client
+fix or a released setting. Genuine return telemetry comes from successful
+OUTPUT/CAPTURE dequeue boundaries, rather than CaptureSetup's clock write.
+
+| Observed userspace boundary | V3 warmup | V4 warmup |
+| --- | ---: | ---: |
+| Initialize to first successful OUTPUT QBUF | 754.671 ms | 744.857 ms |
+| Original ages at first watchdog check | 754.679 ms | 744.858 ms |
+| Effective ages at that check | 8 microseconds | 1 microsecond |
+| QBUF to source-change hook | 0.403 ms | 0.460 ms |
+| QBUF to first successful OUTPUT return | 43.111 ms | 44.630 ms |
+| QBUF to first successful CAPTURE return | 44.125 ms | 45.515 ms |
+| Adjusted checks | 5 | 5 |
+| First check retiring the allowance after its finite bound | 811.496 ms | 810.609 ms |
+
+Each state snapshot has one initialization, one first-success publication and
+one expiry; its later failure-path readback agrees. Adjustment is forbidden
+after 800 ms even if the next check retiring the state arrives later. The
+first native ages exceed 330 ms but not 800 ms. The actual request branch also
+depends on an uncaptured rate-limit clock, and the first returns occur just
+before 800 ms from initialization in both runs. Thus these observations prove
+that startup time entered the ages and the correction executed. They do not
+prove an inevitable reset in either exact unmodified run. The earlier v2
+reset 28.775 ms after source change is a separate, uninstrumented comparison.
+
+The bounded receiver appends cover 4.133 and 5.576 seconds, with complete reads
+and no known I-frame request, CheckStuck fault or HardReset pattern. Both still
+report EINVAL for the two DISPLAY_DELAY requests. This is selected-pattern log
+coverage, not an assertion that every possible error is logged. Passive memory
+checks independently find 16 OUTPUT and 16 CAPTURE records, 3328 x 3328 packed
+and allocation dimensions, 1664 x 1664 regional metadata, and 16 nonzero image/
+shared-resource records. CAPTURE completion sequences reach 126 and 176.
+Those facts do not establish Q08C G_FMT acceptance, GPU execution, decoded
+pixels, correct eye/pose mapping or panel presentation.
+
+Retained completed AFTM history contains 158 contiguous pictures in V3 and 157
+in V4. Decoder-turnaround median / nearest-rank p99 / maximum is
+6.835 / 7.248 / 7.341 ms and 6.819 / 7.107 / 8.347 ms respectively. All contain
+selected-display-target feedback. These userspace turnaround intervals are
+not pure hardware service time, and selected future targets are not measured
+scanout. The snapshots exclude newest incomplete feedback and are not fixed
+counter windows; cumulative host lock counts of 100 and 150 are not useful
+bitrate or cadence measurements.
+
+Both attempts ended their candidate processes, removed the owned receiver
+mount, verified the stock receiver hash and no remaining candidate or ICC
+module, and restored a fresh normal Main10 helper. Those are saved closure
+receipts, not later live-state claims. The [host capture failure](host-stream-map.md#native-access-unit-reader-header-validation-and-capture-exhaustion)
+remains separate from the successful startup observation. No native
+350-Mbps throughput or presentation result was obtained.
+
+### V5: startup telemetry survives a log-observer evidence failure
+
+V5 stopped before the full codec-memory, AFTM and 350-Mbps measurement gates.
+Its in-run log receipt reported completeness with zero appended bytes and only
+the old current file at the previous path. That is not evidence that allocation
+failed or that no receiver fault occurred. The original observer skipped any
+identity labeled previous in its baseline before checking whether it now
+belonged to the current path or validating its anchor.
+
+A retrospective read finds the original current identity preserved at the
+previous path and the current file using the baseline previous identity with
+a much smaller size. The candidate's early log segment contains square
+geometry, returned CAPTURE count 16 and no known recovery/reset pattern before
+the later normal-restart segment. The latter does contain startup recovery;
+it must not be attributed to the candidate. The skipped current identity was
+not retained in-run, so exact reuse at that instant is not independently
+timestamped. A deterministic local reproduction establishes the observer's
+omission path. A separate offline revision reads a recycled current generation
+only after verified original-current rotation and a different/absent historical
+anchor; ambiguous or omitted current files fail coverage. Its 32 local tests
+pass, but it has not been validated on the target.
+
+The failure-path startup read is independently process/code-guarded, although
+the larger codec-owner graph check was not reached. Initialize precedes first
+successful QBUF by 815.798 ms. At the first check, both original ages are
+815.819 ms and both effective ages are 21 microseconds. Unlike V3/V4, the
+recorded original arithmetic exceeds the 800-ms reset comparison. This proves
+the correction affects that threshold at the observed point, without claiming
+an entire unmodified execution would have identical timing. First OUTPUT and
+CAPTURE return hooks follow QBUF by 40.836 and 42.702 ms. One generation, five
+adjustments and one expiry are retained; the retirement check is at +809.656 ms,
+with adjustment still forbidden after +800 ms.
+
+The last host sample has 114 cumulative locks at the accepted 150-Mbps policy.
+There is no native measurement window, AFTM cohort or presentation result in
+this attempt. Cleanup verified candidate termination, owned mount removal,
+stock receiver restoration and fresh normal Main10 operation. The
+[sealed host diagnostic](host-stream-map.md#native-access-unit-reader-header-validation-and-capture-exhaustion)
+narrows a separate capture-association failure without supplying a payload.
