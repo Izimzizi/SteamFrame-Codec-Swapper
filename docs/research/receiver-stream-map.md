@@ -1083,10 +1083,10 @@ incomplete evidence.
 Decoder `G_PARM` and `S_PARM` return `EINVAL` in this build, and its internal
 operating-rate capability has no public V4L2 control ID. Changing only that rate
 would not select a higher bandwidth row at the current dimensions anyway. The
-installed interfaces provide clock controls but no bandwidth override. A
-possible independently owned interconnect request is still an untested
-experiment, requiring exact provider semantics, matching kernel build headers,
-bounded lifetime and verified removal; it is not an app setting or shipped fix.
+installed interfaces provide clock controls but no bandwidth override. The
+independently owned request described below has now passed a short lifecycle
+test using matching kernel build headers and verified removal. It has not
+demonstrated a decoding benefit and is not an app setting or shipped fix.
 
 ## Main8 diagnostic: short failure at fixed 400 Mbps
 
@@ -1128,7 +1128,7 @@ normal-helper restart with accepted **10-bit HEVC**. Main8 was not retained as
 the normal preset. Steady 350 Mbps useful video with smooth 90 Hz delivery remains
 unverified.
 
-## Installed memory-vote topology: correction remains an untested hypothesis
+## Installed memory-vote topology: throughput benefit remains unproved
 
 An offline audit of the exact installed boot Image, SHA256
 `04b8e90fb582aeaaeaef714c607640e3a67a02c31ae5a90f8d77e494d801059a`,
@@ -1153,3 +1153,37 @@ statistics are cumulative residency, not a synchronized current-clock reading.
 No compensating request was applied in the Main8 test or this topology audit;
 the representation bug remains established, its throughput consequence remains
 unmeasured.
+
+## Ten-second compensation canary: clean lifecycle, no positive hardware evidence
+
+A subsequent isolated canary used the exact matching kernel build and stock
+Iris driver. Six fresh read-only format checks confirmed the same HEVC
+1664×6656 input, Q10C 1728×6656 capture, and 16/16 buffer allocations throughout.
+The independently owned request added only **1,134,000 kB/s average, peak 0,
+tag 7**, with a ten-second TTL. All six route nodes showed that added request;
+the Iris request remained 1,608,000 kB/s and the shared downstream peak remained
+50,000,000 kB/s. Existing consumers were preserved.
+
+The module reported TTL release about 10.374 seconds after its activation log,
+illustrating that expiry is scheduled work rather than a hard real-time
+deadline. Ordinary removal then completed, the independent watchdog exited
+cleanly and was reaped, and the final readbacks contained no lab module, root
+device, or owned request rows. There were no new recorded kernel faults or
+taint bits. This verifies the observed **software resource lifecycle**; it does
+not prove exact hardware-state restoration or firmware acceptance of either
+the added request or its removal.
+
+Recomputed DDR residency differences covered one approximately two-second
+interval before activation, two while active, and one after TTL release.
+Every interval had valid positive counter progress, entirely in the reported
+**4224 MHz** frequency row. No residency shift was observed. These are
+cumulative firmware counters, not synchronized instantaneous clock readings
+or measurements of memory throughput. CPU, PMU, I2C and UFS requests also varied
+during the capture, so the comparison failed its stable-other-consumers gate.
+
+The request and telemetry checks passed, but this was not a throughput or
+gameplay benchmark and supplied no positive evidence of a hardware or decoding
+improvement. Unchanged DDR residency does not establish unchanged NoC clocks,
+nor does it disprove the format-representation error. It does mean this canary
+provides no basis for promoting the compensation into a performance setting
+or claiming smooth 350/400 Mbps streaming.
