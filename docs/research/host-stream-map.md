@@ -805,3 +805,48 @@ control or prove that firmware executes slices in parallel. More slices,
 larger minimum coding units, and a smaller reference bound are separate
 experiments with compression or image-quality tradeoffs. None establishes
 smooth 350/400 Mbps without a measured pacing result.
+
+## Startup guard refusal and first-initialization ordering
+
+The first cross-slice-filter candidate did not reach a valid codec comparison.
+In its second startup attempt, the saved status records show **zero candidate
+NVENC initialization/reconfiguration attempts and zero candidate API
+rejections**. The helper's own eligibility guard stopped the experiment before
+the candidate API call. The untouched original initialization fallback
+succeeded, and later callbacks continued through fallback because candidate
+initialization had never succeeded. The emitted PPS still permitted filtering
+across slices. This is a guard refusal, not evidence that NVENC rejected the
+setting or that the setting failed to improve performance. Normal restoration
+was verified separately.
+
+An offline audit of the exact installed driver bytes identifies a difference
+between its first initialization request and later retained configuration:
+
+1. Initialization at `0x180A22570` first writes slice mode 3 and the requested
+   count into the retained configuration.
+2. It obtains a preset configuration, then copies all `0xE00` bytes over that
+   retained configuration at `0x180A2278D`. The installed copy stub also applies
+   the researched level override. This replaces the earlier slice fields with
+   the preset's values.
+3. Depth, profile, no-B-picture behavior and constrained encoding are reapplied
+   before the public initialize call. Slice mode/count are not rewritten there.
+4. The later reset path at `0x180A234A0` reinstates slice mode 3 and the requested
+   count before subsequent per-frame reconfiguration.
+
+Consequently a warm retained request or emitted startup picture can show four
+slices without proving that the first initialize call requested that same
+layout. The candidate required mode 3/count 4 at that first call. This is a
+concrete possible mismatch, but **the actual preset-returned values and failing
+predicate were not captured**. They must not be inferred to be zero, one or
+four. Other preset-derived first-call fields also remain unobserved. The audit
+used installed bytes for the copy target because the older cached decompilation
+does not match that local call operand.
+
+The next proposed diagnostic would record the original first initialization
+request, the normal post-policy copied request and the returned API status,
+without assigning any codec field or allowing fixed-budget activation. A
+capture-once record plus later-initialization detection would distinguish this
+missing first-call evidence from warm state. It would require a fresh process,
+exact helper identity and bounded passive readback. No such diagnostic result,
+relaxed guard or successful cross-slice-filter performance comparison is
+established by this offline audit.

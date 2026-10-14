@@ -62,6 +62,17 @@ its frame-phase controller, transport repair or receiver image selection.
 
 ## Current connected reference
 
+A later cross-slice-filter candidate stopped at its own startup guard before
+any experimental NVENC API call. The original fallback worked; this supplies
+no codec-performance result. The [host audit](host-stream-map.md#startup-guard-refusal-and-first-initialization-ordering)
+shows that preset copying overwrites early slice settings before first
+initialization, while later reset restores them. The actual first-call values
+and failed predicate remain unknown. Separately, the
+[receiver audit](receiver-stream-map.md#offline-discriminator-for-locking-power-management-and-hfi-service)
+maps existing mutex-contention and runtime-PM events as the next proposed
+discriminator, with runtime validation still pending and shared tracing
+controls explicitly bounded.
+
 The latest matched **400 Mbps** trial added existing IRQ and scheduler events
 to the decoder trace. It again failed the guard after about two seconds,
 producing **333.91 useful Mbps at 81.54 FPS**. Across normal control, the mixed

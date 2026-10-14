@@ -1328,3 +1328,67 @@ original instructions and detached threads, and trace cleanup and activity-lease
 clearing were verified. The next unresolved stage is the longer residence
 before input-return handling, not an established need for additional decoder
 streams. Smooth, sustained useful 350/400 Mbps remains unproven.
+
+## Offline discriminator for locking, power management and HFI service
+
+The matching Iris module and kernel ELF expose narrower software boundaries
+around the added pre-input-response residence. This is an offline mapping;
+the proposed event extension has not been implemented or enabled, and its
+runtime event formats, filter support and overhead remain untested.
+
+The threaded handler first takes a separate PM mutex before requesting runtime
+resume. It then takes the core mutex, clears the interrupt and releases that
+lock before draining responses. After reading a response, instance lookup takes
+the core mutex a second time and releases it before response dispatch takes
+the instance mutex. Thus a core-lock wait is not uniquely an interrupt-clear
+wait. Input/output tracepoints and completed-buffer walks occur after the
+instance lock; the debug queue and PM-put work add later stages. None marks
+physical interrupt assertion or firmware response readiness.
+
+Submission has additional unmeasured boundaries. QBUF holds the instance mutex
+while entering the command path, and some PM/power-scaling work occurs before
+the existing Iris queue event. That event itself precedes the core lock, HFI
+command assembly, ring publication and doorbell write. A successful command
+write would establish software enqueue, not firmware acceptance. The normal
+response path releases its lookup core lock before acquiring the instance lock;
+this audit does not establish a deadlock or prove contention caused the trial's
+backlog.
+
+The matching kernel contains `lock:contention_begin` and
+`lock:contention_end` calls in the mutex slow path despite lock-stat/lockdep
+acquisition tracing being disabled. **One acquisition can emit repeated begins
+when moving from optimistic spinning to sleeping.** A future parser must retain
+the first begin and subsequent phase changes, rather than double-counting them
+as nested waits. Missing boundaries, unsuccessful returns and ambiguous
+overlaps must remain explicit. Intersecting the wall interval with scheduler
+state is necessary: the spin flag alone does not prove continuous CPU use.
+Printed lock tokens may be hashed and cannot be treated as exact object
+addresses or automatically labeled PM/core/instance locks.
+
+Existing `rpm:rpm_resume` and `rpm:rpm_return_int` sites offer a second bounded
+discriminator. Their interval excludes the preceding Iris PM mutex and the
+wrapper's initial device-power spinlock. Resume can return immediately for an
+already-active device; the event name does not prove a hardware power
+transition. A future observer needs target-device, thread, return-site and
+nesting checks, with paired events preserved under filtering.
+
+The preferred proposed extension is those four existing events, initially
+restricted to freshly verified Iris IRQ-thread/device identity, added to the
+validated IRQ/Iris observer. Runtime format/filter inventory and a short normal
+canary would precede any matched trial. Owned-instance cleanup can preserve
+other trace settings, but enabling shared tracepoints still has kernel-wide
+instrumentation cost. Event density and cadence must be measured, not assumed.
+
+Function-graph tracing is a possible later discriminator, but several controls
+are shared in this exact kernel: `max_graph_depth`, `set_graph_function`,
+`set_graph_notrace` and graph options must not be assumed private merely because
+an instance directory exposes them. Static evidence supports graph instances
+and patchable entries for the selected functions; it does not prove runtime
+permission or independent filtering. Ordinary instance function/PID filtering
+would need verification before any narrow graph experiment. Global dynamic
+probe definitions are likewise outside the current observation plan.
+
+Lock/PM intervals could identify a material software contribution or direct the
+next observation toward command publication and response-ring consumption.
+They cannot alone assign all overlapping time to an individual TX, isolate pure
+decoder execution, or justify firmware, clock or priority changes.
