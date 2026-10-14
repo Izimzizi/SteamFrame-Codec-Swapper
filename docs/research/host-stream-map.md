@@ -736,3 +736,30 @@ High-value next traces, in order:
 Decompilation provides a map of host decisions and candidate control points. Live
 measurements determine which decisions are active, what opaque hardware accepts,
 and whether an override actually improves latency and useful image quality.
+
+## Matched fixed-400 trace: admission pressure without a sustained producer stall
+
+The [matched Iris trial](receiver-stream-map.md#matched-fixed-400-iris-trace-delay-precedes-input-return-handling)
+failed its guard at 333.126 useful Mbps and 79.525 fps over 1.999362 seconds.
+All three accepted encoder samples remained Main10 at the requested 400/460
+Mbps and fixed VBV tuple, with no new encoder/API errors. In 56 consistently
+published host samples, pending encoder count was one, active encoding slots
+were zero or one, FEC pending was zero, and reset-pending was false. Admission
+Q was mostly five or six; holdoff and several Q-seven samples remained active.
+The budget override did not remove frame admission.
+
+Of 73 consistent transfer-cursor samples, 70 had an empty FIFO. One of the
+remaining heads was 20.911 ms old during the later delivery spike. Two hundred
+compositor samples showed no old heartbeat beyond 10.657 ms, and captured
+host logs contained no AcquireSync/ReleaseSync failure. These sparse reads
+show no sustained producer or texture-handoff stall in the counter window;
+they cannot exclude short or unsampled delays. Repeated WaitForPresent labels
+remain recurring states rather than measured continuous waits.
+
+Per-picture nominal-rate pairing covered 158 of 159 encoded pictures and
+99.387% of useful bytes. Nominal rate averaged 89.538 fps, ranging from 86 to
+93; the arithmetic 400M/rate allocation averaged only 0.526% above fixed 90.
+Nominal-rate variation alone is therefore a weak explanation for the sustained
+roughly 80 Hz output in this capture. It was still not a fixed-90 experiment.
+The longer 122/125-second host observers mostly followed restored normal
+control and do not extend the fixed-400 result.

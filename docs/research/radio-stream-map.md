@@ -599,3 +599,30 @@ Useful app controls should expose requested, accepted and observed state separat
 At present the justified additions are better radio/USB diagnostics and trace
 correlation. A broad “override Valve” switch would conflate several independent
 queues and controllers whose running behavior is not yet fully measured.
+
+## Matched Iris trial: a later delivery spike did not start the decoder backlog
+
+The [matched fixed-400 trace](receiver-stream-map.md#matched-fixed-400-iris-trace-delay-precedes-input-return-handling)
+already showed about 80 Hz output and 44.098 ms median kernel
+queue-to-output-response residence across 60 consecutive frames before TX 2758.
+That frame then had a 56.894 ms complete-frame transport interval; TX 2759
+followed at 45.146 ms. Encoder completion remained about 6.2 ms and packetization
+enqueue about 0.3 ms for both. A 68.200 ms kernel input gap was followed by
+those two inputs just 35 microseconds apart. Their queue-to-output intervals
+temporarily fell, consistent with the delivery interruption draining some
+existing backlog. Later output returned to roughly 80 Hz and 44 ms residence.
+The transport spike therefore does not explain the onset of this backlog.
+
+The host retained a 20.911 ms-old FIFO head, admission holdoff and increasing
+retry-send counts around the episode. A later stable-descriptor receiver-log
+read independently found a substantive 27-packet repair request for TX 2758,
+with TX 2757 last submitted. This supports a real repair episode, but does not
+divide its delay among host scheduling, USB, radio, receiver delivery and
+retransmission. The log read lacked a pretrial inode/offset boundary; it is
+corroborating evidence rather than proof of complete same-window logging.
+
+Only one receiver socket/UDP snapshot preceded the early guard stop. Its
+cumulative drop count is not a loss delta. The dedicated overflow observer
+reported no overflow event and cleaned up, but that does not establish
+loss-free radio delivery. This failed two-second performance trial supplies
+neither a radio-only diagnosis nor a smooth 350/400 Mbps result.

@@ -1187,3 +1187,79 @@ improvement. Unchanged DDR residency does not establish unchanged NoC clocks,
 nor does it disprove the format-representation error. It does mean this canary
 provides no basis for promoting the compensation into a performance setting
 or claiming smooth 350/400 Mbps streaming.
+
+## Matched fixed-400 Iris trace: delay precedes input-return handling
+
+The later `coherent400-iris-1` Main10 trial captured the existing Iris queue,
+input-response, output-response and done-buffer events across normal control,
+activation and cancellation. It retained the 1664×6656 layout, P2 preset,
+quarter-resolution multipass, no filler, -20/-12 quality offsets and temporary
+receiver timer/window-six corrections. Accepted encoder targets were
+400/460 Mbps with a 5,111,111-bit VBV. The separate memory-vote canary had
+already been removed; no compensating vote was present in this trial.
+
+The guard again stopped the measurement after **1.999362 seconds**:
+83,254,931 useful encoded bytes and 159 pictures, or **333.126 Mbps at
+79.525 fps**. Encoder, output-lock and rejected-API error counters did not
+increase. This failed the requested cadence and is not a smoothness pass.
+The twelve-second kernel trace and much longer host observer tails must not
+be reported as twelve or 120 seconds of fixed-400 operation.
+
+The trace retained 6,249 events without reported loss. It paired 1,040
+consecutive TX identities and joined all 304 retained AFTM records using the
+carried TX identity and receiver monotonic-raw clock. The following phase
+medians use transactions whose queue and output events both lie inside each
+phase; output rates count all output events inside the phase.
+
+| Phase | Paired transactions | Output events/s | Queue → input-response median | Input → output-response median | Queue → output-response median |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Normal control before activation | 197 | 90.35 | 10.857 ms | 3.210 ms | 13.982 ms |
+| Accepted override through post-cancel observation, including recovery | 325 | 81.69 | 39.114 ms | 3.346 ms | 42.559 ms |
+| Normal control after cancellation | 438 | 90.08 | 11.409 ms | 3.337 ms | 14.588 ms |
+
+Activation was bounded by two remote clock observations 720 ms apart;
+cancellation likewise was not assigned an exact receiver timestamp. The middle
+row intentionally includes an uncertain recovery tail. It is not a clean
+four-second fixed-budget benchmark. The independent host correlation also
+finds roughly 80 Hz output before and after the later transport spike.
+
+The added residence is principally **before matched input-buffer return
+handling**, while input-to-output handling remains near 3.3 ms. For the 304
+AFTM joins, output-response to done-buffer walk and done-walk to userspace
+callback medians were only 0.017 and 0.033 ms, respectively. Their tails still
+exist; these observations do not imply zero driver or userspace overhead.
+
+These event boundaries are essential. The queue event precedes the core lock
+and actual HFI command write. Input response means the driver is handling a
+returned input buffer, not hardware decode start. Output response is also a
+driver handling timestamp, not hardware finish. The untyped done-buffer event
+precedes vb2 completion, and feedback callbacks can include error/empty/flush
+paths. No percentage of these intervals is established as pure hardware
+decode time, and output events do not prove successful presentation.
+
+Installed registration uses a default primary IRQ handler and an ONESHOT,
+level-high threaded Iris handler. That thread performs runtime-PM acquisition,
+a core-mutex-protected interrupt clear, HFI queue reading and an instance mutex
+before the response events. Firmware/device residence, interrupt delivery,
+thread scheduling and those locks remain unresolved inside the growing interval.
+Filtered existing IRQ and scheduler events are the next discriminator; changing
+priorities or decoder counts is not justified by this trace alone.
+A later read-only inventory found the Iris IRQ thread already using SCHED_RR
+priority 80 and restricted to CPU 0. That is post-trial configuration evidence,
+not a measurement of scheduling delay during the failed interval.
+
+Matching process, codec, descriptor and allocation markers and uninterrupted
+TX identities support continuity but are not a unique session-generation proof.
+The original two-second capture had only one receiver endpoint, so its empty
+failure list did not constitute a same-window receiver-log audit. A later
+stable-descriptor read found no reset, stuck-decoder, unrecoverable-frame or
+backtrack message in the relevant timestamp span and did confirm the TX 2758
+repair request. That read lacked a pretrial inode/offset boundary and cannot
+prove complete logging or exclude unlogged recovery. Trace overhead and actual
+picture validity also remain unmeasured.
+
+Cancellation restored normal budget control; original receiver instructions
+and detachment, owned trace cleanup, normal Main10 helper restoration, and
+activity-lease clearing were verified. This experiment localizes a reversible
+completion backlog; it establishes neither a hard decoder ceiling nor steady
+350/400 Mbps delivery.
