@@ -18,6 +18,10 @@ commit or in a new release. Temporary live overrides remain private experiments.
 - [H.264 and multiple decoder streams: implemented paths and remaining work](codec-stream-options.md)
 - [Measurements and encoder experiments](../encoder-and-codec-research.md)
 
+The latest [square-layout audit](codec-stream-options.md#existing-square-packing-a-static-implementation-path)
+identifies an existing same-area packing path, with unresolved quality-map and
+codec acceptance requirements. It has not been built or performance-tested.
+
 ```mermaid
 flowchart LR
     game[Game and SteamVR compositor] --> phase[Host frame scheduling]
@@ -108,7 +112,27 @@ runtime change follows from this research.
 
 ## Current connected reference
 
-The latest completed scoped retry-prefix repeat was **cadence-aborted**:
+The latest completed native allocation experiment used **full-resolution
+multipass at a fixed 350 Mbps budget**. It reached measurement, then failed the
+unchanged decoder-latency guard: **320.297 useful Mbps at 88.764 FPS** over
+3.999390 seconds. Two distinct fresh timing cohorts had decoder-turnaround p99
+of 46.195 and 46.931 ms. The sampled queue was below its separate abort threshold;
+the delay was not merely old timing history. Those pictures at exactly 90 Hz
+would still represent only 324.759 Mbps, so cadence does not explain the whole
+useful-byte deficit. This is neither a sustained 350 result nor a smoothness pass.
+
+The [host analysis](host-stream-map.md#full-resolution-multipass-measured-underfill-and-latency-failure)
+separates accepted configuration, partial frame pairing, allocation fill and
+content confounds. The [receiver analysis](receiver-stream-map.md#full-pass350-fresh-latency-cohorts-and-restoration)
+records callback semantics, limited presentation evidence and restoration.
+The first full-pass attempt failed before fixed activation because a strict
+passive-readback gate received a smaller CLI response. A reviewed revision
+separated those interfaces while retaining the full RC checks. Both attempts
+restored normal Main10 streaming; the measured attempt also verified original
+receiver instructions and all-thread detachment. No experimental helper or
+release is shipped by this documentation update.
+
+The preceding scoped quarter-pass retry-prefix repeat was **cadence-aborted**:
 153 pictures in 1.999516 seconds delivered **297.881 useful Mbps at 76.519 FPS**.
 Its larger average picture would arithmetically need 350.363 Mbps at 90 FPS;
 that cadence was not achieved. This differs from the earlier near-90-Hz run's
@@ -190,8 +214,10 @@ driver's ordinary resource requests.
 The timed-prefix backend now has transaction tests and a short live application/
 restoration canary, rather than only an offline model. Neither proves successful
 branch execution or recovery. A [full-resolution multipass derivative](host-stream-map.md#underfill-readback-and-an-offline-built-full-pass-discriminator)
-has now passed an offline build and mock-API tests; hardware acceptance and
-performance remain untested.
+subsequently reached accepted native configuration and the short failed
+measurement above. Its underfilled pictures resemble an earlier quarter-pass
+case, but source content, pose and quality-map values were not held equal.
+No causal quality or efficiency improvement is established.
 
 The earlier cross-slice-filter screen verified that the requested codec change
 reached the actual emitted PPS, but still triggered the fixed-400

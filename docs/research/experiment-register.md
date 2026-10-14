@@ -12,7 +12,9 @@ It links the detailed maps rather than replacing their build and timing limits.
 | Why can requested CBR differ from measured useful video? | [Host budgeting and coded bytes](host-stream-map.md#requested-bitrate-accepted-budget-and-coded-bytes) |
 | What did the modern350 test establish? | [Near 90-Hz prefix, underfilled budget and terminal repair failure](host-stream-map.md#modern-fixed350-reference-near-90-hz-before-a-receiver-repair-failure) |
 | What happened when the timed-prefix change was tried? | [Guarded transaction and live attempt limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts), plus [startup/counter separation](host-stream-map.md#retry-prefix-attempt-startup-failure-precedes-the-counter-window) |
-| What is the next allocation experiment? | [RC/QP readback and offline-built full-pass preparation](host-stream-map.md#underfill-readback-and-an-offline-built-full-pass-discriminator) |
+| Did full-resolution multipass fill the missing useful bits? | [Accepted configuration, persistent underfill and latency failure](host-stream-map.md#full-resolution-multipass-measured-underfill-and-latency-failure) |
+| Does the low original budget throttle packets after an override? | [Bounded consumer audit and separate transport controls](host-stream-map.md#original-budget-labels-and-independent-transport-controls) |
+| Could H.264 retain the current area with square packing? | [Existing layout, quality-map blockers and untested codec requirements](codec-stream-options.md#existing-square-packing-a-static-implementation-path) |
 | Why did the signed timer repair still permit an overflow? | [Reused-slot publication and timed request capacity](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization) |
 | What did the latest minimum-CU change actually do? | [Accepted request, emitted SPS and failed cadence](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed) |
 | Do mutexes, PM or IRQ dispatch explain the receiver backlog? | [Matched thirteen-event observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans) |
@@ -46,6 +48,8 @@ A/B tests, and short guard-aborted averages are not sustained capacities.
 | Prefix plus signed timer, adaptive-budget canary (`timer-prefix20-canary-1`) | About 10 s counters, 30 s lease | 305.041 / 89.906 | Application/restoration validated; nine presentation timeouts and one counted drop. No branch-execution counter or reliability proof. |
 | Combined fixed350/prefix/window first attempt (`coherent350-prefix20-1`) | 9.999441 s counters | 324.920 / 90.005 | Setup/handoff-aborted: texture fault after activation but before counter baseline. Twelve presentation timeouts; later counters do not erase the startup failure. |
 | Combined fixed350/prefix/window scoped repeat (`coherent350-prefix20-scope-2`) | 1.999516 s counters | 297.881 / 76.519 | Cadence-aborted with growing decoder turnaround. Larger pictures, different source/map; zero fatal-overflow events is not successful-prefix coverage. |
+| Full-pass native startup (`coherent350-fullpass-1`) | No fixed measurement | Not measured | Adaptive full-pass policy accepted; CLI/passive schema mismatch stopped startup. Zero fixed-lease attempts and no receiver patch. Normal restored. |
+| Full-pass native fixed350 (`coherent350-fullpass-2`) | 3.999390 s counters | 320.297 / 88.764 | Accepted full-pass tuple; two fresh decoder cohorts exceeded 40 ms. Underfill remains, with no sustained smoothness or matched-quality gain. |
 
 The five fixed400 rows refer respectively to `coherent400-passive-scope-1`,
 `coherent400-irq-1`, `coherent400-no-cross-filter-v2-2`,
@@ -198,6 +202,33 @@ five public HEVC controls without a verified unused throughput setter. A PC
 encoder-capability query is included only with its unverified source/build
 binding caveat and zero-frame status; it is not codec acceptance evidence.
 
+## Completed full-pass native attempts and interface correction
+
+The first attempt stopped before fixed activation: its managed CLI omitted the
+full `EffectiveRateControl` dictionary required by the passive gate. It had
+accepted adaptive full pass, so this was an experiment-interface failure rather
+than an NVENC rejection or throughput result. A separate revision retained the
+strict gate, used exact-hash passive readback throughout candidate measurement,
+and added actual-CLI/native-fixture and cleanup tests. The historical freezes
+remain unchanged. Nineteen revised, eighteen historical and eight ABI tests
+passed; independent review then verified the revised source manifest.
+
+The second attempt reconciles 355 encoded pictures and 160,124,044 bytes over
+3.999390 seconds. Independent pairs cover 352 pictures and 99.142% of bytes;
+331 paired pictures have completed AFTM timing. Useful video is 320.296933 Mbps,
+cadence 88.763536 FPS, and paired allocation fill 92.550554%. Two distinct new
+decoder cohorts have p99 of 46.195/46.931 ms and trigger the existing guard.
+The 125-second zero-fatal-overflow trace is a longer, mostly post-cancel window,
+not proof of successful retry-branch execution or smooth delivery.
+
+Original receiver instructions, detached threads, owned trace cleanup and fresh
+normal Main10 quarter-pass restoration were verified. The scope file reports
+complete data but its child exits 1; a post-write pipe issue is plausible and
+unproved. One cumulative receiver sample supplies neither presentation deltas
+nor a complete same-window reset audit. Content/map differences prevent a causal
+comparison with the earlier quarter-pass windows. These limits remain part of
+the measured result rather than being replaced by its near-90 average cadence.
+
 ## Controls that remain untested or incomplete
 
 - **Coherent350v2 reliability and useful-rate filling:** the modern result above
@@ -211,12 +242,11 @@ binding caveat and zero-frame status; it is not codec acceptance evidence.
   tests and bounded live attempts now exist, but neither successful branch
   execution nor improved reliability is established. See the [proof](receiver-stream-map.md#timed-prefix-mitigation-offline-evidence-only)
   and [later transaction/live limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts).
-- **Full-resolution multipass at fixed350:** the separate derivative now passes
-  offline native/managed tests and has an exact-hash read-only observer sibling.
-  It retains the 350M/402.5M/4,472,222 tuple, Main10 geometry and QP map, requesting
-  packed 14 / native full-pass enum 2. No live load, hardware acceptance, allocation,
-  latency or quality result exists. The separate runtime chain is still under
-  review and is outside this publication cutoff.
+- **Full-resolution multipass at fixed350:** native acceptance and a failed
+  short measurement now exist. The tuple, Main10 geometry and QP-map requests
+  were preserved; actual source/map values were not matched to prior runs.
+  Sustained useful-rate filling, smoothness and equal-quality improvement remain
+  unproved. The readback schema correction did not weaken the passive RC gate.
 - **Further current-geometry multistream work:** the completed 350-Mbps
   comparison above found no 90-Hz gain. Its 400-Mbps plan remains unexecuted;
   native foveation/quality equivalence and a sustainable multistream renderer
@@ -259,12 +289,12 @@ Raw proprietary binaries, decompiler listings, authentication material, personal
 logs and operational captures are excluded. No app release or experimental
 runtime control is shipped by this documentation publication.
 
-This update adds completed retained 208 and same-VCL metadata-control jobs,
-independent replays, the installed decoder rate/control audit, a caveated PC
-capability query and the offline full-pass build. Historical preparation freezes
-retain their original unrun status; separate later receipts establish completion
-where it actually occurred. The full-pass runtime remains unrun. Earlier scoped
-retry attempts remain failed, and no steady smooth native useful 350 result is
+This update extends the previous 208/metadata and offline-build cutoff with
+both native full-pass attempts, the reviewed CLI/passive interface correction,
+independent outcome replays and bounded budget/layout audits. Historical
+preparation freezes retain their original unrun status; later receipts supply
+actual acceptance, measurement and cleanup evidence. Earlier scoped retry
+attempts remain failed. No steady smooth native useful 350-Mbps result is
 established by this publication.
 
 ## Private evidence provenance
@@ -553,9 +583,10 @@ source-to-binary build binding was not verified and no frame was encoded.
 For Fullv1, the old source-preparation manifest/diff above remain unchanged.
 The new build receipt binds 28 historical sources, toolchain and binaries, mock
 NVENC tests and native/managed readback checks. It preserves the old 350v2 and
-observer files and the existing dirty app files. No live trial is claimed.
-The separate fullpass runtime chain remains under review and is intentionally
-outside this cutoff. A digest identifies evidence, not hardware acceptance.
+observer files and the existing dirty app files. That earlier build checkpoint
+claimed no live trial. The subsequent runtime records below establish the two
+attempts without rewriting those historical source freezes. A build digest alone
+is not hardware acceptance or a successful performance result.
 
 | Retained private evidence | SHA-256 |
 | --- | --- |
@@ -598,3 +629,58 @@ outside this cutoff. A digest identifies evidence, not hardware acceptance.
 | `RadioTrace/Coherent350Fullv1/README.md` | `52b5a3d5bdc7c7ef888d0cdd7975310ee3d5d8e39c81ddb5cc261a80f0236dd5` |
 | `RadioTrace/Coherent350Fullv1/integration-review.md` | `d1ca486e190b356d8ce23be9922167f6d08535fa74af5867168753964d0b79d8` |
 | `RepairTrial/host_queue_observer_fullpass.py` | `79ec6cfdfbee8e48fb60f4dc457d0fb687738483a15aa238b1d9a846c614829e` |
+
+### Native full-pass attempts and later bounded audits
+
+The two runtime freezes retain their offline preparation status; completed
+coordination and stream receipts establish what later ran. The first trial's
+actual cancellation reply is the CLI-schema fixture. Revision two preserves the
+strict passive RC gate and historical sources; independent review verifies the
+new interface boundary and cleanup tests. Its fixed-budget measurement remains
+a guard-aborted failure.
+
+The independent host and receiver outcome replayers reconstruct saved counter
+arithmetic, partial frame pairing, fresh timing cohorts and restoration. A
+separate root replay matches both normalized structured reports without rewriting
+the retained inputs. The budget-consumer audit is bounded static evidence, not
+new runtime measurements or a whole-program analysis. No private runtime scripts,
+raw captures or installed-code extracts are included in this publication.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `RepairTrial/fullpass-trial-freeze.json` | `093385402ed5061456988fc8aeed3a248de7db5c3c2f6b8ec3a60857eea10669` |
+| `RepairTrial/fullpass-trial-independent-review.json` | `f99469ced4ae91e4fcac6fc2bbe7a355e9ab4a248e09d0b227af97978790e38c` |
+| `RepairTrial/coherent350-fullpass-1-coordination.json` | `f8ce98d86373a37edef4b4de95d9414103fbb897e236eba03ab0e302a599aa8e` |
+| `RepairTrial/coherent350-fullpass-1-root-assessment.json` | `484f54be2202731846dc0242bc75c7f3acfd7b9d58cef5357241b641f11f9fa7` |
+| `RepairTrial/coherent350-fullpass-1-schema-review.json` | `784848330d71d9160b069fd58a924c84292ab5df1c844df20255221b9c6352c5` |
+| `RepairTrial/coherent350-fullpass-1-schema-review.md` | `bfc6dcfb4528017a35ce6723a35d5fe296531e29e4dab7f6cf334a332f64b588` |
+| `RepairTrial/coherent350-fullpass-1-schema-review.py` | `94ee9245c5398475ec5d12b774da22f1845520b164c52ea527483029c818e2cb` |
+| `RepairTrial/fullpass-trial-v2-freeze.json` | `69282fbf4aab752632e446889fea55010502a5f470f082486a2e2ca598337abd` |
+| `RepairTrial/fullpass-trial-v2-independent-review.json` | `9a2e30ede4e8494ebc1998afe613145950465ddfcda11ccd343299edc03ff026` |
+| `RepairTrial/fullpass-trial-v2-contract.md` | `08f65204b4d46cabcaaeab186f60898ff0090c9c6e5b53baab96c548412d8c46` |
+| `RepairTrial/fullpass-trial-v2-source.diff` | `fb2609425152cad130d1b407b7e05eea4e25ce160f256bd82a5ebfaa3be8c809` |
+| `RepairTrial/test_fullpass_trial_v2.py` | `44e25340d3abbf83e7f171ad10bc4d0da0af54c97b63077a8947bad28f91e78f` |
+| `RepairTrial/fullpass_readback_v2.py` | `3048067577792d3e65521b06b5c5443d831e7cbbba6c4d0824d2f398533ad2d4` |
+| `RepairTrial/coherent350-fullpass-2-coordination.json` | `01f38d7421b28868164403e10ae523de552a289998dacb2bfda747c45912b587` |
+| `RepairTrial/coherent350-fullpass-2-fullpass-lifecycle.json` | `5363b24242aacb61dc5c7521eae93090c8fd14697df6356bf3a547385c78c44a` |
+| `RepairTrial/coherent350-fullpass-2-lease.json` | `aa883cf75fcab2534455c69361e7b774bdb04ae9fb58c8a50eb80d7361fab4fe` |
+| `RepairTrial/coherent350-fullpass-2-stream.json` | `6372fd1dc6132d8db0329ea269f346c83b6f2486c67eda2c11f78c1a0af7ff8e` |
+| `RepairTrial/coherent350-fullpass-2-overflow.json` | `f6c647c2a7fb18c43f25359b868eaf9b14f27d5ab085e0cde6d4d58cf850dc31` |
+| `RepairTrial/coherent350-fullpass-2-host-queues.json` | `893abc652a03dcf237f3b6cc9adfa7f95ad6044f277a4897422c62f96999a75c` |
+| `RepairTrial/coherent350-fullpass-2-scopes.json` | `dc9e148d6fd54c4c0884aec136275f1c534e83069bf402c74b095d71fecbd68b` |
+| `RepairTrial/coherent350-fullpass-2-settling.json` | `23be9949dd0899ec9f0cf93bc3db51d775fcb56e252c54dcdc8d186a827ba240` |
+| `RepairTrial/coherent350-fullpass-2-receiver-review.json` | `ccea244cac0c781483f9dedf5be21d17814e344ab048b8a91bf1b900397dba26` |
+| `RepairTrial/coherent350-fullpass-2-receiver-review.md` | `35fc39852e9573cae9195a8b46de5365c7e3afa6b4e0dbd282a0975110bc0710` |
+| `RepairTrial/analyze_fullpass2_receiver.py` | `6a7dfd0134f76ff5e073a61e4c281e92322cc6e500d62ad7d3505fbafb7fa484` |
+| `RepairTrial/coherent350-fullpass-2-host-review.json` | `a3fb96400857c8c85c337e2370062d34b28cf1f5224c00f2826fd189cd816b1f` |
+| `RepairTrial/coherent350-fullpass-2-host-review.md` | `35b6d846ae5d481dec6ad3e12b5a478ca383e62d0c32e148e2a1c80f30fcdd4f` |
+| `RepairTrial/coherent350-fullpass-2-host-review.py` | `52b8c11bbf4beffaf05f971e2812d52692ffec0093253f2f8fcdff939dd3d4c3` |
+| `RepairTrial/original-budget-consumer-audit.json` | `32274641d49a1e1146b5ec24181295bc8128456d985dcbab0a0297bd156096a8` |
+| `RepairTrial/original-budget-consumer-audit.md` | `bf1467103c054f1abd3782c53b8be5c3f985300901934f987794e937548387f0` |
+| `RepairTrial/original_budget_consumer_audit.py` | `e797633d8d1bab292b714ee1395458505ca441517a5de99bd0adf295d4ba306a` |
+| `RepairTrial/publication-fullpass-root-replay.json` | `34024aded9e1c9261d6d4973f4947c712c8db07bbb6048e145bafe333e78acec` |
+| `RepairTrial/square-layout-audit/README.md` | `16aaff7ad0fd458a19788d82341307234391fc709fc63303c34710730fa664be` |
+| `RepairTrial/square-layout-audit/evidence.json` | `c0971575d950a7aa19aa49085c15d9f21fc50af011ee61b34db1cac114f0b03f` |
+| `RepairTrial/square-layout-audit/audit.py` | `5dd5f04e6c1832c22651b3bdb9bb04a757018a5d7b963ce2fc20291bbde2c419` |
+| `RepairTrial/square-layout-audit/layout_model.py` | `22055c49ac28eec0c9b9c0c5a0ea75238ca1c3e7103015f5db583fb3a11d9bc0` |
+| `RepairTrial/square-layout-audit/test_layout_model.py` | `66a8d09750a0d68173ec5b1968a0f8534ad2538c9ef170201d8a89a52693530a` |

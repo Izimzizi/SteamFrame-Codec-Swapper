@@ -1987,3 +1987,64 @@ Input `sizeimage` is allocation capacity derived from geometry/codec, not a
 proven Mbps cap. Allocation and queue differences remain possible controls,
 but no such new runtime experiment is included here. The audit identifies no
 justified clock/voltage, bit-depth relabel or firmware-priority change.
+
+## Full-pass350: fresh latency cohorts and restoration
+
+The second native full-resolution multipass attempt reached a fixed 350 Mbps budget
+with the same Main10 geometry, native quality offsets and no filler. It stopped
+after 3.999390 seconds at 320.296933 useful Mbps and 88.763536 FPS. The first attempt
+had stopped before fixed activation because the CLI response was passed to a
+passive-only RC gate; the [host interface audit](host-stream-map.md#full-resolution-multipass-measured-underfill-and-latency-failure)
+separates that startup failure from this actual measured failure.
+
+The latency guard uses unseen completed-feedback identities. Its four recorded
+cohorts contain 158/87/89/89 pictures, with decoder-turnaround p99 of
+33.986/39.049/46.195/46.931 ms. Queue samples remain 6, below the separate 8-frame
+threshold. Two different late cohorts triggered the 40 ms guard; this was not
+one historical tail counted twice. The guard was retained unchanged.
+
+The saved AFTM union contains 512 consecutive picture identities over 5.731440 seconds,
+including pre-counter history. A chronological partition by saved guard counts
+reproduces all four p99s, but individual sample memberships were not retained:
+that partition is a consistency reconstruction. The last reconstructed cohorts
+have transport maxima 10.209 and 9.397 ms despite decoder tails near 47 ms.
+
+There are 333 AFTM rows in the encoded counter range and 331 in the stricter host
+pair join. Joined median turnaround is 36.440 ms, p99 46.400 ms using the guard's
+floor((n-1)*0.99) rank and maximum 47.087 ms. The adjacent host analysis uses
+floor(n*0.99), yielding 46.402 ms; this tiny difference is a quantile convention.
+The newest paired pictures lack retained completed timing, so the join does
+not cover all 355 counter pictures.
+
+Early retained pictures already rise from about 15 ms to 23 ms median turnaround
+before the largest transport outlier of 58.914 ms. That delayed frame then has
+only 15.355 ms decoder turnaround; the pipeline builds up again afterward. The
+delivery spike cannot by itself explain the onset. Receive-complete to the
+post-QBUF timestamp is ordinarily about 22--23 microseconds. The longer interval
+therefore lies after successful submission, but still includes decoder queues,
+firmware/driver response handling and userspace completion observation. It does
+not measure isolated hardware execution or prove a universal decoder ceiling.
+
+Some selected future display targets move by one or several display periods.
+These are not measured scanout times or display-drop counts. Two retained
+frames lack selected-target feedback. Only one cumulative remote compositor
+sample was taken, so there is no same-window presentation-timeout/drop delta.
+Its first log offset was unset; an empty failure list is not a same-window
+receiver reset audit.
+
+The overflow-only trace completed 125.1005 seconds, recorded no fatal-overflow
+events and passed its configuration, loss and owned-cleanup checks. Most of
+that span follows fixed-budget cancellation. It does not count successful
+prefix executions, exclude all reset classes, or prove zero packet repair.
+Original receiver instructions and all-thread detachment were verified before
+replacement, all owned children became terminal, and normal Main10 quarter-pass
+streaming at the saved 400 Mbps target was restored. The independent activity lease
+was cleared. The experiment still failed its measurement guard.
+
+Comparing this roughly 89 FPS window with a prior 76 FPS quarter-pass window cannot
+assign improvement to multipass: picture size, source content and quality-map
+values differed. A future unchanged-byte replay of a complete native encoded
+sequence could separate that bitstream's demand from native transport and
+presentation, but a reviewed complete-payload capture is not yet supplied by
+the current headers/AFTM evidence. No replay or follow-on runtime experiment is
+claimed here. Sustained smooth useful 350 Mbps remains unproved.

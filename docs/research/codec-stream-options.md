@@ -301,6 +301,47 @@ report is inconsistent with reusing the packed 6656-pixel HEVC height unchanged;
 the 10-bit flag does not establish a working H.264 10-bit stream or receiver.
 No acceptance, decoder throughput or image-quality conclusion follows.
 
+## Existing square packing: a static implementation path
+
+The inspected host and receiver contain a specific two-by-two foveated layout.
+Four 1664 × 1664 regions could use **3328 × 3328** packed dimensions instead of
+1664 × 6656, preserving 11,075,584 coded luma positions. This is evidence of an
+existing implementation path, not a built or tested H.264 replacement.
+
+Host geometry function `0x180A1C7F0` computes W × 4H for mode 0 and 2W × 2H
+for mode 1. The installed NVENC selector `0x1809FE100` returns mode 0. No exposed
+square-layout setting was found in the inspected settings path. Host packing
+selects shipped `full_stack` or `two_by_two` luma/chroma shaders by active mode.
+Mode-specific capacity matters too: changing dimensions without changing the
+mode-0 width limit would shrink a requested 3328-pixel image to 3200 pixels.
+
+The host sends packed and regional dimensions. Retained receiver function
+`0x34A08` uses their ratios to select a predefined layout: tall four-strip,
+two-by-two, or nonfoveated top/bottom. In the square arrangement, the left column
+holds the two peripheral regions and the right column holds the corresponding
+gaze regions. This metadata does not describe arbitrary atlas rectangles. The
+receiver then supplies eye/gaze descriptors to the native compositor. Correct
+orientation, blend edges, gaze motion and timing markings remain untested for
+a new square-stream candidate.
+
+Quality control is a concrete blocker. The traced native QP builder handles
+mode 0, and the current helper classifies four raster quarters as alternating
+gaze and periphery. Both layouts have 10,816 cells on a 32-pixel grid, but that
+quarter classifier would assign the wrong region to 5,408 square-layout cells
+before protected sentinel/timing exceptions. Ten offline arithmetic tests cover
+this mismatch, dimensions, caps and region mapping. They do not measure image
+quality. A square implementation needs layout-aware QP and protected-position
+mapping; H.264 also has separate macroblock/QP-map requirements.
+
+The audit verifies complete bytes for 22 selected host functions against the
+installed driver and records six installed shader identities. The receiver
+portion uses previously retained, separately hashed extracts; this pass did not
+revalidate its complete binary or execute the shaders. The provisional H.264
+4096 × 4096 capability report suggests that a square picture could fit, but
+accepted profile, bit depth, CAVLC selection, receiver support and throughput
+remain unproved. Equal pixel area does not establish equal image quality.
+No square candidate, codec override or performance test was built or run.
+
 ## Tested, proposed and still unknown
 
 Only a measured current-geometry gain would justify building a native-quality

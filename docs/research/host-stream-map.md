@@ -1283,8 +1283,9 @@ encode tails, receiver turnaround and cadence under the same bounded guards.
 The original fixed350 lease requires packed policy 10 and NVENC quarter-pass
 enum 1. The derivative explicitly expects policy 14 and full-pass enum 2; a
 CLI-only mode switch would otherwise make the old lease ineligible. At this
-cutoff the derivative has now been **built and tested offline**, but has not
-been loaded into SteamVR or accepted by real NVENC. The original source-only
+earlier preparation cutoff the derivative had been **built and tested offline**,
+but not loaded into SteamVR. The completed attempts below supersede that status.
+The original source-only
 manifest and diff remain unchanged; a later receipt binds sources, compiler,
 outputs and tests. Its hook, codec and QP-map implementations remain byte-identical
 to the frozen350v2 source. Only the policy selection, eligibility and helper
@@ -1306,8 +1307,9 @@ to adaptive **full-pass** policy, so final restoration still requires the normal
 quarter-pass helper/session and saved target400. The future coordinator must
 verify packed14/API multipass2, correct generation, no filler and the exact tuple,
 while retaining latency, cadence, texture, receiver-repair and restoration guards.
-The private integration chain is still under review and has no live result at
-this cutoff. No new control or app release is shipped here.
+The private integration chain was still under review at that preparation
+checkpoint. Its subsequent interface correction and measured failure are
+recorded below; no new control or app release is shipped here.
 
 At unchanged efficiency and cadence, simple proportional arithmetic would put
 350 useful Mbps near a 376.85 Mbps budget. That is a hypothesis, not an encoder
@@ -1347,8 +1349,8 @@ encoder cap nor demonstrates a smooth native multistream replacement.
 A same-clip one-session control without active resource reads was effectively
 unchanged at 74.495895 Hz. This bounds the sparse telemetry explanation in one
 sequential pair; it does not eliminate other harness costs. Native streaming
-was restored afterward. The later full-pass derivative has passed only the
-offline build and tests described above.
+was restored afterward. The full-pass derivative's later native attempt is
+documented below and must not be confused with this isolated decoder workload.
 
 ## Coded-byte correlation and the measured input-copy boundary
 
@@ -1375,3 +1377,109 @@ combined metadata substitution did not reproduce the heavier payload's slowdown.
 It narrows a signaling-only hypothesis; different quantization, residuals and
 prediction work remain. Neither isolated job establishes smooth native useful
 350-Mbps streaming, and both retain long IDR callback gaps.
+
+## Full-resolution multipass: measured underfill and latency failure
+
+Two native attempts followed the offline Fullv1 build. Attempt one accepted
+adaptive full-resolution multipass but stopped at a startup interface gate,
+before fixed-budget begin or any receiver instruction lease. Its later cancel
+reply records packed policy 14, successful NVENC CBR 2/full multipass 2, Main10
+1664 x 6656, P2, no filler and native quality offsets -20/-12. Fixed-budget
+attempts and acceptances were zero. Normal quarter-pass streaming was restored;
+this attempt provides no fixed 350 performance measurement.
+
+The gate expected `EffectiveRateControl`, a full copied RC structure decoded by
+the passive Stats reader. The managed CLI emits accepted scalar policy and
+selected advanced fields, but omits that dictionary. Earlier restart mocks
+used passive fixtures and therefore missed the interface mismatch. The failing
+active reply was not saved before the gate; the later cancellation reply is
+concrete schema evidence, not the exact earlier state or a dormant fixture.
+
+The separately frozen revision keeps the strict RC gate unchanged. CLI replies
+serve readiness and control; exact-hash passive reads validate active startup,
+settling and every retained measurement. The pair must share process/helper
+generation, codec, geometry, quality offsets and accepted policy. Adaptive
+budgets and nominal FPS may change between callbacks, while the full RC copy
+must agree internally with each passive scalar record. Raw active CLI and
+passive replies are retained before validation, including failures. Nineteen
+new offline tests cover the actual CLI shape, missing/malformed passive RC,
+identity changes, regressions and handle cleanup; eighteen historical and eight
+ABI tests also pass. Independent review checked 43 manifest files and preserved
+the historical sources. These private changes are not an app release.
+
+Attempt two reached the fixed measurement with all five passive samples showing
+the same accepted 350,000,000/402,500,000 bps and 4,472,222-bit VBV tuple,
+packed 14/API full multipass 2, native geometry/profile/quality, and no new
+encoder, lock or rejected-API errors. Accepted fields are successful API inputs,
+not hardware-normalized settings.
+
+| Counter-window quantity | Measured result |
+| --- | ---: |
+| Duration | 3.999390 seconds |
+| Encoded pictures / bytes | 355 / 160,124,044 |
+| Useful encoded rate / cadence | 320.296933 Mbps / 88.763536 FPS |
+| Mean bytes per picture | 451,053.645 |
+| Those pictures at exactly 90 Hz | 324.758624 Mbps |
+
+The existing decoder-latency guard stopped the test. Near 89-Hz cadence did not
+remove the per-picture underfill or establish smooth delivery. The 40-Hz host
+observer pairs 352 of 355 pictures and 158,750,723 bytes: 99.142% byte coverage,
+with 1,373,321 counter bytes unpaired. On that subset, coded bytes fill 92.550554%
+of summed nominal per-picture allocations. FPS-divisor variation increases
+allocation only 0.244021% versus fixed 90. Missing requests are not reconstructed.
+
+Within the counter window, 140 publication-stable host samples show Q 3--7,
+three holdoff samples, zero pending FEC and no sampled reset-pending state.
+The unmodified controller's budget falls to a median 28 Mbps while accepted
+lab allocation stays 350 Mbps; its admission/backoff machinery still operates.
+These are point samples, not continuous queue bounds. The 331 strictly paired
+AFTM pictures have median encoder post-submission completion 8.023 ms, transport
+6.288 ms and decoder turnaround 36.440 ms. Their callback semantics and fresh
+guard cohorts are detailed in the [receiver map](receiver-stream-map.md#full-pass350-fresh-latency-cohorts-and-restoration).
+
+The previous quarter-pass prefix attempt averaged 451,252.632 bytes/picture,
+only 0.044% larger. Full RC dictionaries differ only in multipass and its raw
+representation, but actual image content, pose and QP-map values were not
+controlled. Returned mean frame QP is 11.975 here versus 12.422 previously.
+There is no demonstrated useful-bitrate or matched-quality gain from full pass.
+The later quarter-pass cadence failure instead had 486,615.745 bytes/picture;
+it is not an interchangeable workload baseline.
+
+The scope artifact contains 12,500 samples, reports its final identity guard
+and `ok:true`, yet its child exits 1. In-window points contain no sampled long
+texture stall, and saved handoff log appends are empty. A blocked final stdout
+write followed by cleanup termination is plausible from source order, but
+unproven because the needed output/timing evidence was not retained. This is
+qualified scope evidence, not a certified clean observer process or an
+explanation of the stream failure. Receiver instructions, detachment, owned
+cleanup and fresh normal Main10 quarter-pass restoration were verified.
+
+## Original budget labels and independent transport controls
+
+A bounded offline consumer audit explains why the original controller can
+report about 28 Mbps while the experimental successful NVENC request stays
+350 Mbps. Encoder field `+308` feeds the ordinary API request and `dTargetBW`;
+`dCurBW` is a different observed/derived estimate. Before submission,
+`0x180A1C3B0` stores that original budget in AFTM `+116`. The override does not
+rewrite those original labels.
+
+This field is not merely decorative telemetry. It labels exposure/hitch
+history, whose cap is consulted only in automatic mode. Queue and ping factors
+still modify manual-mode calculation. A hitch under overridden load can thus
+be attributed to a smaller original history label, potentially affecting later
+automatic operation. Neither that future effect nor an active history cap in
+the manual trial was measured.
+
+The inspected packet limiter instead uses the separate `gLimitMBPS` value;
+its byte debt is based on elapsed time and actual datagram length. Frame
+admission uses decoded-ACK backlog and throttle state, while packetization/FEC
+uses actual encoded bytes. No direct effective-budget read was found in those
+inspected routines. The low original budget and admission holdoff can share a
+feedback cause without the numeric budget imposing a 28-Mbps wire pacer.
+
+Coverage is explicitly bounded: selected retained functions were compared to
+the supported host build, the original writer search covered only part of its
+address space, and the inspected phase routine lacks the same comparison-manifest
+coverage. Aliases, bulk metadata copies, other diagnostic consumers and firmware
+are not exhaustively resolved. This is not a whole-program absence proof or a
+reason to bypass decoded-ACK, radio or thermal controls.

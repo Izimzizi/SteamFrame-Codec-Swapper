@@ -869,3 +869,28 @@ the heavier clip's level/HRD declarations did not reproduce its 74.5-Hz result.
 These isolated jobs contain no wireless transport; the workload dependence
 cannot be assigned to a radio limit. Their IDR callback gaps, different sampled
 temperatures and lack of hardware service clocks remain explicit limits.
+
+## Full-pass native follow-up: useful bytes versus parity and repair
+
+The later fixed350 full-pass screen measured 320.297 useful Mbps at 88.764 FPS
+before its decoder-latency guard aborted. Waterfall instead ranged from 348.7
+to 400.0 binary Mbps. The host retry counter rose by 55 over sampled bounds;
+the parity/video byte ratio changed from roughly 0.126 to 0.252, second parity
+became active, and the sampled pre-FEC pass statistic dipped to 99.9385%.
+Transport overhead and repair therefore help explain the graph without
+establishing 350 Mbps of useful video or assigning loss to radio hardware.
+
+One frame had a 58.914-ms transport interval. Decoder turnaround was already
+rising before it and rebuilt afterward; later latency-triggering cohorts had
+transport maxima below 11 ms. The much longer fatal-overflow observer recorded
+zero events, but does not count ordinary repair or prove complete recovery-path
+coverage. Only one cumulative remote socket/compositor sample was retained, so
+there is no same-window socket-drop or presentation-counter delta.
+
+The [original-budget consumer audit](host-stream-map.md#original-budget-labels-and-independent-transport-controls)
+also separates the low original controller label from an independent packet
+limiter and decoded-ACK admission. No direct mapping from that label to radio
+airtime, a firmware command or decoder-rate hint was established in the bounded
+inspection. Wireless scheduling and firmware service remain incomplete parts
+of the map; the manual fixed-budget experiment does not provide full control
+over them. No radio, clock, voltage or thermal setting changed in this follow-up.
