@@ -1026,3 +1026,64 @@ rate also remains coupled to requested bits per picture; the trial does not
 isolate that effect. Its longer host queue/scope observer tails mostly ran under
 the restored normal controller and must not be presented as a 120-second
 fixed-400 test. No sustained 350/400 Mbps smoothness claim follows from this run.
+
+## Installed Iris decoder: format, power and bandwidth requests
+
+A later read-only inspection copied the installed `iris.ko` and verified SHA256
+`7a5647a009d60068965a476a887c2c73a51bedcec22727d71f010e9165d64a86` on kernel
+`6.18.0-ge66bc2ca6f8c`. This is the installed Valve driver, not the newer upstream
+Iris port used by the separate AV1 experiment. The observations below were made
+under the restored normal controller, not during the failed fixed-400 interval.
+
+Duplicating the existing receiver's codec descriptor and issuing only
+`VIDIOC_G_FMT` confirmed HEVC coded input at 1664×6656 and QC10C compressed
+10-bit output (`Q10C`, FourCC `0x43303151`) padded to 1728×6656. The inspection
+did not create a decoder session or change its formats or buffers.
+
+The decoder branch of `iris_scale_power` requests 600 MHz, the highest entry in
+the installed codec OPP table. Both the successful-request cache and a separate
+clock-framework readback showed 600 MHz. Raising the request within that table
+therefore offers no additional clock step. Neither readback measures engine
+occupancy or establishes the clocks during an earlier trial.
+
+The same routine has a **color-format representation bug in its bandwidth
+calculation**. The encoder branch converts the V4L2 FourCC to the driver's
+internal color enum before storing the bandwidth input. The decoder's compressed
+output branch stores the raw FourCC instead. The bandwidth calculator then calls
+`is_10bit_colorformat`, which accepts only internal enum 8; the installed format
+mapping maps QC10C to that enum. Raw `0x43303151` cannot satisfy that comparison.
+
+At the active dimensions, even the driver's default 30 fps operating-rate value
+selects its highest bandwidth table row:
+
+| Request | Average interconnect bandwidth | Peak request |
+| --- | ---: | ---: |
+| Current 8-bit column selected for QC10C | 1,608,000 kB/s | 0 |
+| Intended 10-bit column | 2,742,000 kB/s | 0 |
+| Difference | 1,134,000 kB/s | 0 |
+
+The live interconnect summary agreed with the lower request. These are memory
+resource votes, **not wireless Mbps or measured memory throughput**. A real
+representation error does not yet prove a performance bottleneck: shared
+interconnect resources have other consumers, and their aggregation, firmware
+votes and actual clocks must be considered. Installed provider topology and
+shared BCM constraints are still being checked. No bandwidth correction was applied
+or measured in this inspection. In particular, adding the entire intended vote
+on top of the existing request would double-count part of the allocation.
+
+The installed driver also already requests STAGE 2 and PIPE 4 for a decoder of
+this size. Its single-pipe exception is encoder-only. These are firmware work
+distribution requests for one session; they do not prove four simultaneously
+active hardware engines or four independent decoder streams. The host's four
+requested HEVC slices likewise do not establish the emitted PPS tile/WPP flags.
+Those production headers remain unverified: a bounded read of a stable recent
+P-frame prefix contained no parameter sets and was correctly rejected as
+incomplete evidence.
+
+Decoder `G_PARM` and `S_PARM` return `EINVAL` in this build, and its internal
+operating-rate capability has no public V4L2 control ID. Changing only that rate
+would not select a higher bandwidth row at the current dimensions anyway. The
+installed interfaces provide clock controls but no bandwidth override. A
+possible independently owned interconnect request is still an untested
+experiment, requiring exact provider semantics, matching kernel build headers,
+bounded lifetime and verified removal; it is not an app setting or shipped fix.
