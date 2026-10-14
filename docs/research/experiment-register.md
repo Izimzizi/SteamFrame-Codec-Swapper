@@ -18,6 +18,8 @@ It links the detailed maps rather than replacing their build and timing limits.
 | Do mutexes, PM or IRQ dispatch explain the receiver backlog? | [Matched thirteen-event observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans) |
 | Are the high-rate failures still a radio/USB problem? | [Recent send-queue and delivery evidence](radio-stream-map.md#loaded-follow-ups-do-not-show-a-sustained-host-send-backlog) |
 | Is H.264 or multistream already a working alternative? | [Codec and decoder-session audit](codec-stream-options.md) |
+| Did one/two/four Main10 sessions reach 90 Hz in isolation? | [Completed current-geometry comparison](#completed-current-geometry-decoder-comparison) |
+| Did active resource reads explain the decoder shortfall? | [Same-clip telemetry-removal control](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control) |
 | What caused the long captured image jumps? | [Shared-texture ownership](pc-texture-handoff.md) and [receiver repair ordering](receiver-stream-map.md#packet-receive-repair-and-ordering) |
 
 ## Recent completed outcomes
@@ -97,6 +99,44 @@ measured second attempt restored normal Main10/target 400 Mbps, original receive
 instructions, all-thread detachment and activity state. These local coordinator
 changes and experimental helpers remain private and unreleased.
 
+## Completed current-geometry decoder comparison
+
+These are local decoder jobs with native streaming paused, not host counter
+windows or wireless tests. Each configuration represents the same total
+1664 x 6656 Main10 area and four independent slice segments per group.
+Actual prepared source rates were 351.258344/350.036304/349.099240 Mbps, with no
+filler. All seven clips passed software decode, actual-header checks and source
+hash comparison. The wrapper compiled natively as ARM64 and its exact executable
+and staged manifest were verified. Thirty-four offline preparation/runtime
+validation tests passed before the completed device jobs.
+
+| Job | Completion interval | Coded Mbps / complete-group Hz | Result |
+| --- | ---: | ---: | --- |
+| One session, four active resource snapshots | 12.054588 s | 290.726 / 74.494 | All 900 identities and drain complete; 855 missed input deadlines. Capacity/cadence failed. |
+| Two distinct half-height sessions | 12.091089 s | 288.780 / 74.270 | All 900 groups complete; 854/856 missed input deadlines; median region skew 5.645 ms. Failed. |
+| Four distinct quarter-height sessions | 12.511880 s | 278.431 / 71.772 | All 900 groups complete; 854--862 missed input deadlines per region; median region skew 20.735 ms. Failed. |
+| Same one-session clip without active snapshots | 12.054356 s | 290.732 / 74.496 | All 900 identities complete; 855 missed deadlines. Mean cadence essentially unchanged. Failed. |
+
+Every row uses `(group 1, group 899]`, 898 intervals, and the source bytes for
+IDs 2--899. The first two measured byte totals are 438,073,321/436,457,384;
+four sessions use 435,461,255, and the control repeats the single-session total.
+The slowest regional callback defines each group. Independent reproductions
+agree with saved timing/byte summaries; one also reparses the bound lab framing.
+Functional process success must not be read as a 90-Hz pass.
+
+Active video-consumer ICC averages were 1.608M/3.216M/3.304M kB/s, with sampled
+MVS0/MVS0C framework state 600/900 MHz and no force override. Those are requests
+and framework readbacks, not delivered memory bandwidth or engine occupancy.
+The no-active-telemetry control changed cadence by only +0.001439 Hz in one
+sequential pair. It does not exclude other harness costs, session-order effects,
+workload differences or brief state changes. See the [codec methodology](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
+and [resource analysis](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control).
+
+All jobs terminated, followed by filtered process disappearance, runtime suspend
+and zero video-consumer votes. A separate final receipt verifies normal Main10
+streaming restoration. This is not an exhaustive FD-holder census or firmware
+destruction acknowledgement. No smooth useful-350 game-stream result was achieved.
+
 ## Controls that remain untested or incomplete
 
 - **Coherent350v2 reliability and useful-rate filling:** the modern result above
@@ -114,11 +154,16 @@ changes and experimental helpers remain private and unreleased.
   the current tuple, Main10 geometry and QP map. It has not been built, tested
   natively, ABI-registered or deployed at this cutoff. Accepted configuration,
   allocation, latency and image quality remain future measurements.
-- **Equal-current-geometry Main10 one/two/four sessions:** a private harness and
-  350/400 CPU-only plans are now implemented and pass 25 offline tests. They
-  normalize total 1664 x 6656 area and four requested constrained slices. No
-  clips, ARM64 executable, headset job or performance result exists. See its
-  [implementation and confounds](codec-stream-options.md#current-geometry-comparison-prepared-offline-not-yet-run).
+- **Further current-geometry multistream work:** the completed 350-Mbps
+  comparison above found no 90-Hz gain. Its 400-Mbps plan remains unexecuted;
+  native foveation/quality equivalence and a sustainable multistream renderer
+  remain unproved.
+- **Isolated memory-vote throughput control:** a bounded coordinator is prepared,
+  with 59 offline tests passing, including the 34 existing preparation/runtime
+  checks. No throughput result exists at this cutoff. Its additional device-
+  holder/format and DDR observations differ from the earlier baseline. The
+  earlier insertion/vote canary demonstrated observability and cleanup, not a
+  decoder-capacity gain.
 - **HFI command publication and firmware response readiness:** useful missing
   boundaries. Verified existing events do not expose those times. Additional
   graph/probe instrumentation is not declared safe or ready by static support.
@@ -148,10 +193,12 @@ Raw proprietary binaries, decompiler listings, authentication material, personal
 logs and operational captures are excluded. No app release or experimental
 runtime control is shipped by this documentation publication.
 
-This update includes completed evidence through `coherent350-prefix20-scope-2`.
-Its final cleanup receipts supersede the earlier bootstrap note's pending-cleanup
-status for the first attempt. Both attempts remain failed. The source-only full-pass
-manifest establishes preparation, not a compiled or deployed candidate.
+This update includes the completed current-geometry 350-Mbps preparation,
+ARM64 build, one/two/four decoder jobs and same-clip no-active-telemetry control,
+including final normal-stream restoration. The preceding scoped retry attempts
+remain failed. The full-pass derivative is still source-only and the separate
+memory-vote throughput coordinator is unrun; neither acquires a performance
+claim from this publication.
 
 ## Private evidence provenance
 
@@ -209,6 +256,9 @@ explicitly reports no ARM64 execution. Local reproducer entry points are
 `analyze_coherent350_v2_receiver.py`; the harness tests use
 `python -m unittest discover -s artifacts/HEVC/current-geometry-lab -p test_compare.py`.
 None of these private files is shipped by this documentation commit.
+The earlier harness README has since been updated; its current digest appears
+in the completed decoder evidence below. The original source/plan checkpoint
+remains identified by `provenance.json`.
 
 | Retained private evidence | SHA-256 |
 | --- | --- |
@@ -227,7 +277,6 @@ None of these private files is shipped by this documentation commit.
 | `RepairTrial/coherent350-v2-matched-2-host-review.py` | `494b7e0b812cf9c95dedc2b81c1c468eea4e05cd41a5b26aa8a76cc9dfb67433` |
 | `RepairTrial/coherent350-v2-matched-2-receiver-independent-assessment.json` | `0f2fd3a647238643013f386734d2ca79081b67ec20e63bf0f1829dc5963fb746` |
 | `RepairTrial/analyze_coherent350_v2_receiver.py` | `4925deb965cdd7f6d8790afe4171122601313d6ebc6462bd97d0f315be8c5e6a` |
-| `HEVC/current-geometry-lab/README.md` | `74341181b45649c131087d9008ed48103100298a3434d6871cc2386b5184e773` |
 | `HEVC/current-geometry-lab/provenance.json` | `3ed6847a2c8d7f31ea0a4f518a0a1b39dff9135fd41a0ba4ee0204048663e945` |
 | `HEVC/current-geometry-lab/plan-350-four-slices.json` | `2ff99128de2a740612b44fdeb2bc8bf857a880fa04fdb9de01ee13f2e9458373` |
 | `HEVC/current-geometry-lab/plan-400-four-slices.json` | `9a982d5f6de055dc098458fd0479b299fd5775f5fc716f10a2fdee60ceaecd66` |
@@ -307,3 +356,53 @@ Its startup history and later read-only scope do not cover identical intervals.
 | `RepairTrial/coherent350-prefix20-scope-2-host-queues.json` | `452dfde1850b88268f749a07d2fd588ee968f10e7c80753eff7c66487fa74321` |
 | `RepairTrial/coherent350-prefix20-scope-2-host-review.json` | `265024f4fd39baa0b85e64064dd3e080fae965c31d3f7c0fab08b0255eebcf87` |
 | `RepairTrial/coherent350-prefix20-scope-2-host-review.py` | `3064d006c6c6e7b7d728cc8bb688eaee32e74b9c8a33ae4e32b2529c658fd5b1` |
+
+### Completed local decoder jobs and telemetry control
+
+These records bind the actual 350-Mbps clips, portable manifest, native ARM64
+build, staged runtime launcher, four completed jobs and final normal-stream
+restoration. The preparation freeze predates the launcher's added result-binding
+checks; the runtime-readiness review and payload receipt bind the version used.
+The initial resource-analysis report records the old runner digest under its
+then-current name; those exact bytes are preserved as `run_native_case.v1.py`.
+The later runner adds the no-active-telemetry control. No frozen report is
+rewritten to make a historical source version appear current.
+
+Local reproductions are `validate_prepared_350.py`,
+`decoder350-independent-comparison.py`, `decoder350-resource-comparison.py` and
+`decoder350-resource-control.py`. The first reads existing clips and headers;
+the latter scripts recompute recorded results without running a decoder.
+The additional memory-vote contract/freeze is explicitly prepared/unrun and
+records only offline validation. Its fields must not be treated as an outcome.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `HEVC/current-geometry-lab/README.md` | `ddc33124400794e50294cf55820c9a7d256565599a1fc78f103d792b07c3d49c` |
+| `HEVC/current-geometry-lab/preparation-350.md` | `7ec52d097c3de4f5a9c982b6149d267f1d3fa0e194213fdcf5c534b0eb02f1a0` |
+| `HEVC/current-geometry-lab/preparation-350-freeze.json` | `aeb2ecfb6db3776fea226a33505e18aad7529d77e1b32a4416589980e9d026b7` |
+| `HEVC/current-geometry-lab/validate_prepared_350.py` | `0f298e52b46e8ed083f228355fafae3b72b76b2d5bfa393273e6e0f482ac5f59` |
+| `HEVC/current-geometry-lab/prepared-350/manifest.json` | `0337f855b109d1fc630217bb81994da5483c0dbecc72e925f5d3e78b1da54575` |
+| `HEVC/current-geometry-lab/prepared-350/manifest.windows-paths.original.json` | `e7079aa467ee2c1c6ec52abfa253ace49b7b73d474b23cfa7233a0e2ff7f0533` |
+| `HEVC/current-geometry-lab/prepared-350/path-portability-audit.json` | `603970ab6ad1f1f308d4f321d2fc149913d082627435c326bb623c4d99dd1ccf` |
+| `HEVC/current-geometry-lab/native-build-350-1.json` | `81ebe80eec48d01a493785aef6e17ffc097e073fa82c1019f5c110a3e1986291` |
+| `HEVC/current-geometry-lab/payload-350-1-receipt.json` | `09d90d8d31a8b2aac7b0fb852f8a0f30ca68f367a585a1d7079a66da5397e06c` |
+| `HEVC/current-geometry-lab/runtime-readiness-review.json` | `e22263ecf9dfe6cc1b4b9021acc7e9dff0a965d449ea52d6273ee143e673f6f8` |
+| `HEVC/current-geometry-lab/decode_job.py` | `0641d1e766548483fb962c28dc47a84e25fc26b7daa8e5f8dc1b17e74cb07220` |
+| `HEVC/current-geometry-lab/run_native_case.v1.py` | `25b5a71c9e99ad1be313efb58460d4c7ad926eb34b68a6e05ecd242824995f28` |
+| `HEVC/current-geometry-lab/run_native_case.py` | `79db484a3d8146ddad18a436a6c32b52b13eb1d831525cd0635573b0cba2141e` |
+| `HEVC/current-geometry-lab/decoder350-one-canary-1.json` | `3641c581974ac2aa728fcc628ad91e2fbb39606fcfea8a6f587fe017d4637a6d` |
+| `HEVC/current-geometry-lab/decoder350-two-1.json` | `081db8857cabc38492334d25f42f6813f0d3bbb12df89041e3e7afda88ee44e7` |
+| `HEVC/current-geometry-lab/decoder350-four-1.json` | `94e0526f2d357d6ed93ca97282448dbd14169f8828e25d273727723d2f7349ea` |
+| `HEVC/current-geometry-lab/decoder350-one-no-telemetry-1.json` | `fd15abcd9df7f0f477fad4e188a69b07a25cee7858dc99bff8ba21dd6cd30f7b` |
+| `HEVC/current-geometry-lab/decoder350-independent-comparison.json` | `8ef94f498f26c1431f824ba9fc6425c5a04c86f778ca18762c8321ecfd2a9bd4` |
+| `HEVC/current-geometry-lab/decoder350-independent-comparison.py` | `eb86c067ba530565de9c202510ea6ee242e4b9db1f9fec4f1c6a84e83d6694b5` |
+| `HEVC/current-geometry-lab/runtime-coordination-350-1.json` | `df7da0e859561d752ee45ba10c76e58694d2ebcd5844b66e43212ca3ca9112eb` |
+| `HEVC/current-geometry-lab/icc-decode-coordinator-freeze.json` | `81fb7906cdc84d5cf089c01f42df16b05ce9f00269c07620ece9bdfa622690c2` |
+| `HEVC/current-geometry-lab/icc-decode-coordinator-contract.md` | `f3ea2ead45830e6ccac486179ae0a7bbc198a0f4d1b28a980f920d98e71bddf3` |
+| `RepairTrial/current-geometry-operating-state-plan.md` | `c51d23129396d10d51d77ec0b35fb42153a436f30826fc8b8ef3ba0908d7ecd1` |
+| `RepairTrial/current-geometry-operating-state-evidence.json` | `30045117abb61429866e5301e89c088cb3d33056b8627ef4d6ef55b112738701` |
+| `RepairTrial/decoder350-resource-comparison.json` | `0b621e7b3f81bce3689881656aaea0a58ab45539c62561ac2f68dc951f575bdd` |
+| `RepairTrial/decoder350-resource-comparison.py` | `6b684e03d4bd19798718590adacd7dd242d6d934adc504cebab1d766ea0d7371` |
+| `RepairTrial/decoder350-resource-comparison.md` | `80cf9bd3ff378d61a013cb74dd3f032c95df6591d2c620a8f64def863707d760` |
+| `RepairTrial/decoder350-resource-control.json` | `5d5eb5d90a8c094390dde71733939723f7af5c310af4c52434874e83fe0fcf30` |
+| `RepairTrial/decoder350-resource-control.py` | `4662f4365282de380b0ca41f538f3bb56e8eda26f054aef0e086ba65a1a6a961` |

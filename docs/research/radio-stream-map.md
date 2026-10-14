@@ -744,3 +744,56 @@ software-state boundary separate from radio/USB completion and the earlier
 fixed400 decoder residence. It neither establishes a radio capacity ceiling
 nor removes the need to measure rare delivery tails. No radio/firmware control
 changed, and no continuous useful350 or smoothness pass was achieved.
+
+## Isolated decoder resource votes and telemetry control
+
+The completed local one/two/four-session comparison bypasses wireless delivery.
+All 900 groups decoded, but complete-group rates were 74.494/74.270/71.772 Hz
+at measured coded-source rates near 350 Mbps. It supplies a receiver-side
+capacity observation for this synthetic workload, not a radio throughput result.
+The [codec map](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
+explains why independent pictures and native game streaming are different tests.
+
+Four active snapshots per job showed video-consumer tag-7 average ICC requests
+of **1,608,000 / 3,216,000 / 3,304,000 kB/s**, with peak zero. Repeated consumer
+rows along the route were deduplicated, not summed; tag 3 remained at 1,000/zero.
+The two/four values exceed the conditional default-30-fps preflight prediction.
+They numerically match the model's table evaluated at 90 fps, but the snapshots
+do not read the driver's internal rate or prove how it was selected. Actual
+consumer readbacks take precedence over the earlier conditional prediction.
+
+All twelve active snapshots showed MVS0/MVS0C framework rates of 600/900 MHz,
+enable/prepare counts one, active runtime PM and force override zero. MVS1/MVS1C
+remained 550/825 MHz before, during and after; that unchanged state does not
+identify hardware engines doing useful work. Video-temperature samples ranged
+43.2--44.4, 42.8--44.8 and 42.8--46.3 degrees C. No sampled framework downclock
+was present, but sparse temperatures/rates do not exclude transient power or
+thermal effects. No DDR-residency, delivered-bandwidth or firmware-vote-acceptance
+measurement accompanied these jobs.
+
+Four sessions requested about 2.055 times the single-session average vote yet
+did not improve cadence. That increase was insufficient for this workload;
+it neither proves that delivered bandwidth increased nor rules out memory as
+a constraint. Session count changes demand, reference domains and scheduling
+too. A separate single-session memory-vote control using the same clip/workload
+is prepared but **has not run** at this publication cutoff. Its proposed device-
+holder/format and DDR observations differ from the earlier baseline, so its
+observer profile is not fully matched. It cannot be reported as a throughput
+improvement or a failed compensation experiment.
+
+The four active reads took a combined 166.5/135.4/149.1 ms per job, with individual
+elapsed reads of 31.6--54.0 ms; those are reader durations, not decoder-blocked
+time. A same-clip single-session repeat removed active reads entirely. It still
+completed at **74.495895 Hz / 290.731973 coded Mbps**, versus 74.494456 Hz /
+290.726358 with reads: +0.001439 Hz, or +0.00193%. Both had 855 missed input
+deadlines. Thus these sparse reads do not explain the mean deficit in this one
+sequential comparison. The control retains before/after reads and the same
+decoder harness; it has no active clock/thermal/ICC history and cannot prove
+zero cost for every observer.
+
+All four jobs completed and later showed the filtered processes absent, runtime
+suspended, MVS0/MVS0C disabled and video-consumer votes zero. Earlier post-exit
+reads retained active PM and a 1,000 vote before suspend; this transient alone
+was not a session leak. The process scan can miss unrelated holders and does
+not acknowledge firmware destruction. Normal Main10 streaming was restored
+afterward. No radio, forced-clock or thermal policy changed for this comparison.

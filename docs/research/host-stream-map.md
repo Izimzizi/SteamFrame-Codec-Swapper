@@ -1292,3 +1292,37 @@ At unchanged efficiency and cadence, simple proportional arithmetic would put
 law or a measured capacity. Earlier 380/400 runs have different failure/quality
 conditions. Padding could flatten traffic without adding useful image detail;
 neither filler nor max-bitrate-only changes establish a quality-preserving fix.
+
+## Completed synthetic clip preparation and decoder comparison
+
+The later isolated comparison separates actual coded load from the host's
+requested budget. With native streaming paused, a deterministic 1664 x 6656
+source was encoded as one full picture, two distinct half-height pictures or
+four distinct quarter-height pictures. Each used Main10 and the same four total
+independent slice segments. The completed preparations measured
+351.258344/350.036304/349.099240 aggregate Mbps; no filler was used. The full-source
+hash matched across configurations and calibration attempts. All seven selected
+clips passed software decode, emitted-header validation and exact lab-framing
+checks. Actual syntax is minimum CU16, CTU32, no tiles/WPP and cross-slice
+filtering enabled. This supersedes the earlier source-only preparation status.
+
+The preparation is VBR without multipass or Valve's live QP map. Its calibrated
+aggregate encoder requests were 520.590088/454.881044/407.611752 Mbps, so those
+requested values must not replace measured bytes. Equal source area and near-equal
+bytes do not establish equal image quality, burst shape or codec work. The
+synthetic source begins as eight-bit pixels converted to P010, not independently
+generated ten-bit detail or reconstructed native foveation.
+
+The native ARM64 test completed all 900 groups per configuration but reached
+only 74.494/74.270/71.772 group Hz. Independent aggregation reparsed actual clip
+framing and counted bytes for exactly IDs 2--899 over `(group 1, group 899]`.
+This yielded 290.726/288.780/278.431 useful coded Mbps, without transport/FEC.
+It did not sum regional decoder rates. The [codec comparison](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
+and [receiver map](receiver-stream-map.md#isolated-main10-one-two-and-four-session-results)
+give callback, queue and workload limits. The result neither identifies a new
+encoder cap nor demonstrates a smooth native multistream replacement.
+
+A same-clip one-session control without active resource reads was effectively
+unchanged at 74.495895 Hz. This bounds the sparse telemetry explanation in one
+sequential pair; it does not eliminate other harness costs. Native streaming
+was restored afterward, and the existing full-pass derivative remains source-only.

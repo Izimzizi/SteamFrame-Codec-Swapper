@@ -59,8 +59,31 @@ its frame-phase controller, transport repair or receiver image selection.
 | Is every captured pause caused by wireless delivery? | No. Two frames waited 100.741 and 347.890 ms before encoder submission while the encoder and send queue were empty. SteamVR logged shared-texture acquisition timeouts in those intervals. | The initial reason for losing texture ownership remains under investigation. A separate transport burst did grow the send queue, so one explanation does not cover every tail. |
 | Are all generated parity chunks equally repairable? | In one-parity mode, the host retransmit check uses a sent-chunk count as if parity indices were contiguous. Valid later even indices can be rejected, while some initially unsent odd indices are below that bound. | The mismatch is established in code, but not tied to the captured fault. A fix must avoid serving stale, not-yet-generated slot contents. |
 | Does a 17 ms decoder interval imply a 59 FPS ceiling? | No. Submitted frames can overlap, and the interval includes driver/queue/scheduling time until userspace observes completion. | Pure hardware decoder occupancy and execution time are not yet isolated. |
-| Does the current path use multiple decoder streams? | It uses one packed HEVC picture/session. The traced host requests four constrained slices within each picture. A separate H.264 game prototype exists. | Slices are not sessions. The [prototype audit](codec-stream-options.md) finds no validated replacement preserving current Main10/foveation quality; older high-rate game runs still dropped frames. |
+| Does the current path use multiple decoder streams? | It uses one packed HEVC picture/session with four constrained slices. An isolated same-area Main10 comparison completed at 74.494/74.270/71.772 group Hz with one/two/four sessions. | Slices are not sessions. The [codec audit](codec-stream-options.md) finds no measured current-geometry multistream gain or validated replacement preserving native foveation quality. |
 | Does `Submit Illumination` prove actual presentation time? | No. The traced receiver sends its chosen future display target before submitting the image. | Physical display timing requires separate compositor/display evidence. |
+
+## Latest isolated decoder results
+
+The [current-geometry comparison](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
+now has generated clips, an exact native ARM64 build and completed headset jobs.
+Its synthetic Main10 source preserves total 1664 x 6656 area and four independent
+slices per group, with actual coded rates near 350 Mbps and no filler. All 900
+groups decoded in each case, but one/two/four sessions reached only
+**74.494/74.270/71.772 complete-group Hz** and **290.726/288.780/278.431 coded Mbps**
+over their completion windows. Functional completion is not a pacing pass.
+
+Removing active telemetry from an otherwise identical one-session job yielded
+74.495895 Hz, essentially unchanged in this one sequential pair. Active video
+memory requests differed substantially across session counts, while sampled
+MVS0 clock-framework state remained at 600 MHz. These facts do not isolate
+engine occupancy, delivered memory bandwidth or a universal hardware limit.
+They also do not measure radio throughput or native game image quality.
+
+The [resource and control analysis](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control)
+preserves those distinctions. Jobs drained and their visible resources returned
+to idle; normal Main10 streaming was restored. A separate one-session memory-vote
+throughput control is prepared but **unrun at this publication cutoff**. No new
+release or permanent runtime change follows from these negative results.
 
 ## Current connected reference
 
@@ -138,9 +161,10 @@ does not establish equal image quality or a decoder throughput improvement.
 
 **Steady useful 350/400 Mbps remains unproved.** The modern 350-budget result
 above separates lower-load cadence from its underfilled encoded budget and
-receiver reliability failure. A [current-geometry decoder harness](codec-stream-options.md#current-geometry-comparison-prepared-offline-not-yet-run)
-is now implemented and checked offline, but has no prepared clips or hardware
-result. No radio, firmware, clock or thermal control changed in these tests.
+receiver reliability failure. The [current-geometry decoder comparison](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
+also failed 90-Hz cadence despite complete decoding. No radio, firmware, forced
+clock or thermal control changed in these tests; session count did change the
+driver's ordinary resource requests.
 
 The timed-prefix backend now has transaction tests and a short live application/
 restoration canary, rather than only an offline model. Neither proves successful

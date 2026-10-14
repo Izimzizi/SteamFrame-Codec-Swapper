@@ -123,53 +123,84 @@ queue-event-to-post-submit interval narrows the synchronous producer path,
 conditional on successful submission, but does not establish hardware service
 time or response-ready time.
 
-## Current-geometry comparison: prepared offline, not yet run
+## Current-geometry comparison: completed tests missed 90 Hz
 
-A private extension now implements the proposed one/two/four stock-decoder
-comparison at the current **1664 x 6656 Main10** total geometry. It leaves the
-tracked comparison tool and underlying decoder unchanged. The implementation
-and CPU-only command plans exist; **no source clips, ARM64 executable, headset
-decoder job or performance result exists** at this cutoff.
+A private extension completed the one/two/four stock-decoder comparison at
+**1664 x 6656 Main10** total geometry. All regions decoded all 900 pictures,
+but none passed the 90-Hz capacity or cadence criteria. The tracked comparison
+tool and underlying decoder remain unchanged; the experimental wrapper stays private.
 
-| Sessions | Region size | Requested independent slices per region |
-| --- | --- | --- |
-| 1 | 1664 x 6656 | 4 |
-| 2 | 1664 x 3328 | 2 |
-| 4 | 1664 x 1664 | 1 |
+| Sessions | Region size | Actual independent slices per picture | Source coded Mbps at 90 Hz | Complete-group Hz | Coded Mbps in completion window |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 | 1664 x 6656 | 4 | 351.258 | 74.494 | 290.726 |
+| 2 | 1664 x 3328 | 2 | 350.036 | 74.270 | 288.780 |
+| 4 | 1664 x 1664 | 1 | 349.099 | 71.772 | 278.431 |
 
-Distinct contiguous bands come from one deterministic full-frame source rather
-than repeating a smaller regenerated pattern. All configurations retain four
-total requested constrained slices. Preparation code compares source hashes,
-calibrates measured coded bytes near 350 or 400 Mbps, rejects filler, checks every
-access unit's emitted parameter sets and slice inventory, and software-decodes
-each crop. These are implemented gates, not completed encoding results. The
-synthetic pattern begins as 8-bit content converted to P010; neither native
-foveation nor independent 10-bit source detail is represented.
+Distinct contiguous bands came from the same deterministic full-frame source.
+Every calibration attempt matched its full-source digest. Actual coded bytes
+were within 0.5% of 350 Mbps, with a 0.618% cross-configuration spread. All seven
+selected clips passed software decode without filler. Validation covered 630
+access units and 1,080 slice segments: minimum CU16, CTU32, no tiles or WPP,
+cross-slice filtering enabled, and four total independent slices per source
+group. Each slice spans 2,704 CTUs. The pure syntax reader and FFmpeg header
+trace agree. The 400-Mbps plan remains unexecuted in this comparison.
 
+The synthetic pattern begins as 8-bit content converted to P010; neither native
+foveation nor independent 10-bit source detail is represented. Preparation used
+VBR with multipass disabled, rather than native CBR/quarter multipass. Calibration
+required aggregate encoder requests of 520.590, 454.881 and 407.612 Mbps to obtain
+the actual coded rates above. Requested values are not achieved throughput.
 Independent pictures change reference domains, entropy contexts, parameter
-sets and per-session queues/DPB storage even with equal pixels and total slice
-count. The planned VBR/no-multipass source preparation also differs from the
-production CBR/quarter-multipass path. Equal aggregate bitrate would not prove
-equal image quality, burst distribution or decoder complexity.
+sets and queues/DPB storage despite equal pixels and normalized slice count.
+Neither matched coded bytes nor successful decode proves equal image quality.
+
+The wrapper compiled natively as ARM64 with warnings treated as errors. The
+reviewed launcher pins the manifest, executable, kernel and installed Iris
+identities and checks every session's ready/driver/result identity. Thirty-four
+offline tests passed, including portable manifest paths and result binding.
+Preparation preserved its original Windows-path manifest before normalizing
+only relative path separators for the Linux device; encoded bytes and recorded
+commands did not change. This was followed by the one-session canary and the
+two/four-session jobs, not inferred from compilation alone.
 
 The native wrapper waits for all sessions to finish setup before releasing a
-readiness barrier. For each picture ID, analysis uses the latest region callback
-as the complete-group time; it does not sum decoder FPS. Missing/duplicate IDs,
-input deadlines, drain time, grouping skew and interval distributions remain
-separate checks. Its 89--91 group-FPS and 13.889-ms p99 interval gates are lab
-criteria, not proof of unique headset presentation or motion-to-photon latency.
+readiness barrier. For each picture ID, the latest region callback defines
+complete-group time; decoder FPS is never summed. Two independent analyses
+reproduced group timing and coded-byte totals; one also reparsed the bound clip
+payloads. The steady interval
+is `(group 1, group 899]`: 898 group intervals and the coded bytes for IDs 2--899.
+Every region returned all identities without reported error/empty/missing frames
+and completed drain. Yet input deadlines were missed 855 times for one session,
+854/856 for two, and 861/858/854/862 for four. These are late input submissions,
+not timeout counts. Process success establishes functional completion only.
 
-Twenty-five offline tests pass. Linux x86 `g++` syntax validation with warnings
-as errors passes; that is not an ARM64 build or V4L2 execution. Runtime startup,
-owned-process termination and decoder-driver cleanup still need a bounded
-canary before a capacity comparison. No live decoder or GPU preparation ran
-during this development. The private source/plan manifest is indexed in the
-[experiment register](experiment-register.md#private-evidence-provenance).
+Group-interval p99 was 20.065/20.127/14.515 ms for one/two/four sessions; median
+inter-region skew was 0/5.645/20.735 ms. The four-session interval distribution
+is tighter but slower on average. The lab's 89--91 group-FPS and 13.889-ms p99
+criteria do not measure unique headset presentation or motion-to-photon latency.
+Callback timestamps include queueing and userspace observation, not pure engine
+execution, and QC10C pixels were not independently linearized or golden-checked.
+
+A same-clip one-session control removed all four active resource snapshots while
+retaining before/after reads. It still produced **74.495895 Hz and 290.731973 Mbps**,
+with 855 input-deadline misses. The mean change was only +0.001439 Hz. Those
+snapshot reads do not explain the approximately 15.5-Hz shortfall in this one
+sequential pair; other harness overhead and workload-dependent costs remain.
+
+The [resource comparison](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control)
+records unequal measured memory votes and clock-framework state. Cleanup receipts
+show completed jobs, the filtered processes absent, runtime suspend and zero
+video-consumer votes, followed by normal Main10 streaming restoration. They are
+not an exhaustive device-holder census or a firmware session-destruction reply.
+The [experiment register](experiment-register.md#completed-current-geometry-decoder-comparison)
+binds preparation, native build, jobs, control, analyses and restoration separately.
 
 ## Tested, proposed and still unknown
 
 Only a measured current-geometry gain would justify building a native-quality
-multistream game renderer. The offline harness does not yet supply that result.
+multistream game renderer. This completed comparison supplies no such gain;
+one sequential run per configuration does not prove that multiple sessions
+can never help or establish a universal decoder ceiling.
 
 The existing four-session H.264/TCP game path is a possible separate-format
 prototype starting point. It first needs current source/binary provenance,

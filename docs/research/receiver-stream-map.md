@@ -1794,3 +1794,54 @@ underlying trap rate. A separate short, capped lifecycle/cadence canary would be
 needed before a longer observation; none was added to the completed live trials.
 Architectural register evidence also would not make later object-field reads
 atomic or solve generation ownership.
+
+## Isolated Main10 one, two and four-session results
+
+The current-geometry harness has now been built natively and run against the
+stock Iris decoder with the native receiver stopped. Its manifest and binary
+identities are fixed, with Main10 visible geometry totaling 1664 x 6656, four
+total independent slices and approximately 350 Mbps of actual coded source.
+Every region returned all 900 picture identities, without reported errors,
+empty/missing/duplicate frames, and drained successfully. Nevertheless one,
+two and four sessions completed only 74.494, 74.270 and 71.772 whole groups/s.
+The latest matching regional callback defines a group; per-decoder rates are
+not added. The [detailed comparison](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
+records the exact bytes, intervals and independent reproductions.
+
+Late-input counts were 855; 854/856; and 861/858/854/862 respectively. Here an
+input is late when queued more than one 90-Hz period after its planned deadline;
+these counts are not decoder timeouts. No five-second no-progress termination
+occurred, but submit-to-dequeue p99 was roughly 114--118 ms. Group-interval p99
+was 20.065/20.127/14.515 ms and median region skew 0/5.645/20.735 ms. The tighter
+four-session interval distribution does not compensate for its slower mean.
+These callback measurements include queueing and userspace handling rather
+than entropy-engine service or physical presentation.
+
+Each session returned twenty MMAP QC10C capture buffers, visible width 1664,
+padded capture width 1728 and stride 2304. The lab requests eight MMAP input
+buffers and immediately recycles capture; returned input count is not separately
+reported. Native streaming requests sixteen input and sixteen renderer-backed
+DMABUF capture slots, with different surface retention and scheduling. Its saved
+display-delay control requests were rejected, and neither path supplies a proven
+decoder operating-rate write. The installed public S_PARM path rejects the
+decoder domain. Firmware stage/pipe requests do not establish engine occupancy.
+
+Source preparation also differs from native content, foveation and CBR/quarter
+multipass. Independent pictures change references and resource demand. Actual
+ICC requests rose across session counts, so a session-count comparison is not
+a memory-vote control. The [operating-state review](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control)
+separates these measured requests from delivered bandwidth.
+
+Removing all four active telemetry snapshots from a same-clip single-session
+repeat produced 74.495895 Hz, only +0.001439 Hz versus the sampled run, with
+the same 855 missed input deadlines. Before/after telemetry and the callback/
+pacing harness remained. This single pair narrows one observer-cost hypothesis,
+not every possible software overhead or a hardware ceiling.
+
+Each job terminated cleanly; subsequent readback showed no recorded owned
+process, runtime suspend, disabled MVS0/MVS0C and zero video-consumer votes.
+The filtered process scan is not an exhaustive device-FD census, and runtime
+suspend is not a firmware session-destruction acknowledgement. A final receipt
+verifies normal Main10 streaming restoration. No new native-game smoothness or
+multistream gain is established, and the separate memory-vote throughput control
+remains prepared/unrun at this cutoff.
