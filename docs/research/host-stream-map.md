@@ -763,3 +763,45 @@ Nominal-rate variation alone is therefore a weak explanation for the sustained
 roughly 80 Hz output in this capture. It was still not a fixed-90 experiment.
 The longer 122/125-second host observers mostly followed restored normal
 control and do not extend the fixed-400 result.
+
+## Actual production HEVC headers and available codec controls
+
+A bounded read of the real production stream recovered its startup VPS/SPS/PPS
+before the next fixed-400 override was activated. This was a fresh host process
+with the experimental rate lease dormant. The reader examined one retained
+frame's first 8 KiB, kept complete parameter sets and minimal slice-header
+prefixes, and saved no coded picture bodies. It performed no target writes or
+NVENC callbacks. Independent FFmpeg syntax parsing agreed with the local
+structural parser; the headers-only check was not a picture decode test.
+
+The emitted stream was **Main10, 1664×6656, 4:2:0**, with minimum 16×16 coding
+units and 32×32 CTUs. Tiles and wavefront parallel processing were disabled;
+slice segments were independent. SAO, ordinary deblocking, and filtering
+across slice boundaries were enabled. The prefix contained three IDR slice
+starts at CTU addresses 0, 2704, and 5408, consistent with quarter-height
+placement. No fourth start was captured within the saved prefix, so the actual
+complete slice count remains unproved by this capture.
+
+A separate read of Valve's retained original request found four constrained
+slices, CU16–32, infinite GOP/IDR, no B pictures, and an automatic reference-count
+request. It came from a different process generation. This original request
+is not the helper's accepted configuration: for example, it retained VBR while
+the helper had successfully requested CBR. The emitted parameter sets signaled
+a five-picture DPB bound and default active reference counts of one; those are
+different quantities and do not prove actual steady-state reference use.
+
+One available single-field experiment is to request
+`disableDeblockAcrossSliceBoundary=1` in a fresh session and preserve it in
+each reconfiguration. That could remove the observed filter dependency while
+retaining dimensions, color precision and slice layout. Its benefit is
+unproved, it can affect slice-edge appearance, and cancellation of a bitrate
+lease alone does not restore an initialization-time codec setting. Successful
+API-request telemetry and a new emitted PPS are required before a performance
+comparison; normal restoration requires a fresh session.
+
+The installed SDK 11.1 interface has no HEVC tile-grid, WPP, or SAO-disable
+selector. A syntax field's presence does not imply an available application
+control or prove that firmware executes slices in parallel. More slices,
+larger minimum coding units, and a smaller reference bound are separate
+experiments with compression or image-quality tradeoffs. None establishes
+smooth 350/400 Mbps without a measured pacing result.

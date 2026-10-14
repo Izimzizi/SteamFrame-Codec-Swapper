@@ -62,6 +62,31 @@ its frame-phase controller, transport repair or receiver image selection.
 
 ## Current connected reference
 
+The latest matched **400 Mbps** trial added existing IRQ and scheduler events
+to the decoder trace. It again failed the guard after about two seconds,
+producing **333.91 useful Mbps at 81.54 FPS**. Across normal control, the mixed
+override/cancellation interval and the post-cancel tail, output events changed
+**89.75 → 83.18 → 89.96 per second**, while median queue-to-input-response
+residence changed **11.31 → 40.82 → 11.53 ms**. Input-to-output response handling
+stayed near 3.3 ms. These phases are broader than the encoded-counter window;
+activation and cancellation are bounded observations, not exact switch times.
+
+The added residence did **not** appear as a comparable final IRQ-thread
+runnable delay: the input-response-associated wake-to-switch median during
+the mixed interval was 61 microseconds, with p99 1.665 ms and maximum 5.396 ms.
+The thread was already using real-time priority 80 on CPU 0. This narrows one
+scheduling explanation without identifying pure hardware decode time, the
+physical interrupt time, or the effects of earlier HFI/PM/locking stages.
+No IRQ was assigned to a frame by proximity. The
+[receiver map](receiver-stream-map.md#matched-irq-observation-no-comparable-final-scheduling-delay)
+records the full event validation, phase and continuity limits.
+
+The bounded receiver-log slice contained no named recovery failure, but that
+does not prove complete logging or valid presentation. Normal budget callbacks,
+normal Main10 helper restoration, original receiver instructions, detached
+threads, owned trace cleanup and activity-lease clearing were verified
+separately. **Steady useful 350/400 Mbps is still not demonstrated.**
+
 The first passive-observation attempt at a fixed **400 Mbps** encoder budget
 passed its startup gate, then was stopped after approximately two seconds by
 the decoder-turnaround guard. Actual output in that short counter window was

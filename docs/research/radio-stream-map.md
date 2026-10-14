@@ -626,3 +626,32 @@ cumulative drop count is not a loss delta. The dedicated overflow observer
 reported no overflow event and cleaned up, but that does not establish
 loss-free radio delivery. This failed two-second performance trial supplies
 neither a radio-only diagnosis nor a smooth 350/400 Mbps result.
+
+## Matched IRQ trace narrows the receiver scheduling boundary
+
+The subsequent [matched IRQ/Iris experiment](receiver-stream-map.md#matched-irq-observation-no-comparable-final-scheduling-delay)
+again failed the fixed-400 transition, measuring 333.908 useful Mbps at
+81.540 fps in its short counter window. Its lossless 24,996-event trace shows
+median queue-to-input-return residence rising from 11.311 to 40.816 ms in the
+mixed accepted-through-post-cancel phase, then returning to 11.530 ms. The
+final observed wake-to-input-response median was only 171, 125 and
+36 microseconds respectively. A comparable final IRQ-thread dispatch delay
+therefore does not explain the added residence; time before that final wake
+is still not automatically hardware decode time.
+
+Scheduled-running duty increased from 4.70% to 15.84% and returned to 4.70%.
+The mixed phase's 188 running segments longer than 1 ms contain 604.211 ms of
+residency. Some occurs after an input or output response has already been
+reported; 71 long output-only segments contain 122.188 ms after their output
+event. These are context-switch-bounded CPU intervals, not individual Iris
+handler calls or pure Iris execution: nested unrelated interrupts and other
+kernel work are included. Handler-return/oneshot timing, internal
+response-queue service, PM/mutex waits and firmware/device service remain
+unresolved. The thread was already realtime priority 80 on CPU 0, so this
+result provides no basis for a priority increase.
+
+This identifies another boundary distinct from the earlier radio delivery
+spikes. It does not rule out radio tails in other captures, establish an exact
+decoder ceiling, or demonstrate smooth sustained useful 350/400 Mbps. The
+middle phase includes uncertain cancellation and recovery, and the retained
+frame history differs from the short encoded-counter window.

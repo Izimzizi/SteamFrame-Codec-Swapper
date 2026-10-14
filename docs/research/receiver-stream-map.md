@@ -1263,3 +1263,68 @@ and detachment, owned trace cleanup, normal Main10 helper restoration, and
 activity-lease clearing were verified. This experiment localizes a reversible
 completion backlog; it establishes neither a hard decoder ceiling nor steady
 350/400 Mbps delivery.
+
+## Matched IRQ observation: no comparable final scheduling delay
+
+The subsequent `coherent400-irq-1` trial added filtered existing primary-IRQ and
+scheduler events to the same four Iris events. The exact-build observer first
+passed a two-second normal-stream canary. The matched experiment again failed
+its turnaround guard after about two seconds: **333.908 useful Mbps at
+81.540 fps**, despite 337 accepted fixed-budget callbacks and no counted
+encoder/lock/API errors. This remains a failed transition test.
+
+All **24,996 events** passed the nine-event format, filter, identity, per-CPU
+loss and owned-cleanup checks. The Iris subset paired **1,047 consecutive TX
+identities** and joined all 311 retained AFTM records. No capture metadata was
+altered to fit the older four-event analyzer; its unchanged pairing rules were
+reused only after complete nine-event validation. The AFTM subset reported
+44.505 ms median decoder turnaround and 14.500 ms maximum transport time; its
+retained history is not exactly the encoded-counter measurement window.
+
+| Phase | Full queue/output transactions | Output events/s | Queue → input-response median | Input → output-response median | Queue → output-response median |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Normal control before activation | 194 | 89.75 | 11.311 ms | 3.215 ms | 14.193 ms |
+| Accepted override through post-cancel observation, including recovery | 335 | 83.18 | 40.816 ms | 3.335 ms | 43.625 ms |
+| Post-cancel tail | 421 | 89.96 | 11.530 ms | 3.335 ms | 14.585 ms |
+
+The activation bracket was 774 ms wide. The middle row includes uncertain
+cancellation timing and recovery; it is not a pure four-second fixed-rate
+sample. Phase latency cohorts require both queue and output inside the phase,
+while cadence counts all outputs. Boundary trims exclude the first 100 ms and
+the final 100 ms of the trace, and 100 ms after the post-cancel marker.
+
+For input responses, the median delay from the associated thread wake to
+switch-in was **85.5 → 61 → 24 microseconds** across these phases. In the middle
+phase its p99/max were **1.665/5.396 ms**. Switch-in to the input-response event
+had a **0.016 ms median**, with p99/max **2.461/4.352 ms**. Thus the roughly
+29.5 ms increase in median queue-to-input residence did not appear as a
+comparable final IRQ-thread runnable delay. This is evidence against that
+particular explanation, not proof that all added time was hardware decoding.
+Scheduled running time also increased, and includes nested interrupts and
+other work; driver/CPU overhead was not zero.
+
+Each response was associated by its exact event identity and time with a
+complete observed running interval. Repeated wakes while already running were
+retained as ambiguous/non-new wakes, rather than assigned a fresh latency.
+No nearest-IRQ-to-frame mapping was made. The associated wake does not prove
+when that response became available, and a running interval is not necessarily
+an entire handler invocation. Physical interrupt assertion, device/firmware
+service, HFI command/response boundaries, runtime-PM and mutex waits remain
+unresolved. Endpoint identity checks found the Iris thread already at SCHED_RR
+priority 80 on CPU 0; no priority or affinity adjustment was tested.
+
+This trial pinned an open receiver-log descriptor before tracing and read its
+appended slice afterwards. File identity remained stable, with no observed
+truncation or cap. The two appended messages concerned audio fading; no named
+decoder reset, progress-watchdog, backtrack or unrecoverable-frame error was
+logged in that slice. This does not prove complete logging, exclude unlogged
+recovery or establish picture validity. Matching codec/allocation markers
+remain continuity evidence rather than a unique session-generation guarantee.
+
+The post-cancel clock marker itself records only that a cancellation attempt
+finished. Separate coordination evidence verified normal budget callbacks and
+subsequent normal Main10 helper restoration; the receiver lease verified the
+original instructions and detached threads, and trace cleanup and activity-lease
+clearing were verified. The next unresolved stage is the longer residence
+before input-return handling, not an established need for additional decoder
+streams. Smooth, sustained useful 350/400 Mbps remains unproven.
