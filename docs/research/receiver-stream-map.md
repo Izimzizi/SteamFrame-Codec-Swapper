@@ -1066,9 +1066,9 @@ The live interconnect summary agreed with the lower request. These are memory
 resource votes, **not wireless Mbps or measured memory throughput**. A real
 representation error does not yet prove a performance bottleneck: shared
 interconnect resources have other consumers, and their aggregation, firmware
-votes and actual clocks must be considered. Installed provider topology and
-shared BCM constraints are still being checked. No bandwidth correction was applied
-or measured in this inspection. In particular, adding the entire intended vote
+votes and actual clocks must be considered. The subsequent installed-provider
+audit below resolves the Linux aggregation and shared BCM path. No bandwidth
+correction was applied or measured in this inspection. Adding the entire intended vote
 on top of the existing request would double-count part of the allocation.
 
 The installed driver also already requests STAGE 2 and PIPE 4 for a decoder of
@@ -1087,3 +1087,66 @@ installed interfaces provide clock controls but no bandwidth override. A
 possible independently owned interconnect request is still an untested
 experiment, requiring exact provider semantics, matching kernel build headers,
 bounded lifetime and verified removal; it is not an app setting or shipped fix.
+
+## Main8 diagnostic: short failure at fixed 400 Mbps
+
+The separate `coherent400-main8-scope-1` diagnostic selected 8-bit HEVC before a
+fresh session and retained the same 1664×6656 resolution, P2 preset,
+quarter-resolution multipass, -20/-12 quality offsets and no filler. The average
+and max-field targets were 400/460 Mbps, with a 5,111,111-bit VBV and the same
+temporary receiver timer/window-six corrections. All three accepted
+configuration samples confirmed 8-bit output and the 400 Mbps average target.
+No memory-bandwidth vote was changed.
+
+After initial settling, the guard stopped the measurement after **1.999192
+seconds**. Encoded-counter differences were 86,016,301 bytes and 163 frames:
+**344.204 Mbps of useful video at 81.533 fps**, below the requested 90 Hz cadence.
+Both successive guard intervals had decoder-turnaround p99 above 54 ms against
+the 40 ms threshold; sampled admission Q was 6. Encoder, output-lock and
+rejected-API error counters did not increase. These bytes exclude transport
+headers, parity and retransmissions. A high traffic or encoded-bitrate number
+therefore did not establish smooth delivery.
+
+The retained 310-record frame history included frames preceding the encoded
+counter window. Its median/p99 turnaround was 40.783/54.648 ms, compared with
+7.381/15.151 ms transport and 6.077/7.781 ms encoder completion. Those history
+statistics support the decoder-path guard trigger but are not a separate
+two-second hardware benchmark. Turnaround still combines firmware/driver
+queues, dequeue scheduling and userspace completion; no concurrent Iris event
+trace separated them. Observer tails after cancellation used the normal
+controller and do not extend the fixed-400 measurement.
+
+This short failed transition neither establishes a hard bitrate ceiling nor
+shows that Main8 and Main10 provide matched image quality. The precision change
+and different session/workload prevent a controlled quality or performance
+comparison with the earlier Main10 run. Cancellation restored normal budget
+control; receiver original bytes and detachment were verified, followed by a
+normal-helper restart with accepted **10-bit HEVC**. Main8 was not retained as
+the normal preset. Steady 350 Mbps useful video with smooth 90 Hz delivery remains
+unverified.
+
+## Installed memory-vote topology: correction remains an untested hypothesis
+
+An offline audit of the exact installed boot Image, SHA256
+`04b8e90fb582aeaaeaef714c607640e3a67a02c31ae5a90f8d77e494d801059a`,
+resolved the video interconnect path through qns_mem_noc_sf, qnm_mnoc_sf,
+qns_llcc and ebi. Its provider sums average requests and takes the maximum peak
+request. An independently owned compensation would therefore request only the
+missing 1,134,000 kB/s average, preserving existing consumers.
+
+On that path, MM1, SH1 and ACV are already-enabled binary BCM votes; additional
+average bandwidth would not change their on/off requests. SH0 and MC0 retain
+separate proportional average and peak dimensions, so the proposed delta would
+increase their computed average values while leaving their peak values intact.
+The saved shared peak was 50,000,000 kB/s, including camera consumers. Linux's
+calculation does not discard average because that peak is larger, but firmware
+could still select the same hardware state. This is not evidence that a higher
+vote would improve decoding.
+
+The installed provider's set wrapper also returns success without propagating
+the BCM commit result. A successful API call or changed software summary alone
+would not prove firmware acceptance or a memory-clock change. Available DDR
+statistics are cumulative residency, not a synchronized current-clock reading.
+No compensating request was applied in the Main8 test or this topology audit;
+the representation bug remains established, its throughput consequence remains
+unmeasured.
