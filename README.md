@@ -99,6 +99,7 @@ own installed file. It refuses unknown headset builds.
 | [Advanced controls](docs/advanced-controls.md) | CQ, max QP, peak/VBV, chroma/AQ/presets, driver width/pooling/sharpening/sending experiments, readbacks and restoration |
 | [Codec modes](docs/codec-modes.md) | AV1/H.264 setup, supported builds, hardware requirements, switching, verification and rollback |
 | [Live dashboard and diagnostics](docs/live-dashboard.md) | Every readout, capture files, recovery traces, PC presentation counters |
+| [Streaming system map](docs/research/README.md) | Traced host, receiver, USB/radio and firmware paths, timing meanings, override boundaries and unresolved branches |
 | [Driver patcher](docs/driver-patcher.md) | What the patch changes, compatibility checks, backups and restore |
 | [Connection setup](docs/connection-setup.md) | Wireless SSH pairing, optional ADB, USB recovery |
 | [All streaming settings](docs/settings-editor.md) | The full settings editor, resets, backups, experimental options |
