@@ -1577,3 +1577,137 @@ See the [experiment register](experiment-register.md#private-evidence-provenance
 for retained input/analysis hashes, and the [codec-route audit](codec-stream-options.md)
 for why input-return handling and multiple decoder sessions do not identify
 independent hardware engines.
+
+## Fixed350 timed overflow during RX slot reinitialization
+
+The modern `coherent350-v2-matched-2` trial adds a third concrete recovery
+mechanism. The first 77.997863 seconds encoded **325.066 Mbps at 89.964 FPS**,
+then an unrecoverable repair-list error stopped progress. This is not a smooth
+350-Mbps pass: 65 presentation timeouts had already accumulated by the
+70-second receiver sample. The whole approximately 80-second partial capture
+contains 203 timeouts and one counted drop. No simultaneous Iris-stage trace
+was collected in this trial.
+
+### A timed capacity failure, not another negative subtraction
+
+The bounded overflow observer retained exactly one `timed_overflow` followed
+by its common `overflow` for TX9519. It ran 125.104 seconds, with zero reported
+loss across all eight CPUs, unchanged process identity and root trace settings,
+and verified removal of its owned instance/definitions. Cleanup does not make
+the stream a pass. No progress-only overflow was captured.
+
+The common event has count 512, absent metadata, expected size 457,561, data
+extent 447, parity extent 112 and empty fetched bitmaps. The request starts with
+the metadata sentinel 65535; its final 20 retained IDs are 2092--2111. The next
+ID register is 2112. These observations exactly match a builder attempting:
+
+`1 metadata + 447 data + 112 parity = 560 entries`.
+
+The first 447 data IDs plus metadata occupy 448 entries; 64 parity IDs then fill
+the 512-entry buffer. The next missing parity ID trips the capacity branch.
+The timed path's later 20-ID emission clamp has not been reached. It cannot
+protect the larger temporary list built before it.
+
+The captured last-chunk clock is 173,231 microseconds before the timer's retry
+clock. Its positive allowance is `floor((173231 - 4000) / 104) = 1627`;
+subtracting the 20-item bias gives 1607, exactly the retained register value.
+Thus the signed arithmetic correction is not expected to prevent this event.
+There is no need to posit a negative interval or a 41-million-position allowance.
+
+### Evidence for a partly initialized reused slot
+
+TX9519 and TX9503 are sixteen apart and share the same receive-slot index.
+The captured old last-chunk timestamp is just **7 microseconds before TX9503's
+recorded complete-frame receive timestamp**. In contrast, the new birth clock
+is only **25 microseconds before the timer clock**. The actual host TX9519 size
+also matches 457,561 bytes and the host produced it at ordinary cadence.
+
+The exact initializer exposes an intermediate state consistent with that record:
+
+| Installed address | Publication order |
+| --- | --- |
+| `0x52674` | Store expected size at object offset 16. |
+| `0x526E0`, `0x52740` | Sample the first clock and store birth time at 32. |
+| `0x52750` | Clear the 512-byte receive bitmap. |
+| `0x52768`, `0x5276C` | Publish the new frame ID and metadata=false. |
+| `0x52778`, `0x5277C` | Publish parity/data/group cursors. |
+| `0x52780`, `0x5279C` | Sample again, then finally store chunk/retry clocks 36/40 together. |
+
+The RX path owns the receive mutex, but the timer walker does not acquire it.
+It can see the new ID and empty bitmap before the new clocks are published.
+The metadata mutex is not a substitute: it has been released before these
+fields change. The description-packet path at `0x53EF8` passes packet size
+to initialization before calling the metadata-accept handler. A real-size
+extent with metadata=false is therefore possible during initialization; it
+does not prove that metadata was already accepted. Data-first initialization
+instead starts with the 4-MiB placeholder. A short data chunk can also refine
+the extent. Reset clears ID/metadata/buffer but leaves the clocks and extent
+storage, making generation ownership important throughout recovery.
+
+The combination strongly supports a **partial slot-publication race**, not a
+new frame genuinely waiting 173 ms for radio delivery. It remains an inference
+about the live interleaving: the observer did not record initializer entry,
+return or lock ownership. Inline uprobe fields are fetched sequentially while
+other threads can run, not as an atomic object snapshot. The first breakpoint
+is already at the overflow edge and cannot explain taking that branch, but it
+can perturb the later field snapshot and recovery timing.
+
+### Recovery, patch boundary and next work
+
+The receiver's complete-frame feedback for TX9519 is 10.805 ms after its logged
+overflow. Later receive feedback therefore does not prove that the frame was
+already complete when the error occurred. Decode acknowledgement remains at
+TX9516, then the host enters holdoff and roughly 300-ms production gaps. The
+receiver's subsequent 300/800-ms watchdog messages are recovery consequences,
+not evidence that the hardware initially spent 800 ms decoding a picture.
+No earlier backtrack error appears in the retained log; logging completeness
+is not established. Receiver-owned AFTM clocks and TX identities supply this
+alignment, not an assumption that PC and headset wall clocks agree.
+
+The exact-image lease verifies original→patched at application and
+patched→original at restoration, with all threads detached and no cleanup
+errors. It brackets the failure; the overflow probe itself does not capture
+instruction bytes. The active timer-window6 prototype only changes signed
+arithmetic at `0x52EEC`/`0x52EF0` and ordering constants at
+`0x53A4C`/`0x53A70`. It does not serialize initialization or bound the temporary
+request list. The earlier metadata-first **progress-only** proposal would not
+cover this timed branch.
+
+A permanent repair needs coherent initialization/snapshot ownership plus bounded
+request construction and revalidation before commit. A capacity-only mitigation
+would not repair the stale generation/clock or prove liveness. A further bounded
+observer could pair initializer publication/return and timed eligibility for
+the same slot/generation; its disturbance and non-atomic reads would still need
+explicit checks. No new receiver fix was applied in this investigation.
+
+Normal Main10 streaming, saved target 400 Mbps, original receiver instructions and
+activity cleanup were verified after the failed trial. The
+[host analysis](host-stream-map.md#modern-fixed350-reference-near-90-hz-before-a-receiver-repair-failure)
+separates the 325-Mbps prefix from the terminal failure; the
+[experiment register](experiment-register.md#private-evidence-provenance)
+records retained source/capture hashes and the offline request replay.
+
+### Timed-prefix mitigation: offline evidence only
+
+A narrow proposal redirects the two timed pre-store capacity guards to the
+existing finish path when 20 IDs have already been collected. It preserves the
+native metadata/data/parity ordering and the ordinary first-20 request that the
+emitter can transmit. It deliberately changes a native capacity abort into a
+bounded retry. The TX9519 replay reproduces the original 512-entry head/tail and
+would instead send metadata plus data IDs 0--18 through the existing emitter.
+
+Eighteen pure offline tests pass, including 1,500 seeded coherent snapshots and
+exact-image guard checks. Independent emulation of the installed ARM64 function
+covers 338 coherent timed cases: 331 ordinary requests preserve wire/state
+effects, while seven capacity-abort cases become a 20-ID retry. Ten progress
+cases remain unchanged. A separate composition with the signed-timer change
+repeats the 338/331/7 result. External calls are stubbed and the ordering-window
+routine is not invoked. These are code/model checks, not a receiver performance
+or recovery test.
+
+This bounds collected IDs, not all bitmap reads or CPU time. It does not repair
+initialization, reset, object lifetime or generation ownership. Emulation also
+confirms the emitter can reload a changed frame ID and send old indices under
+that new identity. Severe-loss recovery intentionally changes, and liveness is
+unproved. No runtime patcher integration or live activation exists at this
+publication cutoff; coherent ownership remains the permanent repair boundary.

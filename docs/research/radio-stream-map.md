@@ -514,7 +514,7 @@ was applied in this pass.
 
 A later coherent-budget capture contains a separate 64.594 ms transport tail
 with roughly 6 ms encoder completion. The host FIFO reaches 1.29 MB while
-admission holds at seven unacknowledged frames; retry attempts increase by83.
+admission holds at seven unacknowledged frames; retry attempts increase by 83.
 This is distinct from the capture's longer shared-texture handoff interruption.
 FIFO timestamp age includes earlier limiter waiting, so it does not isolate
 USB or airtime. Current samples still lack an exact socket-send or USB boundary.
@@ -575,7 +575,7 @@ readback do not replace per-attempt radio telemetry.
 A later normal-controller baseline with no periodic helper calls still shows
 an85.911 ms frame-delivery tail followed by two backtrack resets. Later frames
 reach the receiver before the delayed frame; the subsequent Q8/unchanged-ACK
-holdoff lasts roughly300 ms with empty send FIFO and reusable encoder slots.
+holdoff lasts roughly 300 ms with empty send FIFO and reusable encoder slots.
 The saved logs contain no texture-sync error, and matched release-to-slot time
 never exceeds1.731 ms in this capture. This distinguishes delivery/repair
 recovery from the earlier texture-handoff pause, but does not identify RF versus
@@ -717,3 +717,30 @@ exclude workload-dependent instrumentation cost. The trials are not randomized,
 same-content comparisons; differing frame sizes and codec settings prevent
 attributing their rate differences to trace overhead or wireless behavior.
 The [experiment register](experiment-register.md) preserves those scope limits.
+
+## Modern350 recovery failure is not a measured radio stall
+
+The later [original-codec 350-budget trial](host-stream-map.md#modern-fixed350-reference-near-90-hz-before-a-receiver-repair-failure)
+delivered 325.066 useful Mbps at 89.964 FPS for its first 77.998 seconds, then
+aborted. Complete-frame transport has a 6.521 ms median in the paired prefix;
+the host produces the faulting frame on ordinary approximately 11 ms cadence.
+The send FIFO is usually empty and no consecutive send failure is sampled.
+Interface errors/drops, UDP receive-buffer errors and streaming-socket drops
+have zero recorded deltas. These counters do not exclude wireless loss or
+identify every repair request.
+
+The [receiver rare-branch trace](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization)
+instead captures a timed retry-list capacity abort. Its stale last-chunk clock
+is within 7 microseconds of the previous owner of the same modulo16 slot, while
+the new initialization clock is only 25 microseconds before the timer clock.
+Unsynchronized initialization can expose exactly that combination. Interpreting
+the computed 173 ms age as actual RF inactivity would ignore the stronger
+slot-generation evidence. The inline fields are still non-atomic, so the exact
+interleaving is supported rather than directly observed.
+
+Long host production gaps and admission holdoff follow the receiver fault and
+stalled decode acknowledgement. This case therefore supplies a concrete
+software-state boundary separate from radio/USB completion and the earlier
+fixed400 decoder residence. It neither establishes a radio capacity ceiling
+nor removes the need to measure rare delivery tails. No radio/firmware control
+changed, and no continuous useful350 or smoothness pass was achieved.

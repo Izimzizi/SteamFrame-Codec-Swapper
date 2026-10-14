@@ -231,7 +231,7 @@ The restored normal session and the subsequent fixed400 trial had minimum-QP,
 maximum-QP and initial-RC-QP limits disabled; lookahead/depth, spatial AQ and
 temporal AQ were also disabled. The only RC flag was zero-reorder delay. The
 accepted map mode was DELTA, quarter-resolution multipass was enabled, and
-keyframe scale was1. The inherited constQP values I25/P28/B31 are initial values
+keyframe scale was 1. The inherited constQP values I25/P28/B31 are initial values
 in this CBR mode, not proof of fixed per-picture QP. No exposed enabled QP limit
 explained the undershoot in these snapshots. Final block QPs and NVIDIA's
 internal RC state remain unobserved. **L/C**
@@ -246,7 +246,7 @@ repeated IDR or an explicit RC reset. Actual stream recovery can still recreate
 the session. **S/C**
 
 The fixed380 and fixed400 experiments preserve a VBV reservoir of approximately
-1.15 picture budgets at90Hz: 4.856 and5.111Mbit respectively. An output near
+1.15 picture budgets at 90Hz: 4.856 and 5.111Mbit respectively. An output near
 380/1.15 does not prove an internal division by that factor: the helper assigns
 380M directly, the SDK says the maximum-bitrate field is ignored in CBR, and no
 documented VBV equation establishes that proposed divisor. A correctly paired
@@ -257,9 +257,9 @@ test. **C/L/U**
 The first fixed400 transition passed its normal-load settling gate, then the
 guard stopped it after approximately two seconds for backlog/decoder turnaround.
 All three snapshots accepted400Mbps without filler. Actual useful output was
-340.84Mbps at84.03fps, with507,036 bytes per completed picture on average.
-Decoder turnaround median was41.51ms, transport median6.97ms and encoder
-completion median6.03ms. The same picture size at90fps would arithmetically
+340.84Mbps at 84.03fps, with 507,036 bytes per completed picture on average.
+Decoder turnaround median was 41.51ms, transport median6.97ms and encoder
+completion median6.03ms. The same picture size at 90fps would arithmetically
 require365.07Mbps; this is not a measured90fps outcome. The short failed
 transition establishes neither a stable340Mbps limit nor smooth350Mbps
 operation. It makes admission/receiver backpressure material to the next
@@ -268,7 +268,7 @@ comparison, alongside encoder allocation. **L**
 Within that exact short interval,166 of168 completed pictures were associated
 with retained nominal-frame-rate requests, covering98.77% of encoded bytes.
 Nominal FPS averaged89.61; its denominator variation increased the arithmetic
-picture allowance by about0.46% relative to90/1. The two largest pictures used
+picture allowance by about 0.46% relative to90/1. The two largest pictures used
 85/86FPS requests, so a fixed-rate experiment could still test tails, but this
 small average effect does not explain the primary throughput deficit. **L**
 
@@ -1100,6 +1100,77 @@ thread detachment and activity cleanup were verified after the abort.
 
 The source/capture hashes and exact comparison scopes are recorded in the
 [experiment register](experiment-register.md#private-evidence-provenance).
-The separately prepared Coherent350v2 lower-budget helper has not produced a
-live result at this cutoff. Requested 350 Mbps must not be reported as measured
-350 Mbps of useful video.
+The later Coherent350v2 result below remains distinct from measured useful
+350 Mbps: its accepted lower budget did not become that many encoded bits.
+
+## Modern fixed350 reference: near 90 Hz before a receiver repair failure
+
+`coherent350-v2-matched-2` exercised the original codec/QP path with Main10
+1664 x 6656, P2, unpadded CBR and quarter-resolution multipass. Its accepted
+tuple remained **350,000,000 / 402,500,000 / 4,472,222** average/peak/VBV,
+with no encoder, bitstream-lock or rejected-API counter increments. The helper
+starts dormant, requires explicit activation, and has a nonrenewing 300-second
+lease; it does not alter the initial encoder budget. Valve's saved target was
+350 for warmup and canceled normal callbacks, then restored to 400.
+
+The first **77.997863 seconds** contain 7,017 pictures and 3,169,309,435 useful
+bytes: **325.066 Mbps at 89.964 FPS**. One-second intervals span
+316.777--329.464 Mbps and 88.983--91.011 FPS. This is approximately 90-Hz
+encoding, not uninterrupted presentation: the receiver counted 65 presentation
+timeouts by the 70-second sample. The full approximately 80-second partial
+capture aborts after an unrecoverable receiver repair error.
+
+Independent pairing covers 6,990 pictures, 99.612% of counter bytes. The 27
+unpaired pictures are excluded from allocation statistics. Paired mean size is
+451,647 bytes; encoded bytes are **92.408%** of the summed
+`350,000,000 / (8 * nominal_fps)` allocation. Requested nominal FPS ranges
+74--197, but its mean allocation effect is only **+0.544%** versus fixed 90.
+Those request outliers are not observed 197-FPS output. Nominal-rate variation
+alone does not explain the remaining byte shortfall. Unpadded CBR, content,
+VBV and quality behavior still do not promise exact arithmetic filling.
+
+All 6,990 paired pictures have retained completed timing: median encode
+5.938 ms, enqueue 0.247 ms, transport **6.521 ms**, decoder turnaround
+**18.682 ms**, with decoder p99 35.083 ms and maximum 44.138 ms. This differs
+from the immediate sustained 40--60 ms residence in the short fixed400 screens.
+It does not isolate decoder hardware time or establish visually smooth output.
+
+Before the terminal fault, admission queue depth is usually three or four;
+holdoff occurs in only two of 2,627 stable samples. The send FIFO is empty in
+2,029 of 3,005 stable cursor samples; occupied-head age is at most 8.790 ms.
+No consecutive send failure is sampled. Retry-send count increases by 257
+over that prefix, so normal cadence is not evidence of no repair traffic.
+
+TX9519 contains 457,561 coded bytes and is produced on ordinary cadence.
+The 23 generation intervals from TX9499 through TX9522 are 10.260--11.872 ms.
+After the [receiver overflow](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization),
+decoded acknowledgement stays at TX9516, queue depth and holdoff increase,
+and approximately 312/321/318 ms gaps appear before preparation of subsequent
+pictures. The encoder and transport FIFO are empty in the retained holdoff
+samples. Those pauses follow downstream recovery/admission pressure; they are
+not measured 300 ms NVENC API calls. The compositor log append contains no
+texture warning, with no simultaneous texture-scope trace to prove every handoff.
+
+The last two seconds contain 63 pictures and 28,044,327 bytes, falling to
+46.015 then 16.989 FPS. The guard's immediate reason is the reported receiver
+repair/reset failure, not encoder rejection. Whole-capture averages are
+319.743 Mbps and 88.502 FPS and must not replace the prefix/failure distinction.
+
+### Startup failure and bounded restoration
+
+The first attempt timed out while arming the helper, before fixed activation,
+receiver patching or measurement. It supplies no bitrate result. An OpenVR
+disconnected-headset error then prevented the initial target restore and normal
+restart. After automatic reconnection, the 400 Mbps target and a separately
+invoked fresh normal Main10 session were verified. The coordinator's private
+cleanup now retains that first restore error while attempting normal
+reconnection, retries the target write/readback
+once, then starts another normal session at 400. Persistent failure is raised
+and saved instead of reported as restored. Ten offline integration tests and
+four independent cleanup-fault cases passed; this is experimental coordinator
+work, not a released app change.
+
+The measured second attempt verified successful cancellation, restoration of
+the 400 Mbps target and Main10 stream, original receiver instructions, detached threads and activity
+cleanup. Source/capture identities and offline reproducers are indexed in the
+[experiment register](experiment-register.md#private-evidence-provenance).

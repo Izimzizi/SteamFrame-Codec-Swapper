@@ -55,7 +55,7 @@ its frame-phase controller, transport repair or receiver image selection.
 | Does unpadded CBR guarantee a flat graph? | No. The app leaves filler disabled, and Valve normally reconfigures its budget per frame. | Padding can make bytes constant without adding detail; overriding adaptation does not increase network/decoder capacity. |
 | Does the SteamVR counter measure only video? | No. It counts assembled transport datagrams over the last second and divides bits by 2^20 despite its `mbps` label. | It includes parity/protocol overhead and is not a receiver delivery counter. |
 | Is there a concrete cause for a captured long pause? | In a later capture, a packet timestamp was 1–104 microseconds newer than the retry thread's sampled clock. Unsigned timer arithmetic turned that negative interval into a scan allowance of over 41 million positions, exhausted the 512-entry request list and triggered recovery. | A temporary arithmetic correction passed a short loaded trial with the capacity guard retained, then was restored. A permanent correction needs coordinated state ownership. |
-| Does correcting that timer eliminate recovery failures? | No. A separate capture showed a frame completing six ahead of the last submitted frame while an earlier frame remained incomplete. The five-frame ordering guard reset the receiver; late parity then recreated metadata-less state and caused four progress-path repair overflows. | A later bounded timer-plus-window-six trial captured neither failure, but a separate PC texture stall still triggered the receiver's progress watchdog. It is not a validated permanent fix. |
+| Does correcting that timer eliminate recovery failures? | No. Separate captures found an ordering-reset/progress-overflow cascade and, more recently, a timed overflow strongly consistent with a reused slot publishing its new identity before its new clocks. | Signed arithmetic and a six-frame ordering window do not make slot initialization atomic or bound every retry build. Neither is a validated permanent fix. |
 | Is every captured pause caused by wireless delivery? | No. Two frames waited 100.741 and 347.890 ms before encoder submission while the encoder and send queue were empty. SteamVR logged shared-texture acquisition timeouts in those intervals. | The initial reason for losing texture ownership remains under investigation. A separate transport burst did grow the send queue, so one explanation does not cover every tail. |
 | Are all generated parity chunks equally repairable? | In one-parity mode, the host retransmit check uses a sent-chunk count as if parity indices were contiguous. Valid later even indices can be rejected, while some initially unsent odd indices are below that bound. | The mismatch is established in code, but not tied to the captured fault. A fix must avoid serving stale, not-yet-generated slot contents. |
 | Does a 17 ms decoder interval imply a 59 FPS ceiling? | No. Submitted frames can overlap, and the interval includes driver/queue/scheduling time until userspace observes completion. | Pure hardware decoder occupancy and execution time are not yet isolated. |
@@ -64,7 +64,31 @@ its frame-phase controller, transport repair or receiver image selection.
 
 ## Current connected reference
 
-The latest two completed fixed-400 screens both failed smoothness:
+The latest original-codec **350 Mbps budget** trial held approximately 90-Hz
+encoding for 78 seconds, then failed on a receiver retry overflow. Its first
+77.997863 seconds delivered **325.066 useful Mbps at 89.964 FPS**, not useful
+350 Mbps. Receiver counters had already accumulated 65 presentation timeouts
+by the 70-second sample. The complete captured 80-second partial window is
+319.743 Mbps at 88.502 FPS; its final intervals fall to 46.015 and 16.989 FPS.
+It therefore does not establish sustained smooth streaming.
+
+The [receiver trace](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization)
+captured a timed request attempting 560 entries against a 512-entry limit,
+before the builder's later 20-ID emission clamp. The initialization and recorded
+retry clocks are 25 microseconds apart, but the last-chunk clock almost exactly
+matches the previous owner of the same sixteen-slot index. Exact initializer
+store ordering supports a partial-publication race. The capture
+is non-atomic and does not directly trace that interleaving; it does not show
+a 173 ms radio stall or a new decoder hardware ceiling.
+
+The [host analysis](host-stream-map.md#modern-fixed350-reference-near-90-hz-before-a-receiver-repair-failure)
+finds normal production cadence up to the fault, followed by decode-ACK stall,
+admission holdoff and roughly 300 ms production gaps. Normal Main10 streaming,
+the 400 Mbps saved target, original receiver instructions and activity cleanup
+were verified afterward. A failed first startup attempt produced no performance
+measurement; its disconnected cleanup path was repaired and tested separately.
+
+The preceding two completed fixed-400 screens both failed smoothness:
 
 | Completed screen | Useful encoded video | Encoded cadence | What it established |
 | --- | ---: | ---: | --- |
@@ -95,10 +119,11 @@ had 4.732 ms median encoder completion, 7.693 ms transport and 61.597 ms decoder
 turnaround. That screen had no simultaneous kernel-stage trace. Syntax acceptance
 does not establish equal image quality or a decoder throughput improvement.
 
-**Steady useful 350/400 Mbps remains unproved.** A separately prepared 350 Mbps
-helper is an offline candidate at this publication cutoff, not a measured
-350 Mbps useful-video result. No radio, firmware, clock or thermal setting
-was changed by these two screens.
+**Steady useful 350/400 Mbps remains unproved.** The modern 350-budget result
+above separates lower-load cadence from its underfilled encoded budget and
+receiver reliability failure. A [current-geometry decoder harness](codec-stream-options.md#current-geometry-comparison-prepared-offline-not-yet-run)
+is now implemented and checked offline, but has no prepared clips or hardware
+result. No radio, firmware, clock or thermal control changed in these tests.
 
 The earlier cross-slice-filter screen verified that the requested codec change
 reached the actual emitted PPS, but still triggered the fixed-400

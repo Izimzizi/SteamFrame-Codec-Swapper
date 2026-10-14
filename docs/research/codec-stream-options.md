@@ -123,15 +123,53 @@ queue-event-to-post-submit interval narrows the synchronous producer path,
 conditional on successful submission, but does not establish hardware service
 time or response-ready time.
 
+## Current-geometry comparison: prepared offline, not yet run
+
+A private extension now implements the proposed one/two/four stock-decoder
+comparison at the current **1664 x 6656 Main10** total geometry. It leaves the
+tracked comparison tool and underlying decoder unchanged. The implementation
+and CPU-only command plans exist; **no source clips, ARM64 executable, headset
+decoder job or performance result exists** at this cutoff.
+
+| Sessions | Region size | Requested independent slices per region |
+| --- | --- | --- |
+| 1 | 1664 x 6656 | 4 |
+| 2 | 1664 x 3328 | 2 |
+| 4 | 1664 x 1664 | 1 |
+
+Distinct contiguous bands come from one deterministic full-frame source rather
+than repeating a smaller regenerated pattern. All configurations retain four
+total requested constrained slices. Preparation code compares source hashes,
+calibrates measured coded bytes near 350 or 400 Mbps, rejects filler, checks every
+access unit's emitted parameter sets and slice inventory, and software-decodes
+each crop. These are implemented gates, not completed encoding results. The
+synthetic pattern begins as 8-bit content converted to P010; neither native
+foveation nor independent 10-bit source detail is represented.
+
+Independent pictures change reference domains, entropy contexts, parameter
+sets and per-session queues/DPB storage even with equal pixels and total slice
+count. The planned VBR/no-multipass source preparation also differs from the
+production CBR/quarter-multipass path. Equal aggregate bitrate would not prove
+equal image quality, burst distribution or decoder complexity.
+
+The native wrapper waits for all sessions to finish setup before releasing a
+readiness barrier. For each picture ID, analysis uses the latest region callback
+as the complete-group time; it does not sum decoder FPS. Missing/duplicate IDs,
+input deadlines, drain time, grouping skew and interval distributions remain
+separate checks. Its 89--91 group-FPS and 13.889-ms p99 interval gates are lab
+criteria, not proof of unique headset presentation or motion-to-photon latency.
+
+Twenty-five offline tests pass. Linux x86 `g++` syntax validation with warnings
+as errors passes; that is not an ARM64 build or V4L2 execution. Runtime startup,
+owned-process termination and decoder-driver cleanup still need a bounded
+canary before a capacity comparison. No live decoder or GPU preparation ran
+during this development. The private source/plan manifest is indexed in the
+[experiment register](experiment-register.md#private-evidence-provenance).
+
 ## Tested, proposed and still unknown
 
-For the current Main10 image requirement, the smallest proposed discriminator
-is one/two/four stock decoder sessions at equal **current** total geometry,
-comparable source complexity and measured coded bytes. The local comparison
-tool's whitelist does not accept the current 1664 width. A narrow extension
-and new clips are needed; this test has **not** been implemented or run.
-Only a measured gain would justify building a native-quality multistream game
-renderer.
+Only a measured current-geometry gain would justify building a native-quality
+multistream game renderer. The offline harness does not yet supply that result.
 
 The existing four-session H.264/TCP game path is a possible separate-format
 prototype starting point. It first needs current source/binary provenance,
