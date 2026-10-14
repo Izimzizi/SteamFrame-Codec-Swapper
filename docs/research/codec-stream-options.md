@@ -204,7 +204,7 @@ has added observation and environmental differences; the
 [timing experiment](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost)
 rules out dominant synchronous input-copy cost in its run, not all software cost.
 
-## Retained lower-rate workload: prepared, not run
+## Retained lower-rate workload: completed hardware test
 
 The first calibration attempt already contained a 208.075080-Mbps one-session
 stream from the same deterministic source. A separate package now preserves
@@ -214,11 +214,14 @@ and no filler. Explicit CPU HEVC decoding passed, and its new lab framing
 concatenates exactly to the original bytes. No GPU regeneration was needed.
 
 The original encoder request was 350 Mbps; the 26,009,385 coded bytes establish
-the lower actual rate. The unchanged ten-repeat aggregation would credit
-259,385,846 bytes for IDs 2--899, but **no headset callback times or measured
-throughput exist for this package**. Its separate fixed-single-clip launcher
-has 15 dedicated tests within 76 passing harness tests; the original
-three-configuration comparison gate and decoder binary were not weakened.
+the lower actual rate. The completed ten-repeat hardware run credits
+259,385,846 bytes for IDs 2--899 over 9.974301297 seconds: **90.031369 output
+Hz / 208.043321 coded Mbps**. All 900 output identities decoded and drained,
+with zero input deadline misses. The original three-configuration gate and
+decoder binary were preserved; a separate pinned single-clip launcher was used.
+The harness capacity criterion passed, but its cadence criterion failed:
+p99 callback gap 19.491367 ms and maximum 20.525452 ms. No panel timing or
+hardware-decoded pixel equivalence was measured.
 
 | Emitted parameter-set field | Retained 208-Mbps clip | Selected 350-Mbps clip |
 | --- | ---: | ---: |
@@ -235,10 +238,68 @@ The full FFmpeg parameter-set trace differs only in level for VPS, and level,
 HRD bitrate and CPB size for SPS; PPS bytes are identical. The structural
 prefix parser alone does not establish the full comparison. HRD signals the
 encoder's allocation, not measured delivered bytes. Quantization, residuals,
-prediction choices and image quality can also differ. Any later rate gain would
-therefore test lower coded workload **and** different capability/rate metadata,
-not isolate an entropy engine, memory bandwidth or byte count alone. Firmware
-policy may respond to that metadata. The package remains unrun at this cutoff.
+prediction choices and image quality can also differ. The first comparison
+therefore changed lower coded workload **and** capability/rate metadata. It
+does not isolate an entropy engine, memory bandwidth or byte count alone.
+
+For nine balanced repeats, IDs 90--899, all nine intervals above 13.8889 ms
+occur at source phase zero, the IDR picture. Their median is 19.587823 ms,
+followed by phase-one intervals of 4.715--4.790 ms. The cycles span
+999.163--1001.516 ms. The heavier 350-Mbps source instead has 253/810 late
+intervals across many phases and roughly 1.208-second cycles. This excludes
+a universal 74.5-Hz limit for every tested stream at this geometry, while
+leaving workload-dependent decoder or software service unresolved.
+
+## Same coded pictures with the heavier clip's metadata
+
+A separate control replaces only the retained clip's first VPS and SPS with
+the selected 350-Mbps clip's parameter sets. Full parameter traces establish
+that these changes are level and HRD bitrate/CPB declarations. Every VCL,
+AUD, SEI and PPS NAL remains byte-identical and in the same order: 360 slices,
+90 AUDs and 90 SEIs across 90 access units. The full elementary stream grows
+by one byte. Explicit software decoding produces identical hashes, sizes and
+timestamps for all 90 output pictures.
+
+The retained SEIs are picture-timing messages. Their field widths, timing
+syntax, values and trailing bits were checked under both parameter sets;
+unknown message types or changed timing shapes are rejected. This is stronger
+than blindly replacing headers, but is not general Annex C HRD conformance
+proof or hardware pixel validation.
+
+The hardware control completed all 900 identities at **90.049625 Hz /
+208.085514 coded Mbps**, counting 259,385,855 bytes over 9.972279170 seconds.
+The nine additional credited bytes come from repeated first access units.
+The unchanged decoder executable, queue/pacing loop and sparse telemetry were
+used. Level 186 and HRD 520,590,080 bps / 5,784,320-bit CPB did **not** reproduce
+the 350-Mbps workload's 74.5-Hz outcome. This weakens a level/HRD-only explanation
+for these clips; it does not prove those fields irrelevant to every workload.
+
+Again, all nine balanced late intervals are at the IDR phase: 19.293--19.566 ms,
+followed by 4.741--5.082 ms. The capacity criterion passes, but cadence still
+fails. The +0.018256-Hz difference from original208 is not a significance or
+quality claim. Input/output callbacks do not separate hardware completion,
+firmware dispatch, poll wakeup and dequeue work. Both jobs ended, their owned
+processes were absent and normal Main10 streaming resumed. The stricter later
+process inventory and different sparse sample counts also prevent treating the
+older 350-Mbps baseline as perfectly observer-matched.
+
+## PC encoder capability query: provisional corroboration
+
+A retained PC NVENC capability query returned status zero for maximum dimensions,
+level, 10-bit and constrained-encoding flags, with no encoded frames:
+
+| Codec | Reported maximum width / height | Maximum level value | 10-bit flag | Constrained-encoding flag |
+| --- | --- | ---: | ---: | ---: |
+| H.264 | 4096 / 4096 | 62 | 1 | 1 |
+| HEVC | 8192 / 8192 | 186 | 1 | 1 |
+| AV1 | 8192 / 8192 | 23 | 1 | 0 |
+
+The executable and source hashes were captured, but their build binding was
+**not verified**. Treat these as provisional reported capabilities, not tested
+format combinations or new codec support. In particular, the H.264 height
+report is inconsistent with reusing the packed 6656-pixel HEVC height unchanged;
+the 10-bit flag does not establish a working H.264 10-bit stream or receiver.
+No acceptance, decoder throughput or image-quality conclusion follows.
 
 ## Tested, proposed and still unknown
 

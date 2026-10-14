@@ -1254,7 +1254,7 @@ outlive the two-second counter interval. Their full duration must not be called
 a sustained fixed350 trial, and zero fatal events still do not prove successful
 prefix execution.
 
-## Underfill readback and a source-only full-pass discriminator
+## Underfill readback and an offline-built full-pass discriminator
 
 The earlier 78-second fixed350 prefix now has a complete RC/QP audit. All 79
 retained effective RC snapshots are identical: CBR, 350M average, 402.5M maximum
@@ -1283,9 +1283,31 @@ encode tails, receiver turnaround and cadence under the same bounded guards.
 The original fixed350 lease requires packed policy 10 and NVENC quarter-pass
 enum 1. The derivative explicitly expects policy 14 and full-pass enum 2; a
 CLI-only mode switch would otherwise make the old lease ineligible. At this
-cutoff the derivative is **source-only preparation**, not a compiled, loaded or
-accepted configuration. Its source manifest supplies provenance without implying
-native-test or runtime success.
+cutoff the derivative has now been **built and tested offline**, but has not
+been loaded into SteamVR or accepted by real NVENC. The original source-only
+manifest and diff remain unchanged; a later receipt binds sources, compiler,
+outputs and tests. Its hook, codec and QP-map implementations remain byte-identical
+to the frozen350v2 source. Only the policy selection, eligibility and helper
+identity differ in the operational path.
+
+Mock-API tests cover actual hook forwarding, caller immutability, rejected
+requests and fallback, dormant begin, nonrenewing 300-second expiry and
+cancellation. Five native lease/JSON fixtures and eight malformed-layout cases
+validate the unchanged 576-byte Stats / 88-byte lease ABI. A separately named
+read-only observer adds only the exact new helper hash; its old source is
+preserved. Eight focused observer tests, native path tests and managed status
+parsing pass without target-process or GPU access. These do not prove driver
+acceptance or performance. The DLL SHA-256 is
+`3de7b67aa344f84c876ee0ce1353830624669fd4dfa91fea532b97bcf5b2f0fc`.
+
+Full multipass is requested from fresh initialization and on reconfiguration;
+only the fixed-budget tuple waits for explicit begin. Cancel or expiry returns
+to adaptive **full-pass** policy, so final restoration still requires the normal
+quarter-pass helper/session and saved target400. The future coordinator must
+verify packed14/API multipass2, correct generation, no filler and the exact tuple,
+while retaining latency, cadence, texture, receiver-repair and restoration guards.
+The private integration chain is still under review and has no live result at
+this cutoff. No new control or app release is shipped here.
 
 At unchanged efficiency and cadence, simple proportional arithmetic would put
 350 useful Mbps near a 376.85 Mbps budget. That is a hypothesis, not an encoder
@@ -1325,7 +1347,8 @@ encoder cap nor demonstrates a smooth native multistream replacement.
 A same-clip one-session control without active resource reads was effectively
 unchanged at 74.495895 Hz. This bounds the sparse telemetry explanation in one
 sequential pair; it does not eliminate other harness costs. Native streaming
-was restored afterward, and the existing full-pass derivative remains source-only.
+was restored afterward. The later full-pass derivative has passed only the
+offline build and tests described above.
 
 ## Coded-byte correlation and the measured input-copy boundary
 
@@ -1344,8 +1367,11 @@ records the boundary and population differences. Synchronous whole-picture copy
 and QBUF are too small to explain most of this run's mean deficit; asynchronous
 work, other queue boundaries and firmware/device scheduling remain unresolved.
 
-The retained [lower-rate workload](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run)
-now has CPU validation and a separate manifest, without encoding again or
-changing the original 350-Mbps package. Its emitted level/HRD fields differ,
-so any future comparison must preserve that confound. No lower-rate hardware
-result or new native-stream throughput gain exists at this publication cutoff.
+The retained [lower-rate workload](codec-stream-options.md#retained-lower-rate-workload-completed-hardware-test)
+now has completed hardware evidence, without encoding again or changing the
+original 350-Mbps package: 90.031369 Hz at 208.043321 coded Mbps. A separate
+same-VCL control using the heavier clip's VPS/SPS reached 90.049625 Hz. That
+combined metadata substitution did not reproduce the heavier payload's slowdown.
+It narrows a signaling-only hypothesis; different quantization, residuals and
+prediction work remain. Neither isolated job establishes smooth native useful
+350-Mbps streaming, and both retain long IDR callback gaps.

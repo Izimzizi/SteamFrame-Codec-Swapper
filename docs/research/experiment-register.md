@@ -12,7 +12,7 @@ It links the detailed maps rather than replacing their build and timing limits.
 | Why can requested CBR differ from measured useful video? | [Host budgeting and coded bytes](host-stream-map.md#requested-bitrate-accepted-budget-and-coded-bytes) |
 | What did the modern350 test establish? | [Near 90-Hz prefix, underfilled budget and terminal repair failure](host-stream-map.md#modern-fixed350-reference-near-90-hz-before-a-receiver-repair-failure) |
 | What happened when the timed-prefix change was tried? | [Guarded transaction and live attempt limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts), plus [startup/counter separation](host-stream-map.md#retry-prefix-attempt-startup-failure-precedes-the-counter-window) |
-| What is the next allocation experiment? | [RC/QP readback and source-only full-pass preparation](host-stream-map.md#underfill-readback-and-a-source-only-full-pass-discriminator) |
+| What is the next allocation experiment? | [RC/QP readback and offline-built full-pass preparation](host-stream-map.md#underfill-readback-and-an-offline-built-full-pass-discriminator) |
 | Why did the signed timer repair still permit an overflow? | [Reused-slot publication and timed request capacity](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization) |
 | What did the latest minimum-CU change actually do? | [Accepted request, emitted SPS and failed cadence](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed) |
 | Do mutexes, PM or IRQ dispatch explain the receiver backlog? | [Matched thirteen-event observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans) |
@@ -22,7 +22,8 @@ It links the detailed maps rather than replacing their build and timing limits.
 | Did active resource reads explain the decoder shortfall? | [Same-clip telemetry-removal control](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control) |
 | Did an additional memory request improve the single-session result? | [Completed ICC control](radio-stream-map.md#completed-single-session-memory-vote-control) |
 | Is compressed-input copying consuming the missing frame time? | [Measured copy/QBUF boundaries](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost) |
-| Is the retained lower-rate clip a measured improvement? | [Prepared, unrun workload and header differences](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run) |
+| Does the lower-rate workload reach 90 Hz? | [Completed 208 and metadata-only control](codec-stream-options.md#retained-lower-rate-workload-completed-hardware-test) |
+| Does the installed driver expose an unused throughput setting? | [Arrival-rate estimator, supported decoder request and control table](receiver-stream-map.md#installed-decoder-arrival-rate-and-control-boundary) |
 | What caused the long captured image jumps? | [Shared-texture ownership](pc-texture-handoff.md) and [receiver repair ordering](receiver-stream-map.md#packet-receive-repair-and-ordering) |
 
 ## Recent completed outcomes
@@ -173,6 +174,30 @@ timing, direct stream start resumed the existing normal host session; this was
 not a fresh helper restart. No native game smoothness pass or permanent decoder/
 cache-policy change follows.
 
+## Completed lower-rate and metadata-only workloads
+
+Both later isolated jobs use the same original native decoder binary and
+1664 x 6656 Main10 geometry. All 900 identities decode and drain. Independent
+replays count the same 898 identity intervals, IDs 2--899:
+
+| Completed case | Credited bytes / window seconds | Output Hz / coded Mbps | Result |
+| --- | --- | --- | --- |
+| Retained208 | 259,385,846 /9.974301297 | 90.031369 /208.043321 | Capacity criterion passes; cadence fails, including nine IDR-phase gaps |
+| Same 208 payload with 350 VPS/SPS | 259,385,855 /9.972279170 | 90.049625 /208.085514 | Capacity passes; cadence still fails; combined metadata does not reproduce 74.5 Hz |
+
+The metadata control preserves every VCL/AUD/SEI/PPS byte, validates compatible
+picture-timing SEI and matches all 90 software-decoded picture/time hashes. It
+changes level/HRD declarations together, not their individual effects. There
+is no hardware pixel or physical-display validation, quality equivalence to the
+350 workload, or native useful 350 result. Both jobs resumed normal streaming;
+their software cleanup is verified. See the [comparison and limits](codec-stream-options.md#same-coded-pictures-with-the-heavier-clips-metadata).
+
+The installed-driver audit separately finds actual QBUF-arrival-rate estimation,
+a byte-sensitive frequency model overridden by a 600 MHz decoder request, and
+five public HEVC controls without a verified unused throughput setter. A PC
+encoder-capability query is included only with its unverified source/build
+binding caveat and zero-frame status; it is not codec acceptance evidence.
+
 ## Controls that remain untested or incomplete
 
 - **Coherent350v2 reliability and useful-rate filling:** the modern result above
@@ -186,10 +211,12 @@ cache-policy change follows.
   tests and bounded live attempts now exist, but neither successful branch
   execution nor improved reliability is established. See the [proof](receiver-stream-map.md#timed-prefix-mitigation-offline-evidence-only)
   and [later transaction/live limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts).
-- **Full-resolution multipass at fixed350:** a source-only derivative retains
-  the current tuple, Main10 geometry and QP map. It has not been built, tested
-  natively, ABI-registered or deployed at this cutoff. Accepted configuration,
-  allocation, latency and image quality remain future measurements.
+- **Full-resolution multipass at fixed350:** the separate derivative now passes
+  offline native/managed tests and has an exact-hash read-only observer sibling.
+  It retains the 350M/402.5M/4,472,222 tuple, Main10 geometry and QP map, requesting
+  packed 14 / native full-pass enum 2. No live load, hardware acceptance, allocation,
+  latency or quality result exists. The separate runtime chain is still under
+  review and is outside this publication cutoff.
 - **Further current-geometry multistream work:** the completed 350-Mbps
   comparison above found no 90-Hz gain. Its 400-Mbps plan remains unexecuted;
   native foveation/quality equivalence and a sustainable multistream renderer
@@ -197,11 +224,10 @@ cache-policy change follows.
 - **Matched ICC observation control:** the completed added-vote job above supplies
   a measured null result. A no-vote active job with its newer FD/G_FMT/DDR
   observation profile has not run; the old sparse-telemetry control is different.
-- **Retained lower-rate workload:** the 208.075080-Mbps clip is separately
-  packaged and CPU-validated with 10 focused tests. Its fixed-single-clip runtime
-  has 15 dedicated tests within 76 passing harness tests, but has not executed
-  on the headset. Emitted level and HRD values differ from the selected350 clip;
-  it is not a pure byte-rate control. See the [header comparison](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run).
+- **Remaining workload controls:** the completed 208 and metadata control above
+  narrow the metadata explanation but do not isolate residual/prediction cost,
+  firmware service, allocation or userspace pickup. Proposed display-order or
+  allocation parity experiments have not run at this cutoff.
 - **HFI command publication and firmware response readiness:** useful missing
   boundaries. Verified existing events do not expose those times. Additional
   graph/probe instrumentation is not declared safe or ready by static support.
@@ -233,12 +259,13 @@ Raw proprietary binaries, decompiler listings, authentication material, personal
 logs and operational captures are excluded. No app release or experimental
 runtime control is shipped by this documentation publication.
 
-This update includes completed current-geometry preparation, decoder comparisons,
-telemetry-removal and additional-memory-request controls, copy/QBUF observation,
-independent source/resource audits and final normal-stream restoration. The
-preceding scoped retry attempts remain failed. The full-pass derivative is still
-source-only and the retained208 hardware workload is unrun; neither acquires a
-performance claim from this publication.
+This update adds completed retained 208 and same-VCL metadata-control jobs,
+independent replays, the installed decoder rate/control audit, a caveated PC
+capability query and the offline full-pass build. Historical preparation freezes
+retain their original unrun status; separate later receipts establish completion
+where it actually occurred. The full-pass runtime remains unrun. Earlier scoped
+retry attempts remain failed, and no steady smooth native useful 350 result is
+established by this publication.
 
 ## Private evidence provenance
 
@@ -449,7 +476,7 @@ receipt is separate evidence; historical manifests were not rewritten as results
 | `RepairTrial/decoder350-resource-control.json` | `5d5eb5d90a8c094390dde71733939723f7af5c310af4c52434874e83fe0fcf30` |
 | `RepairTrial/decoder350-resource-control.py` | `4662f4365282de380b0ca41f538f3bb56e8eda26f054aef0e086ba65a1a6a961` |
 
-### Completed ICC and copy-timing follow-ups; unrun retained208
+### Completed ICC and copy-timing follow-ups; retained208 preparation checkpoint
 
 Version two of the ICC coordinator was prepared after fixing canonical native-
 receiver detection, passed 61 offline tests and then ran the recorded workload.
@@ -465,7 +492,8 @@ They reaggregate recorded identities/bytes/times and verify source or resource
 binding. The retained208 `verify.py` rereads the separately frozen package; its
 software-decode receipt and parameter-set comparison do not constitute a headset
 run. Ten preparation tests and the 15 dedicated/76 total runtime tests passed.
-No retained208 runtime result exists at this cutoff.
+At that earlier preparation checkpoint no retained208 runtime result existed.
+The completed jobs below supersede that status without rewriting their freezes.
 
 | Retained private evidence | SHA-256 |
 | --- | --- |
@@ -504,3 +532,69 @@ No retained208 runtime result exists at this cutoff.
 | `HEVC/current-geometry-lab/prepared-one-rate208/verify.py` | `cdbbede4aa0b24dec97a6889218237d3bd666afa8762f9fc72348bc13ee8340b` |
 | `HEVC/current-geometry-lab/retained208-runtime-freeze.json` | `20a6235f2d9fb0fa895c085d71c928f2ced03651e106ee7971fb787c79f67ce0` |
 | `HEVC/current-geometry-lab/retained208-runtime-contract.md` | `d6eae59f1e86df592db5f47645afa7a3b22da224ccafdb0fe86b911be8ed0bb7` |
+
+
+### Completed 208 and metadata controls; offline full-pass build
+
+The retained208 and metadata208 preparation/runtime freezes still state their
+historical pre-run status. Later job receipts and restoration records establish
+the completed experiments; those frozen source records are not rewritten.
+Independent local replays are `analyze_decoder208_vs350.py` and
+`analyze_metadata208_vs_original.py`. They validate pinned clip framing, callback
+identities, byte accounting, source/package hashes and cleanup. Six focused
+analysis tests reject malformed identities/geometry and verify phase alignment;
+the metadata package also has independent parameter/SEI/pixel-hash checks.
+
+The exact installed-driver audit binds 28 private sources. Its source addresses
+and capability/clock findings are summarized in original prose; its disassembly
+and binaries are not published. The PC caps receipt explicitly records that the
+source-to-binary build binding was not verified and no frame was encoded.
+
+For Fullv1, the old source-preparation manifest/diff above remain unchanged.
+The new build receipt binds 28 historical sources, toolchain and binaries, mock
+NVENC tests and native/managed readback checks. It preserves the old 350v2 and
+observer files and the existing dirty app files. No live trial is claimed.
+The separate fullpass runtime chain remains under review and is intentionally
+outside this cutoff. A digest identifies evidence, not hardware acceptance.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `HEVC/current-geometry-lab/decoder208-one-1.json` | `fe79546718f62400d093437efd73929883157fa611d65f0959d83779f0bc9b8e` |
+| `HEVC/current-geometry-lab/decoder208-vs350-independent.json` | `e69b59117191271b6b188e156ee9e806f3ec0e5a3fbddc28f856da31003b3d16` |
+| `HEVC/current-geometry-lab/decoder208-vs350-independent.md` | `889982ac8d577c7bb2cf32c34ff36024cf7c472716f37b9106aa2910051480e5` |
+| `HEVC/current-geometry-lab/analyze_decoder208_vs350.py` | `969f1c48776c2f476d393ff91259a23f0dd31c057b1378ab26a531244a3b8743` |
+| `HEVC/current-geometry-lab/runtime-coordination-retained208-1.json` | `6e3ca95ab971ee4a5d83f3e3c632ecb3eac2d2e4091e0c0f2a2f437a6da46cd0` |
+| `HEVC/current-geometry-lab/retained208_job.py` | `87dd20018c5e49a9575baf48e882b442ed7d558f74afcdd9e184bc07f068eef7` |
+| `HEVC/current-geometry-lab/run_retained208_case.py` | `e0836783fb84ac826f39ea85bba0c512a29d7012534008c10cde01875deed36e` |
+| `HEVC/current-geometry-lab/decoder208-meta350-one-1.json` | `35942e1ea0612a0aacc7dcfc9d91d1c413550c04c7efc1f3c4c71dffac7aa5c6` |
+| `HEVC/current-geometry-lab/metadata208-runtime-independent.json` | `1394e5b1faae6c82a6c68fab6344417ca85c16a3fe2efaff05fb0200c3da135e` |
+| `HEVC/current-geometry-lab/metadata208-runtime-independent.md` | `b20fd67a98dd5a87519462c02c3e6004ee0c98698fb8205c5b07b7ab7e608d5e` |
+| `HEVC/current-geometry-lab/analyze_metadata208_vs_original.py` | `29b9081e239ba0965cd6ac801b7c92fe4b6df63f63fccd61275cbf7ff5f71bdc` |
+| `HEVC/current-geometry-lab/runtime-coordination-metadata208-1.json` | `4a293e59e1ffbf7100c013cdb95bea862b335d1c2e4e27cc9de2783a0b7eae1c` |
+| `HEVC/current-geometry-lab/metadata208-runtime-freeze.json` | `2ba1b3671489c84072dfb534131cbe4ed512c451c8901b28b9deb3e0a294f12b` |
+| `HEVC/current-geometry-lab/metadata208-runtime-contract.md` | `744c472c61b11deaeb89257500cba9570e591e6697761072a52337e58371cf2d` |
+| `HEVC/current-geometry-lab/metadata208_job.py` | `65eb73b094b3374749d39720e93c8e8f0c79c4a32ecdd7ede892cd6d99d92b20` |
+| `HEVC/current-geometry-lab/run_metadata208_case.py` | `84957ba31ccec078e9d1058f3caf77a6a21db968037f4d55ca98ded4806d2f4e` |
+| `HEVC/current-geometry-lab/prepared-one-rate208-meta350/freeze.json` | `3f106cd0a277c876bd7b171ea9246f70a07b1e297f119039d21ab3609c61874f` |
+| `HEVC/current-geometry-lab/prepared-one-rate208-meta350/manifest.json` | `e1a74f2660cc69e5a7bc68d8b5659aec8b7ff15a4987e0f24b7b77d0713cb60f` |
+| `HEVC/current-geometry-lab/prepared-one-rate208-meta350/preparation-report.json` | `2a56d5adc8b97cd0a15d6c551acf890823c8f5ed79de4ae3d295a902ff29fca4` |
+| `HEVC/current-geometry-lab/prepared-one-rate208-meta350/software-decode-receipts.json` | `1fc261f055418048e6f0dc18d2e2ec69202b872d746c5213ab950f8bf5160d06` |
+| `HEVC/current-geometry-lab/prepared-one-rate208-meta350/prepare.py` | `153f80f380ae77992541c337bdb65e2cc27126906d4e627d37b402c0443b64a5` |
+| `HEVC/current-geometry-lab/prepared-one-rate208-meta350/verify.py` | `1712925de09822c3122ad5f67dd5c8b452118df312b37071674279241e66fb88` |
+| `HEVC/current-geometry-lab/pc-codec-caps-current.json` | `5d0fd537b6872cca32f6bf1eb877c80d651d3881593fdce613948a827dc5d0d6` |
+| `RepairTrial/iris-installed/decoder-rate-policy-audit/README.md` | `d63dfe44754e699faa1939c0d6286c5dbf8834f1e9eb6cfcbd659087bcdb4656` |
+| `RepairTrial/iris-installed/decoder-rate-policy-audit/evidence.json` | `6490d5e1c203e091d53c0843e88f59cbda5e2dbfd8ac2a8bc177080f94c48a7d` |
+| `RepairTrial/iris-installed/decoder-rate-policy-audit/audit.py` | `de88c3bf53652b0af45849004444aed9af8f532a4b50db7e37d40363bea2eccd` |
+| `RepairTrial/iris-installed/decoder-rate-policy-audit/clock-binding-inventory.json` | `147563a68fce2e3c568a50cdb28c056d0171b91d4bbbc682b17763b573bf1baf` |
+| `RadioTrace/Coherent350Fullv1/build-receipt.json` | `72074f03a9c4ff60c0585d8de9f5e2d45757cf1b3d43cea752a35c7ba90924db` |
+| `RadioTrace/Coherent350Fullv1/source-manifest.json` | `6e1af00f6c6e55a322628d6ae13fd8cb3b9eca7170192c9472cf9afe4d29c0da` |
+| `RadioTrace/Coherent350Fullv1/source-diff.patch` | `0ed8a24aab4b9c7e25674f65893fa09d13d158007f265bf8c4074b83d010db1b` |
+| `RadioTrace/Coherent350Fullv1/toolchain.json` | `54a6011ae4126cea27a2abf5f0a3a6de2b94d181e22b8c45595e23691608956f` |
+| `RadioTrace/Coherent350Fullv1/output-manifest.json` | `976a3a4d33ce511afbcce0f5dc4eec210f0becb49a10868af50d35850f38c28b` |
+| `RadioTrace/Coherent350Fullv1/passive-abi-check.json` | `ad4ecceb2926684b70c523a802a6b30a115dcbc5a74574bb1c15fb236b140d31` |
+| `RadioTrace/Coherent350Fullv1/native-path-check.json` | `1dd15c302bceecd63ad54ef67bb8132b9882ccf6e0fe912608ce7cbc44954af0` |
+| `RadioTrace/Coherent350Fullv1/test_fullpass_observer.py` | `c88c1b840f4a12ad69293e6f8399573fd3dde29acec356fcaad5b5311270d4fc` |
+| `RadioTrace/Coherent350Fullv1/observer-registry.diff` | `991f2f90c9c802a8faebf70f6c9a112b2e5b3563c51df5223e859468ac196f89` |
+| `RadioTrace/Coherent350Fullv1/README.md` | `52b5a3d5bdc7c7ef888d0cdd7975310ee3d5d8e39c81ddb5cc261a80f0236dd5` |
+| `RadioTrace/Coherent350Fullv1/integration-review.md` | `d1ca486e190b356d8ce23be9922167f6d08535fa74af5867168753964d0b79d8` |
+| `RepairTrial/host_queue_observer_fullpass.py` | `79ec6cfdfbee8e48fb60f4dc457d0fb687738483a15aa238b1d9a846c614829e` |

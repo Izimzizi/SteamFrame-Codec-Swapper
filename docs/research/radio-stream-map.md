@@ -843,3 +843,29 @@ runtime PM was suspended, the watchdog exited cleanly and no new taint bits
 appeared. The bounded kernel record contains activation, release and exit only.
 This verifies software cleanup, not opaque firmware-state restoration. The
 observed run used ordinary removal; expiry was not its primary cleanup path.
+
+## Supported decoder clocks and the later workload control
+
+The [installed-policy audit](receiver-stream-map.md#installed-decoder-arrival-rate-and-control-boundary)
+binds the OPP clock-name relocation to `vcodec0_core`. Its supported table is
+196, 300, 380, 435, 480, 533.333334 and 600 MHz. The saved clock tree maps this to
+`video_cc_mvs0_clk`; the 900-MHz `video_cc_mvs0c_clk` is the separate `core`
+branch. They are not contradictory readings of one clock. The ordinary decoder
+branch explicitly requests 600 MHz even though an earlier frequency model includes
+coded-byte load. No higher supported OPP or safe clock/thermal bypass is
+established by these sources.
+
+The bandwidth table is separate: it uses geometry, observed arrival rate and
+output format, not the maximum compressed input extent used by that frequency
+model. Its arrival rate follows actual nonempty OUTPUT queue time after 30
+intervals, not buffer frame timestamps. The completed added-vote control still
+provides no material mean gain; framework clocks and consumer requests do not
+measure delivered NoC/DDR bandwidth or firmware occupancy.
+
+The later retained 208 and metadata-only 208 jobs reached 90.031369 and 90.049625
+output Hz with the same one-session geometry. Their sparse active samples also
+report 600 MHz, force 0 and 1,608,000 kB/s video requests. Changing only VPS/SPS to
+the heavier clip's level/HRD declarations did not reproduce its 74.5-Hz result.
+These isolated jobs contain no wireless transport; the workload dependence
+cannot be assigned to a radio limit. Their IDR callback gaps, different sampled
+temperatures and lack of hardware service clocks remain explicit limits.

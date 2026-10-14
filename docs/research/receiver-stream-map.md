@@ -1898,5 +1898,92 @@ changing cache policy, bypassing synchronization or converting buffer ownership.
 The job terminated and the filtered process/resource check showed absence and
 runtime suspend. That is weaker than the memory-vote coordinator's separate
 global FD check and is not a firmware-destruction acknowledgement. The
-[lower-rate clip](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run)
-is prepared but unrun; it changes level/HRD metadata as well as coded workload.
+[lower-rate clip](codec-stream-options.md#retained-lower-rate-workload-completed-hardware-test)
+and its metadata-only follow-up have since completed, as described below.
+
+## Lower coded workload and the metadata-only control
+
+The isolated one-session decoder now has three relevant completed inputs under
+the same original native binary, Main10 visible 1664 x 6656 geometry, four slices,
+twenty capture buffers and 90-Hz input pacing. All 900 identities completed and
+drained in each. Rates use the same 898 identity intervals, IDs 2--899:
+
+| Input | Coded bytes / seconds | Output Hz | Coded Mbps | Harness outcome |
+| --- | --- | ---: | ---: | --- |
+| Calibrated350 workload | 438,073,321 /12.054588352 | 74.494456 | 290.726358 | Capacity and cadence fail |
+| Retained208 workload | 259,385,846 /9.974301297 | 90.031369 | 208.043321 | Capacity passes; cadence fails; display untested |
+| Same208 VCL, donor350 VPS/SPS | 259,385,855 /9.972279170 | 90.049625 | 208.085514 | Capacity passes; cadence fails; display untested |
+
+The 208 comparison rules out a universal 74.5-Hz bound for every tested picture
+at this geometry. It does not demonstrate 350 useful Mbps or equal quality.
+The [metadata control](codec-stream-options.md#same-coded-pictures-with-the-heavier-clips-metadata)
+preserves every VCL/AUD/SEI/PPS byte and all 90 software-decoded frame hashes;
+compatible picture-timing SEI syntax was checked before replacing VPS/SPS.
+The combined higher level/HRD declarations did not make that payload slow like
+the 350 workload. This weakens the metadata-only explanation without identifying
+a hardware decoder, entropy stage or firmware throttle as the remaining cause.
+
+Balanced IDs 90--899 give nine cycles per input. Both 208 cases have exactly nine
+intervals above 13.8889 ms, all at the IDR source phase. Original 208 spans
+19.491--20.525 ms, followed by 4.715--4.790 ms; the metadata variant spans
+19.293--19.566 ms, followed by 4.741--5.082 ms. Their cycles are approximately one
+second, while the 350 cycles are about 1.208 seconds and have 253/810 late intervals
+spread across phases. A mean near 90 Hz therefore does not erase the phase-locked
+tail or prove smooth presentation. These are dequeue callback observations,
+not firmware-ready or physical-display timestamps.
+
+The loop's 2 ms readiness-interruptible poll and 200-microsecond sleep were unchanged;
+their configured durations are not measured scheduling latency. Matching Iris
+response events to callbacks would locate service delays more closely if needed.
+Sparse active samples still report 600 MHz with force 0 and the 1,608,000 kB/s video
+request. Different temperatures and sample counts are documented, not treated
+as a matched thermal or observer-cost control. Both later jobs reaped their
+child, found the owned decoder absent/runtime suspended and resumed normal
+Main10 streaming. This is software cleanup evidence, not firmware destruction
+or hardware pixel validation.
+
+## Installed decoder arrival-rate and control boundary
+
+An offline audit of the exact installed Iris module closes several Linux-policy
+questions. The nonempty OUTPUT vb2 callback samples `ktime_get` at 0x5064, converts
+to microseconds and calls the arrival-rate updater at 0x50E8. The updater at
+0x147E8 uses at least 30 intervals to compute rounded actual arrival FPS and stores
+16.16 rate in capability 5. It uses kernel queue-arrival time, **not** the user's
+frame timestamp. The initial value is 30 FPS. This helps explain why runtime
+multi-session votes differed from a default-rate preflight model; it does not
+retroactively measure that internal field in prior captures.
+
+The driver does consider compressed-byte load: it carries `bytesused-data_offset`
+into each input buffer, scans the maximum input extent, and passes it to the
+decoder frequency model. That model includes estimated FPS, picture blocks,
+PIPE and an entropy-state-dependent byte term. However, the actual decoder
+branch at 0x147B0--0x147BC replaces the model's accumulated estimate with a
+600,000,000-Hz request before the OPP setter. The available table tops out at
+600 MHz. Lower coded bytes therefore do not lower this ordinary decoder request
+through the model on the traced path. Supported requests and framework readback
+remain distinct from hardware occupancy or delivered service.
+
+The exact HEVC decoder capability table exposes only these nonzero public IDs:
+
+| V4L2 ID | Meaning | Evidence boundary |
+| ---: | --- | --- |
+| 10029927 | HEVC profile | Syntax metadata; cannot convert an existing Main10 payload to Main8 |
+| 10029928 | HEVC level | Not an established throughput override |
+| 10029930 | HEVC tier | Not an established scheduling or clock override |
+| 10029966 | Display-delay enable | Together with delay, adjusts internal output-order capability 22 |
+| 10029965 | Display delay | Same output-order dependency |
+
+Decoder S_PARM/G_PARM return EINVAL on this interface; operating rate, session
+priority, throughput mode, STAGE, PIPE and slice-parallelism have no registered
+public setter in this table. Internal STAGE 2 / PIPE 4 requests are not proof of
+four independent engines. Tiles/WPP are encoded syntax, not an exposed switch
+that can safely relabel incompatible slice payloads.
+
+Native initialization already attempts display-delay-enable 1 and delay 0, while
+the lab omits those requests. Historical native logs recorded rejection, so
+source intent is not acceptance. A future lab parity control needs query/set/
+readback and preserved errors; it is not a newly discovered unused native boost.
+Input `sizeimage` is allocation capacity derived from geometry/codec, not a
+proven Mbps cap. Allocation and queue differences remain possible controls,
+but no such new runtime experiment is included here. The audit identifies no
+justified clock/voltage, bit-depth relabel or firmware-priority change.

@@ -91,9 +91,19 @@ A separate [input-copy/QBUF observation](receiver-stream-map.md#measured-compres
 found mean synchronous costs of 0.044453 and 0.020230 ms versus 13.424729 ms mean
 callback spacing. Those measured operations cannot explain most of the mean
 deficit in that run; the result does not identify hardware decoding as its cause.
-A [retained 208.075080-Mbps workload](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run)
-is validated and packaged but **has not run on the headset**. It changes codec
-level/HRD signaling as well as coded workload. No new release or permanent
+A [retained 208.075080-Mbps workload](codec-stream-options.md#retained-lower-rate-workload-completed-hardware-test)
+has now completed at **90.031369 Hz / 208.043321 coded Mbps**. A second control
+replaced only its VPS/SPS with the 350-Mbps clip's parameter sets, preserving
+all coded pictures and software-decoded pixels. It reached **90.049625 Hz /
+208.085514 Mbps**. The combined level/HRD metadata change did not reproduce
+the heavier clip's 74.5-Hz result. Both 208-Mbps runs retain nine roughly
+19--21-ms IDR callback gaps; average throughput is not smooth presentation.
+
+The [installed decoder policy audit](receiver-stream-map.md#installed-decoder-arrival-rate-and-control-boundary)
+finds an actual input-arrival-rate estimator and a byte-sensitive frequency
+model, followed by an explicit 600-MHz supported decoder request. No verified
+unused public throughput override was found. This does not identify firmware
+service time or a universal hardware ceiling. No new release or permanent
 runtime change follows from this research.
 
 ## Current connected reference
@@ -179,9 +189,9 @@ driver's ordinary resource requests.
 
 The timed-prefix backend now has transaction tests and a short live application/
 restoration canary, rather than only an offline model. Neither proves successful
-branch execution or recovery. A [full-resolution multipass derivative](host-stream-map.md#underfill-readback-and-a-source-only-full-pass-discriminator)
-is prepared as source only at this cutoff; no build, acceptance or performance
-claim is attached to it.
+branch execution or recovery. A [full-resolution multipass derivative](host-stream-map.md#underfill-readback-and-an-offline-built-full-pass-discriminator)
+has now passed an offline build and mock-API tests; hardware acceptance and
+performance remain untested.
 
 The earlier cross-slice-filter screen verified that the requested codec change
 reached the actual emitted PPS, but still triggered the fixed-400
