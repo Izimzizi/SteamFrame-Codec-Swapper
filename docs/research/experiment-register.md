@@ -14,7 +14,7 @@ It links the detailed maps rather than replacing their build and timing limits.
 | What happened when the timed-prefix change was tried? | [Guarded transaction and live attempt limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts), plus [startup/counter separation](host-stream-map.md#retry-prefix-attempt-startup-failure-precedes-the-counter-window) |
 | Did full-resolution multipass fill the missing useful bits? | [Accepted configuration, persistent underfill and latency failure](host-stream-map.md#full-resolution-multipass-measured-underfill-and-latency-failure) |
 | Does the low original budget throttle packets after an override? | [Bounded consumer audit and separate transport controls](host-stream-map.md#original-budget-labels-and-independent-transport-controls) |
-| Could H.264 retain the current area with square packing? | [Existing layout, quality-map blockers and untested codec requirements](codec-stream-options.md#existing-square-packing-a-static-implementation-path) |
+| Could H.264 retain the current area with square packing? | [Completed isolated CAVLC test](codec-stream-options.md#full-area-square-h264-isolated-cavlc-capacity-and-cadence-pass) and [native startup limits](codec-stream-options.md#native-square-prototype-functional-startup-not-steady-350-mbps) |
 | Why did the signed timer repair still permit an overflow? | [Reused-slot publication and timed request capacity](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization) |
 | What did the latest minimum-CU change actually do? | [Accepted request, emitted SPS and failed cadence](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed) |
 | Do mutexes, PM or IRQ dispatch explain the receiver backlog? | [Matched thirteen-event observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans) |
@@ -106,6 +106,54 @@ bounded reconnect/restore/restart sequence and offline failure tests. The
 measured second attempt restored normal Main10/target 400 Mbps, original receiver
 instructions, all-thread detachment and activity state. These local coordinator
 changes and experimental helpers remain private and unreleased.
+
+## Full-area H.264 square comparison and native startup trials
+
+The [square comparison](codec-stream-options.md#full-area-square-h264-isolated-cavlc-capacity-and-cadence-pass)
+preserves total pixel area at 3328 x 3328, with an independently reversible
+rearrangement of a deterministic 1664 x 6656 8-bit source. Calibration clips
+share exact source hashes, but their compressed pictures and decoded quality
+are not identical. All selected access units were syntax-checked and software
+decoded. An emitted six-picture DPB bound was refused before a separately
+preserved explicit-DPB-three preparation succeeded. No failed preparation is
+counted as a hardware capacity test.
+
+| Completed step | Window / result | Evidence boundary |
+| --- | --- | --- |
+| Linear-output CABAC and CAVLC canaries | 90/90 pictures each; first-picture golden matches | Each clip has its own software golden; not whole-stream hardware pixel proof. |
+| Isolated CABAC capacity | 10.107757385 s, 346.819546 coded Mbps / 88.842655 FPS | All 900 identities; 298 input deadline misses; capacity/input pacing failed. |
+| Isolated CAVLC capacity | 9.978136518 s, 350.173213 coded Mbps / 89.996764 FPS | All 900 identities; zero input deadline misses; callback p99 13.497225 ms, declared capacity/cadence passed. No panel test. |
+| Standalone native-bridge GPU syntax canary | 90 accepted pictures; 4.476328 actual coded Mbps | Proved CAVLC, four slices, DPB/VUI bound three and no reorder on simple content; not a high-rate workload. |
+| Native square 150-Mbps functional canary | Bounded progress, 399 encode calls / 401 completed locks | Counter baseline precedes the reported timer's observer gap; no bitrate/FPS derived. Accepted square policy and capture allocation 16, without independent image/presentation proof. |
+| Two fresh native 350-Mbps starts | Seven completed locks each before abort | Receiver recovery/reset during startup; no throughput window and zero recorded NVENC errors. |
+| Native v2 warmup then planned ramp | Ten locks at 150-Mbps request before abort | Ramp to 350 and AU dump never invoked. Startup failure, not a fixed 350-Mbps result. |
+| Restored normal HEVC reference | 20.463580300 s, 240.007320 useful Mbps / 89.818105 FPS | Requested 400, adaptive mean target 238.157 Mbps; one presentation timeout, no captured reset/texture/API failure. |
+
+The isolated capacity windows credit IDs 2--899 between callbacks 1 and 899,
+using actual AU bytes: 438,195,978 for CABAC and 436,759,516 for CAVLC. Source
+rates are 351.286312 and 350.060160 Mbps respectively. A sequential pair does
+not isolate entropy mode from all content/quality or environmental differences.
+Native 350-Mbps trials are VBR/no-multipass with the quality map disabled, not the
+normal Main10 CBR/quarter-pass representation. All completed native attempts
+ended their candidate hosts, closed receiver leases and restored normal HEVC.
+
+The installed startup watchdog uses OUTPUT/CAPTURE return-progress clocks
+initialized before first input, with 330-ms recovery and 800-ms reset thresholds.
+In the v2 failure, a reset follows the first source event by only 28.775 ms.
+This supports startup-age investigation; missing first-QBUF/return clocks and
+unmeasured AU-capture overhead prevent complete causal attribution. An actual
+native IDR AU was not retrieved. Neither watchdog thresholds nor failure guards
+were relaxed for a throughput pass.
+
+The normal reference reconciles three different measurements: encoded video
+240.007320 decimal Mbps; mean rolling Waterfall 291.487297 Mib/s = 305.646584
+decimal Mbps; interface RX 319.722220 Mbps over 19.997518 seconds. The Waterfall
+video/parity counters average 239.105753/54.639470 Mbps, with second parity active
+in 17/21 samples. All 21 sampled targets match 400 times queue factor times ping
+factor within 0.000014 Mbps; ping factor stays one. Endpoints confirm accepted
+normal policy, but there is no continuous effective-RC readback. Window/layer
+differences prohibit attributing the whole residual to radio retries or headers.
+No native result with 350 Mbps of useful video or sustained smoothness is established.
 
 ## Completed current-geometry decoder comparison
 
@@ -251,6 +299,11 @@ the measured result rather than being replaced by its near-90 average cadence.
   comparison above found no 90-Hz gain. Its 400-Mbps plan remains unexecuted;
   native foveation/quality equivalence and a sustainable multistream renderer
   remain unproved.
+- **Square native CAVLC integration:** isolated full-area capacity/callback
+  cadence passed and a short native 150-Mbps functional canary exists. Native
+  350-Mbps startups and the later warmup aborted before measurement. Startup
+  clock ownership, native emitted-header retrieval, quality mapping, complete
+  image reconstruction and sustained presentation remain incomplete.
 - **Matched ICC observation control:** the completed added-vote job above supplies
   a measured null result. A no-vote active job with its newer FD/G_FMT/DDR
   observation profile has not run; the old sparse-telemetry control is different.
@@ -289,9 +342,11 @@ Raw proprietary binaries, decompiler listings, authentication material, personal
 logs and operational captures are excluded. No app release or experimental
 runtime control is shipped by this documentation publication.
 
-This update extends the previous 208/metadata and offline-build cutoff with
-both native full-pass attempts, the reviewed CLI/passive interface correction,
-independent outcome replays and bounded budget/layout audits. Historical
+This update extends the full-pass and static-layout cutoff with actual square
+H.264 preparation/decoder comparisons, the private native bridge and bounded
+functional/startup outcomes, a source-backed startup-watchdog analysis, and
+normal HEVC video/controller/FEC accounting. The earlier full-pass outcomes,
+CLI/passive interface correction and budget/layout audits remain retained. Historical
 preparation freezes retain their original unrun status; later receipts supply
 actual acceptance, measurement and cleanup evidence. Earlier scoped retry
 attempts remain failed. No steady smooth native useful 350-Mbps result is
@@ -684,3 +739,71 @@ raw captures or installed-code extracts are included in this publication.
 | `RepairTrial/square-layout-audit/audit.py` | `5dd5f04e6c1832c22651b3bdb9bb04a757018a5d7b963ce2fc20291bbde2c419` |
 | `RepairTrial/square-layout-audit/layout_model.py` | `22055c49ac28eec0c9b9c0c5a0ea75238ca1c3e7103015f5db583fb3a11d9bc0` |
 | `RepairTrial/square-layout-audit/test_layout_model.py` | `66a8d09750a0d68173ec5b1968a0f8534ad2538c9ef170201d8a89a52693530a` |
+
+### Full-area square H.264 and native startup evidence
+
+Preparation receipts preserve the two failed attempts separately from the
+successful calibrated clips. The selected manifest, actual software/header
+checks and native build are bound independently from the four device jobs.
+The first NV12 picture is golden-checked in canaries; compressed-output capacity
+results do not constitute whole-stream pixel or display validation.
+
+Native bridge source/build freezes are separate from its GPU syntax test and
+SteamVR trials. The first native attempts stopped on setup/observer issues;
+the third 150-Mbps attempt establishes only bounded functional progress. Its counter
+baseline and timer do not cover identical windows, so no rate is inferred.
+Later 350-Mbps and v2 attempts establish startup failures and verified restoration,
+not high-rate native measurement. The v2 capture/ramp source passed offline
+checks but its live warmup did not reach either action.
+
+The normal reference report recomputes counter deltas, binary/decimal units,
+controller factors and adaptive parity from saved evidence. It does not assign
+all interface residual traffic to a single cause. The private reports retain
+full identities and raw logs; only original explanations and their digests are
+published here. No runtime scripts, codec payloads or proprietary extracts
+are included.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `H264/square-350-lab/prepare-350-1-coordination.json` | `16204002d897b2d8a6b4663ca44f7a247256eeec31240dc9566271bed3a08eed` |
+| `H264/square-350-lab/prepare-350-2-coordination.json` | `3663d74b843a961f202e86b1d7de659bfdf19757764824194dca83fb158b4797` |
+| `H264/square-350-lab/prepare-350-3-coordination.json` | `bcbee3764b0137940421558df950db0e82ab399cb355f081b64fbb033a4e6651` |
+| `H264/square-350-lab/prepared-350-3/manifest.json` | `3f7be637507722b2347a950000810012f112fbecf89f5cec4d8704f771cb6753` |
+| `H264/square-350-lab/prepared-350-3/command-receipts.json` | `05a6d4cdfd263d42e96209c8c31192b4ba3e75027fcb0ea1d4ad91a649aa5f15` |
+| `H264/square-350-lab/review/prepared-350-3-independent-audit.json` | `532fcab4d47b78919b1d75ce6fb966e5ffd82f5ef24f143428f4fb8dfd73953a` |
+| `H264/square-350-lab/review/audit_prepared350_3.py` | `25e580800ba389c43fc868669c0b7acf41495ca56a0ad7a6ef46bf18a5e13942` |
+| `H264/square-350-lab/runtime/runtime-freeze-v1.json` | `3ef2aee634578c28825eb2e5bc13090a048c2baf096177e7b1fbcc5897f9ecb5` |
+| `H264/square-350-lab/reviewed-binding-1.json` | `3a9d4131e0e1c15add0a310c8d9cd6409d5419cbc129dadeff0609c4affac619` |
+| `H264/square-350-lab/native-build-1.json` | `93891f5effca0ace94fa7d624a5e93bd7fc4e81fd36f1b1b2531e48453628842` |
+| `H264/square-350-lab/square-350-1-coordination.json` | `614268564dbd6f775954342db7347085dba27e4d0f82ee02c0dd8d66ebd38c70` |
+| `H264/square-350-lab/square-350-1-cabac-canary.json` | `6513d1007b35e6768b02a6d8e4b0fb5dc459a67497a9d949bac395591f963be3` |
+| `H264/square-350-lab/square-350-1-cabac-capacity.json` | `4244515a7e507ad44d16fc566121563fa7a08fd4bd48c9d5aa5d845325c4d901` |
+| `H264/square-350-lab/square-350-1-cavlc-canary.json` | `a17a1e70af5d68315f14b6b4aa4916fbe80e08188a3aefd8f736d2ff8716d22f` |
+| `H264/square-350-lab/square-350-1-cavlc-capacity.json` | `52352c3ea2408e9851008b18de956c7ef7b067da2d7186cbc72e71d3832645a3` |
+| `H264/square-350-lab/review/square-350-1-receiver-review.json` | `3f24dd140214c2266656936dcdb82ce8c28f01d95509b76a3bdabc8906b0403d` |
+| `H264/square-350-lab/review/square-350-1-receiver-review.md` | `9a7895d7e015a9786c8dcd23e8ad39733b29900b5c5eb20f8f10fd85005f75ff` |
+| `H264/square-350-lab/review/square-350-1-receiver-review.py` | `8faed73ffd52aa9a7118839bc40cfe285210352a43d7b19d514cd4e0cb75fa86` |
+| `H264/square-350-lab/native-plan/bridge/source-freeze-v1.json` | `33bbd7e31b80db2cd8ba5fbd87f8cb191361a12517ae960de3b96725bd031750` |
+| `H264/square-350-lab/native-plan/bridge/build-receipt.json` | `813b93733348962990dabf2c2a94f9193e94b5e54fab15ebc5e4beeed2c88056` |
+| `H264/square-350-lab/gpu-canary-150-1-coordination.json` | `68fb3c800fb9cb4c2594fe726eafb878f192068b8b4898d7f94a3ebb4fff8da4` |
+| `H264/square-350-lab/gpu-canary-150-1/validation/validation.json` | `f4cf23951bc7c201442e915e99aee8031f2d3d4ef211361dd0f1e472996f176b` |
+| `H264/square-350-lab/native-host-build-2/build-receipt.json` | `e8c8d18ce7f4e943bf60aba6f8af3d9f3f5ca04409a29e024bac306ff37278ef` |
+| `H264/square-350-lab/native-150-1-coordination.json` | `0039ed530ec3369d1836186bcda1e3543b7b9f2b9f08cd5ccd320b41c9b7ad00` |
+| `H264/square-350-lab/native-150-2-coordination.json` | `cf86c288f50672d17b8824b5d9614d79e06737b98a01cf707a7d54db6c5aa366` |
+| `H264/square-350-lab/native-150-3-coordination.json` | `2f8ec8fa9c0a2005f6dd847d3623da683087b4e66cd6d95f0b0e54cf0bf477b1` |
+| `H264/square-350-lab/native-350-1-coordination.json` | `f5c858913a88c4aef1806b6aee84114c9f6e2b4eecb0362197bcf2bfbd8a1fc7` |
+| `H264/square-350-lab/native-350-2-coordination.json` | `f2e15882ad2362f47492ddae89ee71476debb2b733f4eac3652dbe96f5656776` |
+| `H264/square-350-lab/review/native-startup-watchdog-plan.md` | `148485b5a2bf0d5a3b88289e52d7d4f32f3b465f1c6c30f20d361e90bde59b3b` |
+| `H264/square-350-lab/review/native-startup-watchdog-audit.json` | `3cdfda7c0bb11840ee930b6ad039437c29f6dba5feeb4ca246f47f18aae0d2e8` |
+| `H264/square-350-lab/native-plan/bridge-v2/source-freeze-v2.json` | `16a5650079a3531ba4bfa8968b4cef33faae37a104cc3c9c6b7e6676d067e52c` |
+| `H264/square-350-lab/native-host-build-3/build-receipt.json` | `119d1f10f3ad14191815317e3cb28479842feff5829e313da9bdac1486ea66c7` |
+| `H264/square-350-lab/review/native-v2-ramp-au-independent-review-v1.json` | `ce191d564850f82a9c406a7d2a5ae682cd7806b066d9eb21ba2124c894988908` |
+| `H264/square-350-lab/review/native-v2-coordinator-final-review.json` | `b2e231fb6b84460784750d84b82267d4e770fe08a77ad82617f15ff32ab4c0e2` |
+| `H264/square-350-lab/native-v2-350-1-coordination.json` | `5a4cb566fe0bed2ae46c145db1815d54cb92d0c1ade20e1bd85a342c2ffe714b` |
+| `H264/square-350-lab/review/native-v2-350-1-timing.json` | `89ecc1482f369926be7fe980e1111ac473c6e49930bcae0e143abf98afd93e21` |
+| `H264/square-350-lab/review/native-v2-350-1-timing.md` | `36e767edf14bcec334ef5cb58770313efd894d85f0a24495b2f6098a034f6905` |
+| `H264/square-350-lab/review/analyze_native_v2_350_1_timing.py` | `aecd17c829bd24a9087d8b467b67b1664c6fbdf6d7436ca0a7ea34534c2e4607` |
+| `H264/square-350-lab/normal-after-native-v2-1.json` | `49846c5eb08ed8990c8ec02628f2a01d64c2a02b400c26c792e4e49ef766daf8` |
+| `H264/square-350-lab/review/normal-after-native-v2-1-analysis.json` | `ef2cd1a41927a66dfd7130c18a7bb8d906912e48b198294e3cc27e5f1a98223e` |
+| `H264/square-350-lab/review/normal-after-native-v2-1-analysis.md` | `53e368a4d47f27ffedb6a23b7d8454e9116b6d43b48134ced28b6610252b3d5f` |
+| `H264/square-350-lab/review/analyze_normal_after_native_v2_1.py` | `8192fe34e497cbf53991bdda13a2be090e096c9503ec750776bc265c5da95b48` |

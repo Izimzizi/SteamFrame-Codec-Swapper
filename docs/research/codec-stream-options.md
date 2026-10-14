@@ -5,15 +5,17 @@ This is an offline audit of retained source and completed experiments through
 current native Main10/foveation representation and delivers steady useful
 350 Mbps with smooth pacing.** The existing game prototype is H.264; independent
 HEVC-session tests are local capacity experiments without a game renderer.
-No live change or new performance test was made for this audit.
+The later square-layout work now includes an isolated hardware comparison and
+bounded native startup trials. These remain private prototypes, not a release.
 
-## Three paths that must not be conflated
+## Four paths that must not be conflated
 
 | Path | Implemented representation | Established boundary |
 | --- | --- | --- |
 | Current native stream | One packed Main10 HEVC picture/session, currently 1664 x 6656; host requests four constrained slices | Slices are not independent decoder sessions. Emitted headers and request state are separate evidence. |
 | Existing game multistream prototype | Two or four H.264 sessions, public left/right SteamVR mirror textures, NV12 DMA-buffer composition and per-eye projection overlays | A different image/composition path, not a drop-in split of the native packed foveated frame. |
 | Local HEVC comparison | One/two/four stock V4L2 sessions decoding saved Main10 clips to QC10C | Measures local completion/pacing without network, game composition or panel presentation. |
+| New square H.264 path | One 3328 x 3328 8-bit picture, preserving the tall layout's pixel area | Isolated CAVLC capacity/callback cadence passed; native integration has only a short 150-Mbps functional canary, with later startup failures. |
 
 The game sender hard-codes H.264 High profile, CBR, one-frame VBV, P2/ultra-low
 latency, one slice per region, three references and no filler. CAVLC is the
@@ -41,7 +43,7 @@ by QBUF index-16 errors. A three-reference SPS/VUI restriction was added to
 keep the requirement compatible. This was an integration defect, not evidence
 of a 150, 350 or 400 Mbps hardware ceiling.
 
-The current native adapter explicitly limits H.264 to 1024 x 4096 and 8-bit,
+The earlier native adapter explicitly limits H.264 to 1024 x 4096 and 8-bit,
 and uses CAVLC above 200 Mbps. This audit did not recover a saved GPU capability
 response proving that 1024 is a hardware width maximum. That adapter clamp
 must not be presented as hardware capability. CAVLC is already selected in
@@ -306,7 +308,8 @@ No acceptance, decoder throughput or image-quality conclusion follows.
 The inspected host and receiver contain a specific two-by-two foveated layout.
 Four 1664 × 1664 regions could use **3328 × 3328** packed dimensions instead of
 1664 × 6656, preserving 11,075,584 coded luma positions. This is evidence of an
-existing implementation path, not a built or tested H.264 replacement.
+existing implementation path. The subsequent isolated decoder and native
+prototype results below add evidence without establishing a finished replacement.
 
 Host geometry function `0x180A1C7F0` computes W × 4H for mode 0 and 2W × 2H
 for mode 1. The installed NVENC selector `0x1809FE100` returns mode 0. No exposed
@@ -339,13 +342,145 @@ portion uses previously retained, separately hashed extracts; this pass did not
 revalidate its complete binary or execute the shaders. The provisional H.264
 4096 × 4096 capability report suggests that a square picture could fit, but
 accepted profile, bit depth, CAVLC selection, receiver support and throughput
-remain unproved. Equal pixel area does not establish equal image quality.
-No square candidate, codec override or performance test was built or run.
+were unproved at the static audit's cutoff. The later tests below address
+specific parts of that boundary. Equal pixel area does not establish equal
+image quality, and the layout-aware quality-map work remains unresolved.
+
+## Full-area square H.264: isolated CAVLC capacity and cadence pass
+
+A deterministic 8-bit source was generated at 1664 x 6656 and rearranged into
+3328 x 3328: the two peripheral bands on the left, their corresponding gaze
+bands on the right. The inverse rearrangement restored every source-frame hash.
+Both entropy calibrations used the same original and square source digests.
+No coded luma area was removed: both layouts contain 11,075,584 positions.
+These synthetic bands do not reproduce native foveation content or Main10 detail.
+
+The prepared High-profile clips contain 90 pictures at nominal 90 Hz, four
+slices per picture, three-reference DPB syntax, no B pictures and no filler.
+Independent parsing, FFmpeg header tracing and full software decoding agree.
+An initial preparation was refused because the emitted DPB bound was six pictures despite
+a three-reference request; a separately preserved revision explicitly requested
+DPB three and verified the emitted result. Requested settings alone were not
+treated as output proof. Actual selected source rates were 351.286312 Mbps for
+CABAC and 350.060160 Mbps for CAVLC, both within 0.5% of 350 Mbps.
+
+| Isolated capacity case | Credited coded bytes / interval | Coded Mbps / callback FPS | Callback interval p99 / maximum | Input deadline misses |
+| --- | --- | --- | --- | ---: |
+| CABAC | 438,195,978 / 10.107757385 s | 346.819546 / 88.842655 | 11.911280 / 12.268042 ms | 298 |
+| CAVLC | 436,759,516 / 9.978136518 s | **350.173213 / 89.996764** | 13.497225 / 13.556183 ms | 0 |
+
+Both jobs completed all 900 picture identities and drain, without reported
+decode, empty-buffer or missing-frame errors. Each rate uses callback 1 to
+callback 899 and the exact coded bytes for IDs 2--899, including nine later
+IDRs. CAVLC passed the declared 89--91-FPS capacity and 13.889-ms callback-p99
+criteria; CABAC failed average capacity/input pacing despite a smaller callback
+p99. Backend QBUF-to-userspace-completion residence p99 was 95.271 ms for CABAC
+and 9.36151 ms for CAVLC. That residence includes queueing and observation work,
+not pure hardware execution.
+
+Separate linear NV12 canaries decoded all 90 pictures and matched each clip's
+own software-decoded first-picture golden. Capacity used compressed Q08C output;
+it did not inspect every hardware-decoded pixel. Sparse active readings showed
+600-MHz decoder clock state and the same video memory request in both jobs,
+with no added ICC experiment. These are observations, not continuous hardware
+occupancy or thermal controls. The exact decoder backend remained unchanged.
+
+This is a useful full-area **local CAVLC result**, not wireless/gameplay or panel
+validation. The jobs ran once, sequentially, with different compressed pictures
+and unproven equal visual quality. CABAC's source rate was also slightly higher.
+No universal entropy-mode or decoder ceiling follows. Owned jobs ended and normal
+HEVC Main10 streaming resumed with saved settings restored.
+
+## Native square prototype: functional startup, not steady 350 Mbps
+
+A private bridge now uses the existing square packer and native receiver path
+with H.264 High 8-bit, CAVLC, four slices, DPB/reference bound three, fixed nominal
+90 Hz, P2/ultra-low latency, unpadded VBR and multipass disabled. It first uses a
+150-Mbps average / 172.5-Mbps peak request. The native mode-specific capacity
+wrapper uses actual successful H.264 capability queries; it does not globally
+replace the shared selector stub. The receiver codec selection is temporary.
+The native quality map is explicitly disabled: this changes quality policy and
+does not preserve the normal Main10 gaze/periphery offsets.
+
+A standalone GPU canary accepted all 90 pictures and its actual output proved
+3328 x 3328, CAVLC, four slices, DPB three, VUI bitstream restriction, maximum
+decoded-picture buffering three and no reordering. Its simple input produced
+only 4.476328 coded Mbps, so it validates syntax/acceptance, not a 150- or
+350-Mbps workload. These are standalone headers, not a native gameplay capture.
+
+The successful native 150-Mbps canary then recorded accepted initialization and
+reconfiguration, actual receiver capture allocation of 16 buffers, and bounded
+encoder progress: 399 encode calls, 401 completed bitstream locks and 61,514,759
+bytes. Its reported timer starts after an observer gap while the counter baseline
+precedes that gap; these counts cannot be assigned to that exact duration for
+a bitrate or FPS calculation. Different call/completion counts can also drain
+work already in flight. This functional check did not independently prove
+native Vulkan import, metadata reconstruction, valid pose, image orientation,
+physical presentation or visual quality. One I-frame request before the first
+source event was classified separately; no hard reset was accepted as success.
+
+Two fresh 350-Mbps starts subsequently failed during startup, with seven
+completed locks each and no measurement window. A second bridge added bounded
+first-IDR evidence capture and a one-shot 150-to-350 request after healthy
+warmup. That run also failed during 150-Mbps warmup, at ten locks; the 350 ramp
+and read-only AU dump were never invoked. All three failures had zero recorded
+NVENC API/guard errors. They do not establish a steady-state H.264 payload limit.
+
+The installed receiver watchdog starts OUTPUT/CAPTURE progress clocks during
+initialization, before the first compressed picture, and checks their older
+age after QBUF. It requests recovery after 330 ms and resets after 800 ms;
+successful input submission does not itself refresh those return-progress
+clocks. In the v2 receipt, the reset was only 28.775 ms after the first source
+event, with an I-frame request 292 microseconds before that event. This supports
+startup-age investigation, not an observed 800-ms post-decode stall. Exact first
+QBUF/return clocks were not captured, and a source event alone does not prove
+capture setup or decode completion. AU scan/copy/hash cost was not timed, so
+its possible marginal startup contribution remains unknown. Earlier failures
+without that capture show it is not necessary for this failure class.
+
+Every completed trial restored normal Main10 streaming, terminated its candidate
+host and closed the temporary receiver lease. No native useful-350 interval,
+sustained game/panel test or released square-stream option exists at this cutoff.
+
+## Restored normal HEVC: why 400 requested became about 240 useful
+
+A subsequent passive normal reference used the saved **400-Mbps** target,
+1664 x 6656 Main10, unpadded CBR and quarter multipass. Over 20.463580300 seconds,
+613,926,132 encoded bytes and 1,838 pictures give **240.007320 Mbps / 89.818105
+FPS**. This is not a fixed 350-Mbps trial. Endpoint successful API requests had average
+budgets 236.798 and 248.249 Mbps; no helper status calls occurred inside the
+counter window and there is no continuous accepted-configuration readback.
+
+All 21 sampled controller targets match `400 x queue factor x ping factor`
+within 0.000014 Mbps. Ping factor was one; queue factor averaged 0.595393,
+yielding 238.157292 Mbps. Retained AFTM budget averaged 238.742783 decimal Mbps
+over a slightly different history window. The
+[mapped controller](host-stream-map.md#requested-bitrate-accepted-budget-and-coded-bytes)
+retains decoded-ACK/pending-work feedback in manual mode, including a reduction
+at queue distance four. This explains the major requested-to-useful reduction
+here; it is not evidence of a 240-Mbps cap or unexplained 160-Mbps CBR underfill.
+The capture does not isolate the origin of every pending frame or delayed ACK.
+
+Waterfall averaged **291.487297 Mib/s**, equivalent to **305.646584 decimal Mbps**.
+Its same rolling-one-second samples contain 239.105753 Mbps useful video,
+54.639470 Mbps parity and 11.901361 Mbps remaining aggregate overhead/accounting.
+Adaptive second parity was active in 17 of 21 samples. Receiver interface RX
+was **319.722220 Mbps** over its own 19.997518-second interval. Different windows
+and accounting layers prevent assigning the remaining difference entirely to
+headers, retransmissions or other traffic. The higher traffic rates are not
+additional picture detail, and mixing binary and decimal units magnifies the gap.
+
+There were zero encoder/API/UDP error deltas, zero socket-drop delta and no
+captured reset or texture failure, but one receiver presentation timeout.
+Retained transport and decoder-turnaround tails reached 54.272 and 43.171 ms.
+This short normal reference does not establish zero jitter or sustained
+350 Mbps of useful video.
 
 ## Tested, proposed and still unknown
 
 Only a measured current-geometry gain would justify building a native-quality
-multistream game renderer. This completed comparison supplies no such gain;
+multistream game renderer. The earlier HEVC one/two/four-session comparison
+supplies no such gain;
 one sequential run per configuration does not prove that multiple sessions
 can never help or establish a universal decoder ceiling.
 

@@ -18,9 +18,11 @@ commit or in a new release. Temporary live overrides remain private experiments.
 - [H.264 and multiple decoder streams: implemented paths and remaining work](codec-stream-options.md)
 - [Measurements and encoder experiments](../encoder-and-codec-research.md)
 
-The latest [square-layout audit](codec-stream-options.md#existing-square-packing-a-static-implementation-path)
-identifies an existing same-area packing path, with unresolved quality-map and
-codec acceptance requirements. It has not been built or performance-tested.
+The latest [full-area square H.264 comparison](codec-stream-options.md#full-area-square-h264-isolated-cavlc-capacity-and-cadence-pass)
+decoded CAVLC at **350.173 Mbps / 89.997 FPS**, passing its short isolated
+capacity/callback-cadence checks. The [native prototype](codec-stream-options.md#native-square-prototype-functional-startup-not-steady-350-mbps)
+has only a short 150-Mbps functional startup result; fresh 350 and later warmup
+attempts hit receiver startup recovery. Smooth native streaming at 350 Mbps remains unproven.
 
 ```mermaid
 flowchart LR
@@ -68,6 +70,20 @@ its frame-phase controller, transport repair or receiver image selection.
 
 ## Latest isolated decoder results
 
+The new square H.264 workload preserves all 11,075,584 luma positions of the
+1664 x 6656 layout by arranging four regions into 3328 x 3328. CAVLC completed
+all 900 pictures at **350.173213 useful Mbps / 89.996764 FPS**, with callback
+interval p99 **13.497225 ms** and no input deadline misses. CABAC completed all
+pictures but reached **346.819546 Mbps / 88.842655 FPS**, with 298 missed input
+deadlines and much longer queue residence. Separate linear-output canaries
+matched each clip's own first-picture software golden.
+
+The [bounded comparison](codec-stream-options.md#full-area-square-h264-isolated-cavlc-capacity-and-cadence-pass)
+is 8-bit synthetic local decoding, without wireless transport, native foveation
+or panel presentation. Entropy jobs have different coded pictures and unproven
+equal quality; one sequential pair cannot establish a universal CABAC limit.
+This supports a native CAVLC prototype, not a released or validated game stream.
+
 The [current-geometry comparison](codec-stream-options.md#current-geometry-comparison-completed-tests-missed-90-hz)
 now has generated clips, an exact native ARM64 build and completed headset jobs.
 Its synthetic Main10 source preserves total 1664 x 6656 area and four independent
@@ -112,7 +128,25 @@ runtime change follows from this research.
 
 ## Current connected reference
 
-The latest completed native allocation experiment used **full-resolution
+After the square-native startup experiments, normal HEVC Main10 was restored.
+A [20-second passive reference](codec-stream-options.md#restored-normal-hevc-why-400-requested-became-about-240-useful)
+measured **240.007 useful Mbps / 89.818 FPS** with the saved 400-Mbps target.
+Queue feedback reduced the mean sampled encoder request to 238.157 Mbps;
+ping feedback was one. Waterfall averaged 291.487 binary Mib/s, or 305.647 decimal
+Mbps, including 54.639 Mbps parity. Receiver interface traffic was 319.722 Mbps
+over a different counter window. These are different quantities, not conflicting
+measurements of picture detail. One presentation timeout remains; this is not
+a smooth result at 350 Mbps of useful video or evidence of a 240-Mbps hardware cap.
+
+The square native 150-Mbps canary proved accepted encoding, capture allocation
+16 and bounded progress. It did not independently validate native image
+reconstruction or presentation. Two fresh 350 starts and a later 150-Mbps warmup
+aborted during receiver startup recovery before any 350 measurement; the planned
+warmup-to-350 ramp was not invoked. All completed attempts restored normal
+streaming. The source-supported startup clock explanation still needs exact
+first-input and return timestamps; no recovery threshold was relaxed.
+
+The preceding completed HEVC allocation experiment used **full-resolution
 multipass at a fixed 350 Mbps budget**. It reached measurement, then failed the
 unchanged decoder-latency guard: **320.297 useful Mbps at 88.764 FPS** over
 3.999390 seconds. Two distinct fresh timing cohorts had decoder-turnaround p99
