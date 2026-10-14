@@ -76,7 +76,7 @@ public sealed partial class FramePage
     private void InitializeAdvancedControls()
     {
         AddAdvancedRow(AdvancedEncoderHost, "cq", "VBR quality target (CQ)", "0 is automatic. Lower nonzero values request less quantization. VBR only; bitrate and buffer limits can prevent the target from being met.", 0, 51, .25, 30);
-        AddAdvancedRow(AdvancedEncoderHost, "maxqp", "Maximum QP (I / P / B frames)", "Rate-control QP limit for all frame types. Valve's delta map and shared budget still affect gaze quality; this is not an absolute center-QP guarantee.", 0, 51, 1, 40);
+        AddAdvancedRow(AdvancedEncoderHost, "maxqp", "Maximum QP (I / P / B frames)", "Requires a new encoder session, including when removing the override. A low limit can exceed the bitrate budget and cause stalls. Valve's delta map still applies; this is not an absolute center-QP guarantee.", 0, 51, 1, 40);
         AddAdvancedRow(AdvancedEncoderHost, "peak", "Peak bitrate (Mbps)", "Custom peak also caps Valve's transient encoder average. This is an encoder budget, not an instantaneous network-traffic limit. Higher peaks can overwhelm the wireless/decoder budget.", 25, 500, 5, 230);
         AddAdvancedRow(AdvancedEncoderHost, "vbv", "VBV buffer budget (Mbit)", "Encoder rate-control buffer budget; this is not the headset's decoded-frame queue.", .001, 64, .1, 2);
         AddAdvancedRow(AdvancedEncoderHost, "delay", "VBV initial delay budget (Mbit)", "Initial VBV budget in bits, not a measured display-delay time. Keep it within the configured buffer.", 0, 64, .1, 2);
@@ -194,6 +194,7 @@ public sealed partial class FramePage
         }
         await ValidateWidthBoundsAsync(writes, removes);
         var running = await Task.Run(() => OpenVrSettings.IsRunning);
+        string policyMessage = "";
         if (hevc && _policyEdited)
         {
             var policy = new EncodingPolicy((EncoderRateControl)RateControlInput.SelectedIndex, (EncoderMultiPass)MultiPassInput.SelectedIndex);
@@ -203,7 +204,8 @@ public sealed partial class FramePage
                 var beforePolicy = await _probe.GetSnapshotAsync();
                 if (beforePolicy.PairedCodecTrialPresent) throw new InvalidOperationException("Encoder overrides are available for HEVC. Select HEVC in Stream settings first.");
                 if (!beforePolicy.Installed) await _probe.StartAsync();
-                await ApplyPolicyAsync(policy);
+                var policyResult = await ApplyPolicyAsync(policy);
+                policyMessage = " " + (policyResult.EncodingPolicy?.StatusMessage ?? policyResult.Message);
             }
             _preferences.RateControl = policy.RateControl; _preferences.MultiPass = policy.MultiPass;
             _preferences.ReapplyAfterRestart = ReapplyInput.IsChecked == true;
@@ -216,6 +218,7 @@ public sealed partial class FramePage
             else await new SettingsService().SaveUserOverridesAsync(writes, removes);
         }
         string message = "Advanced driver settings accepted" + (running ? " by OpenVR." : " for the next SteamVR session.");
+        message += policyMessage;
         if (running && AdvancedDriverSettings.Definitions.Any(d => d.Reconnect && (writes.ContainsKey(d.Key) || removes.Contains(d.Key))))
             message += " Reconnect to activate changes to encoder or sender initialization settings.";
         if (encoderEdited)

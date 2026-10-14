@@ -16,6 +16,38 @@ quality offsets. See [Encoder probe internals](../Native/README.md) for how it w
 If **Start monitoring** keeps failing while SteamVR is running, the status bar offers
 **Restart as administrator**.
 
+The **Finish the app update** notice means SteamVR loaded a helper with different
+contents from this app's bundled helper. **Reconnect Frame** or **Restart SteamVR
+and resume** replaces it once. Reopening the same app afterward reuses the matching
+helper. If the notice returns, another app build or an older research/recovery
+tool may be loading its own helper; use the same current build for both. A DLL with
+different executable code is not treated as compatible just because its protocol
+number matches.
+
+## Reconnecting after a game closes
+
+Use **Reconnect Frame** on Overview if the headset stops streaming after leaving a
+game. Keep the Frame awake. The button restarts SteamVR once (or launches it if it
+has stopped), restores the previous helper's encoder requests, and waits for new
+HEVC frames and bytes. A running VR game may close. If the old helper cannot be
+read, saved tuning is used only when **Reapply after restart** is enabled; unapplied
+presets and editor changes are not activated.
+
+The app separately checks the headset's active link when connection diagnostics
+are configured. A successful restart alone is not reported as a restored stream.
+If video does not return, **unplug the dedicated dongle and plug it back in**, then
+wait for it to reconnect. The same USB port or hub is fine; moving it is not
+required for this step. Keep the Frame awake and select this PC from its streaming
+menu if needed. Check **Dongle USB** afterward to confirm the negotiated USB speed.
+In the October 14 recovery, the user replugged the dongle when streaming returned;
+a SteamVR restart had also occurred, so that incident does not establish that a
+software restart alone fixes the failure.
+
+Recovery does not repeat the restart automatically. This does not change Wi-Fi profiles,
+reset network adapters, require a Frame password, or restart the headset's USB
+daemon. Paired H.264/AV1 sessions must return to HEVC through **Apply and reconnect**
+first.
+
 ## Readouts
 
 | Readout | Source and meaning |
@@ -70,9 +102,15 @@ While the dashboard is open, the app watches new log events and saves bounded JS
 
 | File | Contents |
 | --- | --- |
-| `streaming-health.jsonl` | PC-side SteamVR events: client recovery requests and frame-ID stream resets, bad-link delays, encoder stalls (including SubmitFrame, submit-to-start and reconfigure delays), compositor handoff warnings, encoder reconfigurations. |
+| `streaming-health.jsonl` | PC-side SteamVR events: client recovery requests and frame-ID stream resets, bad-link delays, encoder stalls (including SubmitFrame, submit-to-start and reconfigure delays), compositor handoff warnings (including shared-texture `AcquireSync` timeouts in the compositor and server), encoder reconfigurations. |
 | `frame-receiver-health.jsonl` | Headset receiver events over paired wireless SSH: retry requests, backtrack-window resets, unrecoverable FEC errors, late metadata, missing mapped buffers, buffer index mismatches, decoder queue failures. |
 | `compositor-timing.jsonl` | PC presentation anomalies: drop, reprojection and timeout deltas with observation timestamps. |
+
+`WaitForAcquire` reports a separate driver handoff-event wait. It can repeat
+during 90 Hz streaming and does not itself establish failed texture ownership
+or a dropped frame. `AcquireSync FAILED with WAIT_TIMEOUT` is the distinct
+shared-texture acquisition failure; the captured message identifies which
+condition was observed.
 
 Each file rotates at 1 MiB and keeps two archives. Only synthesized event text and validated
 numbers are saved, never raw log lines. Existing logs are read from their end, so old warnings
@@ -88,3 +126,16 @@ encode, sender-to-receiver and headset decode timing for it. Traces are only wri
 recovery events, not continuously. Missing client feedback and rows without a transmitted frame
 are reported separately and are not counted as drops. Decode times use the headset clock, and
 transport times use Valve's clock-mapped timestamps.
+
+Encoder completion starts after submission returns and includes output handling.
+Decoder turnaround starts after the coded input is queued and ends when userspace
+observes decoded output; it includes driver and scheduling delays. Overlapping
+frames mean a decoder interval longer than one display period is not by itself
+proof that the decoder cannot sustain the refresh rate.
+
+Valve's CSV field named **Submit Illumination** contains the receiver's chosen
+future display target, sent before image submission. The dashboard therefore
+reports receiver targets later than the original host prediction, rather than
+calling these proven late submissions. Neither timestamp proves when pixels
+actually appeared. See the [streaming system map](research/README.md) for the
+traced event boundaries.

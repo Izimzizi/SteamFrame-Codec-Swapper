@@ -2,8 +2,63 @@ namespace SteamLinkVRSettings.Tests;
 
 public class StreamingHealthTests
 {
+    [Theory]
+    [InlineData("vrcompositor.txt", "Tue Oct 13 2026 21:58:48.745 [Warning] - [Compositor] AcquireSync FAILED with WAIT_TIMEOUT")]
+    [InlineData("vrserver.txt", "Tue Oct 13 2026 21:58:05.515 [Info] - vrlink: AcquireSync FAILED with WAIT_TIMEOUT")]
+    public void Shared_texture_timeouts_are_detected_at_both_handoff_sides(string source, string line)
+    {
+        Assert.True(Frame.StreamingHealth.TryParseLine(source, line + " PRIVATE_SUFFIX", DateTimeOffset.Now, out var item));
+        Assert.Equal(Frame.StreamingHealthCategory.CompositorAcquireTimeout, item!.Category);
+        Assert.True(item.TimestampFromLog);
+        Assert.Null(item.DurationMs); // Log does not state the actual wait duration.
+        Assert.DoesNotContain("PRIVATE_SUFFIX", item.Message);
+        Assert.Contains("before encoding", item.Message);
+    }
+
+    [Theory]
+    [InlineData("vrlink: Reset video stream because we had a stream reset request [wgpReset:7 != lastReset:6]")]
+    [InlineData("vrlink: [Perf warning] 72.306ms - videonvenc::GetEncodedPacket")]
+    [InlineData("other-driver: AcquireSync FAILED with WAIT_TIMEOUT")]
+    [InlineData("AcquireSync FAILED with WAIT_TIMEOUT")]
+    [InlineData("vrlink: AcquireSync FAILED with WAIT_TIMEOUT_FAKE")]
+    public void Server_tail_does_not_duplicate_driver_events_or_accept_other_sources(string body)
+        => Assert.False(Frame.StreamingHealth.TryParseLine("vrserver.txt", body, DateTimeOffset.Now, out _));
+
+    [Fact]
+    public void Server_texture_warnings_are_collected_incrementally_without_replaying_existing_lines()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "slvr-handoff-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "vrserver.txt");
+            const string warning = "Tue Oct 13 2026 21:58:05.515 [Info] - vrlink: AcquireSync FAILED with WAIT_TIMEOUT\n";
+            File.WriteAllText(path, warning);
+            var health = new Frame.StreamingHealth(root, Path.Combine(root, "capture"));
+            Assert.Equal(0, health.Poll(TestContext.Current.CancellationToken).TotalEvents);
+            File.AppendAllText(path, warning);
+            var snapshot = health.Poll(TestContext.Current.CancellationToken);
+            Assert.True(snapshot.ServerLogAvailable);
+            Assert.Equal(1, snapshot.CompositorAcquireTimeouts);
+            Assert.Equal("vrserver.txt", Assert.Single(snapshot.RecentEvents).Source);
+            Assert.Equal(1, health.Poll(TestContext.Current.CancellationToken).TotalEvents);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Fact]
     public void StreamingLogCollectionIsBoundedSafeAndIncremental() => StreamingHealthHarness.Run();
+
+    [Fact]
+    public void Handoff_event_timeout_is_distinguished_from_failed_texture_ownership()
+    {
+        const string line = "WaitForAcquire timed out (NamedEvent); rendering the next frame before the driver took the sync texture [2700 messages suppressed]";
+        Assert.True(Frame.StreamingHealth.TryParseLine("vrcompositor.txt", line, DateTimeOffset.Now, out var item));
+        Assert.Equal(2700, item!.SuppressedCount);
+        Assert.Null(item.DurationMs);
+        Assert.Contains("handoff event", item.Message);
+        Assert.Contains("does not prove shared-texture acquisition failed", item.Message);
+    }
 
     [Theory]
     [InlineData("Tue Oct 13 2026 12:29:56.264 [Info] - [Perf warning] 28.252ms - videonvenc::SubmitFrame", 28.252)]

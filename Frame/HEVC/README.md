@@ -150,6 +150,10 @@ public OpenVR settings; reconnect before comparing modes. Initialization-only
 encoder changes need a truly new encoder, which Frame-only reconnects may not create.
 The settings app already exposes these controls and can reapply them.
 
+`settings.py --ten-bit` / `--no-ten-bit` similarly changes only the requested
+driver setting. Verify the monitor's actual `BitDepth` after a fresh encoder
+initialization; successful settings readback is not proof of an active codec change.
+
 `measure.py` preserves partial data on failure and records actual video, callback
 timing, whole-frame QP, PC application counters, Frame counters and interface bytes.
 `--timing` polls the existing public compositor observer once per second for game

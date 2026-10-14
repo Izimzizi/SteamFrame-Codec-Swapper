@@ -28,6 +28,21 @@ Close any copy of the app running from that folder first, or build elsewhere:
 
 Options: `-Configuration Debug`, `-SkipNativeTests`.
 
+`Launch-Latest.ps1` opens the newest complete local app output under the app's
+`bin` directory or `artifacts`. It checks required files and orders builds by the
+app assembly timestamp. Use `-ResolveOnly` to inspect the selected build without
+opening it. A desktop shortcut to this script follows future local builds.
+
+When using the optional diagnostic CLI, build it against the selected app:
+
+```powershell
+.\Native\HevcTune\Build-ForApp.ps1 -AppDirectory "artifacts\BuildCheck"
+```
+
+The script verifies that both use the same native helper. Do not restore normal
+play with historical experiment tools: their older helper can make the app's
+update notice return after every research restart.
+
 Opening the solution in Visual Studio also works before the native helper has been built. You'll
 see a warning, and encoder monitoring stays unavailable until `Native\build.ps1` has run.
 

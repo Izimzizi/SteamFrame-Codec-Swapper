@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="../../SteamLinkVRSettings/Frame/EncoderSnapshot.cs" Link="EncoderSnapshot.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/CompositorTiming.cs" Link="CompositorTiming.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/CaptureFile.cs" Link="CaptureFile.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/EncoderProbe.cs" Link="EncoderProbe.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/EncoderProbe.Av1.cs" Link="EncoderProbe.Av1.cs" />

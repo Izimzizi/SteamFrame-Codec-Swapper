@@ -88,6 +88,7 @@ public sealed partial class FramePage
         RestartEncoderButton.IsEnabled = idle && _encoderRestartRequired && !_codecService.Live;
         StopMonitorButton.IsEnabled = idle && _monitorInstalled;
         RecoverButton.IsEnabled = idle;
+        ReconnectFrameButton.IsEnabled = idle && !_codecService.Live;
         AdvancedApplyButton.IsEnabled = idle;
         AdvancedApplyButton.Content = _pendingPreset != null ? "Apply complete preset" : "Apply advanced settings";
         AdvancedRestoreButton.IsEnabled = idle && !paired;

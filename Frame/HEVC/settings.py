@@ -8,7 +8,7 @@ import pathlib
 RUNTIME = pathlib.Path(os.environ.get('STEAMVR_RUNTIME', r'C:\Program Files (x86)\Steam\steamapps\common\SteamVR'))
 
 
-def apply(target=None, width=None, async_send=None):
+def apply(target=None, width=None, async_send=None, ten_bit=None):
     if target is not None and not 25 <= target <= 500:
         raise ValueError('Target must be 25..500 Mbps')
     if width is not None and (not 512 <= width <= 2048 or width % 32):
@@ -37,19 +37,24 @@ def apply(target=None, width=None, async_send=None):
             return result
         before = {'target_mbps': call(7, c.c_float, None, 'targetBandwidth'),
                   'width': call(6, c.c_int, None, 'streamFormatWidth'),
-                  'async_send': call(5, c.c_bool, None, 'asyncSend')}
+                  'async_send': call(5, c.c_bool, None, 'asyncSend'),
+                  'ten_bit': call(5, c.c_bool, None, '10bit')}
         if target is not None:
             call(3, None, c.c_float, 'targetBandwidth', target)
         if width is not None:
             call(2, None, c.c_int, 'streamFormatWidth', width)
         if async_send is not None:
             call(1, None, c.c_bool, 'asyncSend', async_send)
+        if ten_bit is not None:
+            call(1, None, c.c_bool, '10bit', ten_bit)
         after = {'target_mbps': call(7, c.c_float, None, 'targetBandwidth'),
                  'width': call(6, c.c_int, None, 'streamFormatWidth'),
-                 'async_send': call(5, c.c_bool, None, 'asyncSend')}
+                 'async_send': call(5, c.c_bool, None, 'asyncSend'),
+                 'ten_bit': call(5, c.c_bool, None, '10bit')}
         if (target is not None and abs(after['target_mbps'] - target) > .01 or
                 width is not None and after['width'] != width or
-                async_send is not None and after['async_send'] != async_send):
+                async_send is not None and after['async_send'] != async_send or
+                ten_bit is not None and after['ten_bit'] != ten_bit):
             raise RuntimeError('Requested setting did not read back correctly')
         return {'before': before, 'after': after}
     finally:
@@ -62,5 +67,7 @@ if __name__ == '__main__':
     parser.add_argument('--width', type=int)
     parser.add_argument('--async-send', action=argparse.BooleanOptionalAction, default=None,
                         help='Change sender scheduling; reconnect before comparing it')
+    parser.add_argument('--ten-bit', action=argparse.BooleanOptionalAction, default=None,
+                        help='Request HEVC Main10 or Main; verify accepted bit depth after reconnecting')
     args = parser.parse_args()
-    print(json.dumps(apply(args.target, args.width, args.async_send)))
+    print(json.dumps(apply(args.target, args.width, args.async_send, args.ten_bit)))

@@ -35,13 +35,13 @@ int main() {
     params.tuningInfo = NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
     const auto originalParams = params; const auto originalConfig = config; auto handle = reinterpret_cast<void*>(123);
     hookInitialize(handle, &params);
-    AdvancedEncoding value{}; value.flags = AdvancedCq | AdvancedMaxQp | AdvancedPeak | AdvancedVbv | AdvancedDelay;
+    AdvancedEncoding value{}; value.flags = AdvancedCq | AdvancedPeak | AdvancedVbv | AdvancedDelay;
     value.cq256 = 26 * 256 + 64; value.maxQp = 40; value.peakBitrate = 225000000; value.vbvBits = 3000000; value.vbvDelayBits = 1000000;
     if (SetAdvancedEncoding(&value)) return 1;
     NV_ENC_RECONFIGURE_PARAMS reconfigure{}; reconfigure.version = NV_ENC_RECONFIGURE_PARAMS_VER; reconfigure.reInitEncodeParams = params;
     const auto originalReconfigureParams = reconfigure;
     if (hookReconfigure(handle, &reconfigure) || observed.rcParams.targetQuality != 26 || observed.rcParams.targetQualityLSB != 64 ||
-        !observed.rcParams.enableMaxQP || observed.rcParams.maxQP.qpIntra != 40 || observed.rcParams.maxBitRate != 225000000 ||
+        observed.rcParams.enableMaxQP || observed.rcParams.maxBitRate != 225000000 ||
         observed.rcParams.vbvBufferSize != 3000000 || observed.rcParams.vbvInitialDelay != 1000000 || stats.appliedAdvancedFlags != value.flags) return 2;
     if (memcmp(&params, &originalParams, sizeof(params)) || memcmp(&config, &originalConfig, sizeof(config)) ||
         memcmp(&reconfigure, &originalReconfigureParams, sizeof(reconfigure)) || observed.gopLength != 120 ||
@@ -143,6 +143,21 @@ int main() {
     if (hookInitialize(handle, &params) || calls != beforeRejected + 2 || stats.rejectedAdvancedFlags != changed.flags ||
         stats.appliedAdvancedFlags || memcmp(&observed, &config, sizeof(config))) return 55;
     hookInitialize(handle, &params); if (calls != beforeRejected + 3) return 56;
+    // Max-QP enable, value changes and removal must not be reported as effective
+    // after a reconfigure that can silently leave the old hardware constraint.
+    rejectKeyScale = false; SetAdvancedEncoding(&empty); hookDestroy(handle); hookInitialize(handle, &params);
+    value = {}; value.flags = AdvancedMaxQp; value.maxQp = 18;
+    SetAdvancedEncoding(&value); hookReconfigure(handle, &reconfigure);
+    if (observed.rcParams.enableMaxQP || stats.appliedAdvancedFlags || stats.pendingAdvancedFlags != AdvancedMaxQp) return 57;
+    hookDestroy(handle); hookInitialize(handle, &params);
+    if (!observed.rcParams.enableMaxQP || observed.rcParams.maxQP.qpInterP != 18 || stats.pendingAdvancedFlags) return 58;
+    value.maxQp = 25; SetAdvancedEncoding(&value); hookReconfigure(handle, &reconfigure);
+    if (observed.rcParams.maxQP.qpInterP != 18 || stats.pendingAdvancedFlags != AdvancedMaxQp) return 59;
+    SetAdvancedEncoding(&empty); hookReconfigure(handle, &reconfigure);
+    if (!observed.rcParams.enableMaxQP || observed.rcParams.maxQP.qpInterP != 18 ||
+        stats.pendingAdvancedFlags != AdvancedMaxQp || StopProbe(nullptr) != 1014) return 60;
+    hookDestroy(handle); hookInitialize(handle, &params);
+    if (observed.rcParams.enableMaxQP || stats.appliedAdvancedFlags || stats.pendingAdvancedFlags || sessions[handle].customPolicy) return 61;
     printf("PASS: advanced ABI/ranges, copied fields, rejection fallback/blocking, consistent presets, reconnect/restoration, min-QP/RC guards and telemetry.\n");
     return 0;
 }

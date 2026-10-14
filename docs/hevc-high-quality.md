@@ -1,19 +1,22 @@
 # HEVC presets
 
-Select **Stream settings → High quality HEVC (built-in)**. This fills the editor;
+Select **Stream settings → Tuned HEVC (built-in)** for our current tuned setup,
+or **High quality HEVC (built-in)** for the earlier 2048-width setup. This fills the editor;
 use Apply after reviewing the values. Loading the preset does not change the stream.
 Every setting remains editable, and **Save preset…** saves your own version without
 replacing the built-in. Existing personal presets remain available.
 
 ## Bundled choices
 
-All three presets request 90 Hz, 2048-pixel stream width and 10-bit HEVC. They
+All four presets request 90 Hz and 10-bit HEVC. Tuned HEVC uses 1664-pixel stream
+width; the other three use 2048. They
 disable automatic bitrate/width selection, retain Valve's NVENC preset, VBV and
 AQ policy, and leave the GOP-consistency/keyframe-ratio overrides unset. Each
 includes the compatible bitrate-ceiling override and Reapply after restart.
 
 | Preset | Target / encoding passes | Quality and sending | Intended use |
 | --- | --- | --- | --- |
+| Tuned HEVC | 400 Mbps / CBR, quarter-resolution multipass | 1664 width; center −20 / outside gaze −12; synchronous sending | Current playable setup, with stronger compression quality at a lower stream width |
 | Smooth HEVC | 300 Mbps / VBR, single pass | Valve gaze quality; synchronous sending | Fallback based on the smooth baseline, with less encoding work than multipass |
 | High quality HEVC | 400 Mbps / CBR, quarter-resolution multipass | Center −2 / outside gaze −6; asynchronous sending | The measured high-quality setup |
 | Full-resolution HEVC — Experimental | 400 Mbps / CBR, full-resolution multipass | Same as High quality HEVC | Compare the analysis pass alone; quality/bitrate gains remain unverified and frame timing can worsen |
@@ -21,8 +24,28 @@ includes the compatible bitrate-ceiling override and Reapply after restart.
 Selecting a preset fills the editor; Apply activates it. All controls remain
 editable. Smooth HEVC explicitly requests the VBR/single-pass behavior observed
 in the baseline instead of depending on the driver's current defaults. The
-measurements below describe the earlier high-quality run, not the full-resolution
-experiment or a guarantee for either new preset.
+measurements below identify which setup was observed. Full-resolution multipass
+has not demonstrated a quality or throughput gain.
+
+## Tuned HEVC settings
+
+This preset saves the restored HEVC configuration used during the latest research.
+Compared with High quality HEVC below, it changes stream width to **1664**, center
+quality offset to **−20**, outside-gaze offset to **−12**, and asynchronous sending
+to **off**. It retains the 400 Mbps target, 90 Hz preference, 10-bit request,
+CBR without padding and quarter-resolution multipass. Other encoder overrides
+are unset, and loading the preset retains the same editable controls and Apply flow.
+
+The latest read-only current-scene observation measured **261.18 Mbps of encoded
+video at 89.72 fps over 8.80 seconds**, with zero encoder or output-lock errors.
+The earlier restored reference measured 240.01 Mbps at 89.82 fps over 20.46 seconds.
+Neither is a sustained game or physical-display smoothness test. Bitrate can still
+vary because of content and SteamVR's adaptive budget. The lower width trades
+spatial detail for stronger compression quality; this is not evidence of a
+universal improvement over the earlier preset or steady 350–400 Mbps.
+
+The experimental native H.264 receiver, radio changes and temporary testing
+controls are not part of this preset.
 
 ## High quality HEVC settings
 

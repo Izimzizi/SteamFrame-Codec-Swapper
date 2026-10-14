@@ -7,6 +7,13 @@ public static class BuiltInPresets
 {
     public static IReadOnlyList<NamedPreset> Create() =>
     [
+        new("5aac1f2f-93c4-45f5-9324-c0103e0ea6ed", "Tuned HEVC",
+            Hevc(400, EncoderRateControl.Cbr, EncoderMultiPass.QuarterResolution, qualityBias: true, asyncSend: false,
+                width: 1664, gazeOffset: -20, peripheralOffset: -12))
+        {
+            IsBuiltIn = true,
+            Description = "Our current tuned setup: 400 Mbps target · 90 Hz · 1664-pixel width · 10-bit HEVC. CBR without padding, quarter-resolution multipass and synchronous sending. Center −20 / outside gaze −12 favor compression quality at a lower stream width. Actual bitrate varies; sustained 350–400 Mbps has not been verified."
+        },
         new("72f74544-cdc3-4ff0-a03d-9421219a972e", "High quality HEVC",
             Hevc(400, EncoderRateControl.Cbr, EncoderMultiPass.QuarterResolution, qualityBias: true, asyncSend: true))
         {
@@ -30,17 +37,17 @@ public static class BuiltInPresets
     // Allocate every profile and its dictionaries independently so editor changes
     // never leak into another built-in or the next catalog load.
     private static TuningProfile Hevc(int target, EncoderRateControl rateControl, EncoderMultiPass multiPass,
-        bool qualityBias, bool asyncSend) => new()
+        bool qualityBias, bool asyncSend, int width = 2048, int gazeOffset = -2, int peripheralOffset = -6) => new()
         {
             Codec = StreamCodec.Hevc, TargetMbps = target, Fps = 90, BitratePatch = true,
             RateControl = rateControl, MultiPass = multiPass,
-            QualityEnabled = qualityBias, GazeOffset = qualityBias ? -2 : 0, PeripheralOffset = qualityBias ? -6 : 0, Reapply = true,
+            QualityEnabled = qualityBias, GazeOffset = qualityBias ? gazeOffset : 0, PeripheralOffset = qualityBias ? peripheralOffset : 0, Reapply = true,
             // Preserve Valve's NVENC preset (P2 in the measured setup) and buffer policy.
             Advanced = new(),
             Driver = new()
             {
                 ["targetBandwidth"] = Value((double)target), ["recommendedBandwidthMbit"] = Value((double)target),
-                ["automaticBandwidth"] = Value(false), ["streamFormatWidth"] = Value(2048),
+                ["automaticBandwidth"] = Value(false), ["streamFormatWidth"] = Value(width),
                 ["automaticStreamFormatWidth"] = Value(false), ["allowMultipleLinks"] = Value(false),
                 ["enableAmfEncoder"] = Value(false), ["10bit"] = Value(true),
                 ["asyncSend"] = Value(asyncSend), ["enableQoS"] = Value(true),

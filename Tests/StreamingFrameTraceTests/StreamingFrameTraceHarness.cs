@@ -15,11 +15,11 @@ internal static class StreamingFrameTraceHarness
         var trace = StreamingFrameTrace.Read(new StringReader(csv), "test.csv");
         Check(trace.SentFrames == 2, "no-transmit rows are excluded from sent frames");
         Check(trace.NoTransmitRows == 1, "no-transmit rows retain a separate count");
-        Check(trace.MissingReceiveFeedback == 1 && trace.MissingIlluminationFeedback == 1, "zero feedback stays unknown");
+        Check(trace.MissingReceiveFeedback == 1 && trace.MissingDisplayTargetFeedback == 1, "zero feedback stays unknown");
         Check(trace.Encode!.MaximumMs == 5, "microseconds convert to milliseconds");
         Check(trace.Transport!.Samples == 1 && trace.Transport.MaximumMs == 10, "transport uses mapped sender timestamps");
         Check(trace.Decode!.MaximumMs == 8, "decode stays in the remote clock domain");
-        Check(trace.LateSubmissionFrames == 1 && trace.LateSubmission!.MaximumMs == 2, "positive late submission is measured independently");
+        Check(trace.LaterDisplayTargetFrames == 1 && trace.DisplayTargetShift!.MaximumMs == 2, "later receiver display targets are prediction shifts, not actual late submissions");
         Check(trace.FirstFrame!.Value.ToUnixTimeMilliseconds() == 1791753882232, "frame UTC derives only from host realtime");
         var reset = StreamingFrameTrace.Read(new StringReader(header + "\n" +
             "1,0,1791753882299999,1000,3000,3000,4000,600,700,6000,8000\n" +

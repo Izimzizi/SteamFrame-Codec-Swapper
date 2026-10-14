@@ -40,6 +40,8 @@
                     <Button x:Name="RestartEncoderButton" Content="Restart SteamVR and resume" Click="StartMonitor_Click" />
                 </InfoBar.ActionButton>
             </InfoBar>
+            <InfoBar x:Name="EncoderPolicyNotice" IsOpen="False" IsClosable="False" Severity="Warning"
+                     Title="Requested encoder policy is not active" />
             <InfoBar x:Name="ActionStatus" IsOpen="False" IsClosable="True" />
         </StackPanel>
         <Grid Grid.Row="2">
@@ -94,6 +96,9 @@
                         <Button x:Name="StopMonitorButton" Content="Stop monitoring" Click="StopMonitor_Click" />
                     </StackPanel>
                     <TextBlock x:Name="HealthCounts" Style="{StaticResource Hint}" />
+                    <Button x:Name="ReconnectFrameButton" Content="Reconnect Frame" Click="ReconnectFrame_Click" />
+                    <TextBlock Text="Restarts SteamVR once and restores applied HEVC tuning. A running VR game may close. Keep the Frame awake; the app checks for fresh video afterward." Style="{StaticResource Hint}" />
+                    <TextBlock Text="Still disconnected? Unplug the dedicated dongle, plug it back in, and wait for it to reconnect. You can use the same port or hub. Then select this PC in the Frame's streaming menu if needed." Style="{StaticResource Hint}" />
                     <HyperlinkButton Content="View streaming diagnostics" Tag="diagnostics" Click="OpenSection_Click" HorizontalAlignment="Left" Padding="0" />
                     <Expander Header="Connection details" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                         <StackPanel Spacing="12" Padding="0,12,0,0">
@@ -265,6 +270,7 @@
                             </ComboBox>
                             <TextBlock Text="Single pass uses less encoding work. Quarter-resolution multipass analyzes a smaller image first, then encodes at full resolution. Full-resolution multipass analyzes and encodes at full resolution; compare detail and frame timing before keeping it." Style="{StaticResource Hint}" />
                             <TextBlock Text="Extra encoding work can increase latency. Bitrate targets describe useful video, without filler traffic. Multipass changes encoder analysis; native HEVC still uses one decoder." Style="{StaticResource Hint}" />
+                            <TextBlock Text="CBR here does not add padding or lock Valve's adaptive encoder target. Actual Mbps can still vary. Switching between VBR and CBR may need a new encoder session; check the accepted mode after reconnecting." Style="{StaticResource Hint}" />
                             <CheckBox x:Name="ReapplyInput" Content="Reapply my HEVC encoder and gaze settings after SteamVR restarts" Checked="Bandwidth_Toggled" Unchecked="Bandwidth_Toggled" />
                         </StackPanel>
                     </Expander>

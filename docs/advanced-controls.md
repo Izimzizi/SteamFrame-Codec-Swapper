@@ -12,6 +12,18 @@ different measurements. An accepted setting does not establish better picture qu
 
 ## Encoder experiments
 
+**A selected CBR mode is not proof that CBR is active.** The app now puts a warning
+above the dashboard when the requested and accepted policies differ. The updated
+helper distinguishes an unsupported mode, rejected initialization, and a mode change
+waiting for a new encoder session. On a GPU without dynamic rate-control switching,
+changing the bitrate only reconfigures the existing session; it cannot activate CBR.
+Follow the reconnect/restart procedure below and verify the accepted mode.
+
+The current CBR option disables filler/padding and retains Valve's changing encoder
+budget. It does not promise a flat network graph or a fixed 400 Mbps target. Padding
+would consume bandwidth without adding image detail, while locking the encoder target
+would separately bypass part of the congestion response. Neither is enabled implicitly.
+
 These need the updated native monitor, an exact supported NVENC API ABI and a verified
 driver caller. Older loaded helpers report that SteamVR must restart. Requests use a
 versioned fixed-size structure; polling never starts or changes a request.
@@ -19,7 +31,7 @@ versioned fixed-size structure; polling never starts or changes a request.
 | Control | Range | Application and limits |
 | --- | --- | --- |
 | VBR quality target | 0–51, fractional | Live; 0 is automatic. Lower nonzero values request less quantization. VBR only and subject to bitrate/VBV limits. |
-| Maximum QP | 0–51 | Live; applies the rate-control maximum to I/P/B frames. Valve's min-QP constraints and delta map still apply; this is not an absolute center-QP guarantee. |
+| Maximum QP | 0–51 | New encoder session required, including changes and removal. A live test retained the old constraint despite successful reconfigure calls. Low limits can exceed the bitrate budget and stall delivery. Valve's min-QP constraints and delta map still apply; this is not an absolute center-QP guarantee. |
 | Peak bitrate | 25–500 Mbps | Live on an encoder advertising dynamic bitrate; VBR only. Also caps Valve's transient per-frame encoder average. An encoder budget, not an instantaneous network-traffic limit. |
 | VBV buffer | 0.001–64 Mbit | Live if custom VBV is supported. A rate-control bit budget, not the headset's decoded-frame queue. |
 | VBV initial delay | 0–64 Mbit | Live if supported; must fit the accepted/requested buffer. Units are bits, not measured display-delay milliseconds. |
@@ -66,11 +78,11 @@ retry rejected experiments during dashboard polling.
 | Asynchronous encoder start | `asyncStartEncode` | Changes encoder-start scheduling; reconnect and compare durations. |
 | 10-bit request | `10bit` | Reconnect. Researched HEVC path can use it on compatible hardware; H.264 path rejects it. Dashboard reports accepted bit depth when available. |
 | Sharpening / strength | `useSharpening`, `sharpeningStrength` | Strength 0–1. Changes apparent crispness, not compression-lost detail. |
-| Timed retry | `enableTimedRetry` | Integer 0/1. Compare receiver retry/recovery rather than assuming disabling it helps. |
-| Baseline FEC | `forceBaselineVideoFEC` | Reconnect. Trades redundancy overhead against loss tolerance. |
+| Timed retry | `enableTimedRetry` | Integer 0/1. Gates periodic incomplete-frame repair checks; group/frame-progress repair remains. Compare receiver retry/recovery rather than assuming disabling it helps. |
+| Baseline FEC | `forceBaselineVideoFEC` | Reconnect. The host sends an inverted option 31; no direct consumer was found in the audited host/client option paths. Its effect is unverified, including any parity/overhead change. See the [host map](research/host-stream-map.md#packetization-repair-and-queue-behavior). |
 | QoS | `enableQoS` | Requests packet priority marking; depends on the network. |
 | Asynchronous send | `asyncSend` | Changes sender scheduling; compare actual delays and recovery. |
-| Backoff recovery | `backoffRecoveryCoefficient` | 0.5–10; adaptive recovery coefficient. Compare stability. |
+| Backoff recovery | `backoffRecoveryCoefficient` | 0.5–10; controls how quickly the queue throttle recovers when outstanding work falls. Throttling still applies in manual bitrate mode. |
 
 OpenVR readback confirms the stored/live setting value. Driver consumers can wait for a
 reconnect; image, timing and recovery readbacks establish the observed effect. This tab

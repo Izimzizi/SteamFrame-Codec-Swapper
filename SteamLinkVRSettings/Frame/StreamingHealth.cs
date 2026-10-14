@@ -32,7 +32,10 @@ public sealed record StreamingHealthSnapshot(
     long EncoderReconfigurations, long SkippedBytes, long DiscardedLines,
     long CaptureSkippedEvents, bool DriverLogAvailable, bool CompositorLogAvailable,
     string Summary, string CapturePath, string? CaptureError,
-    IReadOnlyList<StreamingHealthEvent> RecentEvents);
+    IReadOnlyList<StreamingHealthEvent> RecentEvents)
+{
+    public bool ServerLogAvailable { get; init; }
+}
 
 /// <summary>
 /// Incrementally observes new SteamVR log bytes. Existing logs start at EOF;
@@ -47,9 +50,9 @@ public sealed class StreamingHealth
     public const int MaximumCaptureFileBytes = 1024 * 1024;
     private const int MaximumBacklogBytes = 1024 * 1024;
     private const int MaximumCapturedEventsPerPoll = 512;
-    private const string DriverName = "driver_vrlink.txt", CompositorName = "vrcompositor.txt";
+    private const string DriverName = "driver_vrlink.txt", CompositorName = "vrcompositor.txt", ServerName = "vrserver.txt";
     private readonly object _gate = new();
-    private readonly Tail _driver, _compositor;
+    private readonly Tail _driver, _compositor, _server;
     private readonly Queue<StreamingHealthEvent> _recent = new();
     private long _total, _resets, _links, _encoder, _compositorTimeouts, _suppressed, _reconfigurations;
     private long _skippedBytes, _discardedLines, _captureSkipped;
@@ -68,6 +71,7 @@ public sealed class StreamingHealth
         CapturePath = Path.Combine(diagnostics, "streaming-health.jsonl");
         _driver = new Tail(Path.Combine(logs, DriverName), DriverName);
         _compositor = new Tail(Path.Combine(logs, CompositorName), CompositorName);
+        _server = new Tail(Path.Combine(logs, ServerName), ServerName);
         _current = Snapshot(DateTimeOffset.Now);
     }
 
@@ -86,6 +90,7 @@ public sealed class StreamingHealth
             var capture = new List<StreamingHealthEvent>();
             ReadTail(_driver, observed, capture);
             ReadTail(_compositor, observed, capture);
+            ReadTail(_server, observed, capture);
             Persist(capture);
             return _current = Snapshot(observed);
         }
@@ -98,7 +103,7 @@ public sealed class StreamingHealth
         return new(observed, _total, _resets, _links, _encoder, _compositorTimeouts,
             _suppressed, _reconfigurations, _skippedBytes, _discardedLines, _captureSkipped,
             _driver.Available, _compositor.Available, summary, CapturePath, _captureError,
-            Array.AsReadOnly(_recent.ToArray()));
+            Array.AsReadOnly(_recent.ToArray())) { ServerLogAvailable = _server.Available };
     }
 
     private void ReadTail(Tail tail, DateTimeOffset observed, List<StreamingHealthEvent> capture)
@@ -295,12 +300,13 @@ public sealed class StreamingHealth
     private static readonly Regex SubmitDelay = Pattern(@"^Perf warning: Getting from SubmitFrame to StartEncode took (?<duration>" + Number + @")\s*ms(?:\s|$)");
     private static readonly Regex Reconfiguration = Pattern(@"^Starting NVENC reset configuration Cause Mask: (?<mask>[01]{1,32})(?:\s|$)");
     private static readonly Regex AcquireTimeout = Pattern(@"^WaitForAcquire timed out \([A-Za-z_]{1,32}\); rendering the next frame before the driver took the sync texture(?:\s|$)");
+    private static readonly Regex KeyedAcquireTimeout = Pattern(@"^(?:\[Compositor\] )?AcquireSync FAILED with WAIT_TIMEOUT(?:\s|$)");
     private static readonly Regex Suppressed = Pattern(@"\[(?<count>[0-9]{1,10}) messages suppressed\]");
 
     public static bool TryParseLine(string source, string line, DateTimeOffset observedAt, out StreamingHealthEvent? item)
     {
         item = null;
-        if (source is not (DriverName or CompositorName) || line.Length > MaximumLineBytes) return false;
+        if (source is not (DriverName or CompositorName or ServerName) || line.Length > MaximumLineBytes) return false;
         try
         {
             var header = Header.Match(line);
@@ -315,6 +321,21 @@ public sealed class StreamingHealth
                 catch (ArgumentException) { fromLog = false; } // Out-of-range/corrupt log dates use observation time.
             }
             var body = header.Success ? line[header.Length..] : line;
+            // vrserver mirrors many driver messages. Only collect this specific
+            // texture warning there; recovery/performance events already come
+            // from driver_vrlink and must not be counted again.
+            if (source == ServerName)
+            {
+                if (!body.StartsWith("vrlink: ", StringComparison.Ordinal)) return false;
+                body = body[8..];
+            }
+            if (KeyedAcquireTimeout.IsMatch(body))
+            {
+                item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.CompositorAcquireTimeout,
+                    "PC shared-texture acquisition timed out; this can delay frame delivery before encoding.");
+                return true;
+            }
+            if (source == ServerName) return false;
             if (source == DriverName)
             {
                 var match = ResetRequest.Match(body);
@@ -368,7 +389,7 @@ public sealed class StreamingHealth
             {
                 var suppressed = Count(Suppressed.Match(body), "count") ?? 0;
                 item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.CompositorAcquireTimeout,
-                    "Compositor timed out waiting for driver texture acquisition; suppressed messages are repeated warnings, not headset dropped frames.",
+                    "Compositor timed out waiting for the driver's handoff event; this does not prove shared-texture acquisition failed or that the headset dropped frames.",
                     SuppressedCount: suppressed); return true;
             }
         }

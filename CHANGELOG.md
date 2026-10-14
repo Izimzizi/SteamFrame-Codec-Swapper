@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.0 — Frame reconnect and tuned HEVC
+
+- Added **Reconnect Frame** on Overview. It restarts SteamVR once (or starts a
+  stopped runtime), restores prior HEVC tuning requests, and checks for fresh
+  encoded frames and the headset's active link. It does not restart repeatedly
+  or take over experimental paired codec sessions.
+- Added dongle unplug/replug guidance beside the button, in recovery messages,
+  and in the help. The same port or hub can be used. A restart alone is not
+  presented as proof that the headset reconnected.
+- Added the editable **Tuned HEVC** preset: 400 Mbps target, 90 Hz, 10-bit,
+  1664-pixel width, quarter-resolution multipass, synchronous sending, and
+  center/outside-gaze quality offsets of -20/-12. **Smooth HEVC**, **High quality
+  HEVC**, and **Full-resolution HEVC — Experimental** remain bundled. Targets
+  are requests; steady 400 Mbps gameplay is not established.
+- Added clearer requested-versus-accepted encoder policy status, including
+  rate-control changes that require a new encoder session. Maximum-QP changes
+  now wait for encoder reinitialization instead of claiming a live change.
+- Corrected recovery-trace timing labels and distinguished compositor handoff
+  warnings from failed shared-texture acquisition.
+- Added a source-tree launcher for the latest complete local app build, with
+  Windows PowerShell entry-point checks. Added a matching-helper diagnostic
+  build workflow so historical research tools do not reintroduce the app's
+  helper-version mismatch during normal recovery.
+
 ## 1.5.1 — Automatic encoder helper upgrade recovery
 
 - Detect a previous encoder helper still loaded in SteamVR after an app update

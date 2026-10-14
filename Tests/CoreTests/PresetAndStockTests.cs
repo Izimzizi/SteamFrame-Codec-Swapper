@@ -73,7 +73,7 @@ public sealed class PresetAndStockTests : IDisposable
     {
         await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":false,"unrelatedPairingValue":"keep"},"steamvr":{"preferredRefreshRate":120,"showMirrorView":true}}""");
         var presets = BuiltInPresets.Create();
-        Assert.Equal(3, presets.Select(p => p.Id).Distinct().Count());
+        Assert.Equal(4, presets.Select(p => p.Id).Distinct().Count());
         foreach (var entry in presets) { StockProfiles.Validate(entry.Profile); Assert.True(entry.IsBuiltIn); }
         var preset = Assert.Single(presets, p => p.Name == "High quality HEVC");
         StockProfiles.Validate(preset.Profile);
@@ -91,6 +91,33 @@ public sealed class PresetAndStockTests : IDisposable
         Assert.True(preferences.QualityEnabled); Assert.Equal(-2, preferences.GazeOffset); Assert.Equal(-6, preferences.PeripheralOffset);
         Assert.True(preferences.ReapplyAfterRestart); Assert.True(preferences.AdvancedEncoding.IsDefault); Assert.True(preset.Profile.BitratePatch);
         Assert.Equal("paired-device", preferences.SshHost); Assert.Equal("keep", driver["unrelatedPairingValue"]); Assert.Equal(true, video["showMirrorView"]);
+    }
+    [Fact]
+    public async Task TunedHevcRestoresMeasuredSetupAndCanBeSavedWithoutChangingBuiltIns()
+    {
+        await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":true,"streamFormatWidth":2048,"usePool":true,"unrelatedPairingValue":"keep"},"steamvr":{"preferredRefreshRate":120,"showMirrorView":true}}""");
+        var preset = Assert.Single(BuiltInPresets.Create(), p => p.Name == "Tuned HEVC");
+        var store = new PresetStore(Path.Combine(_root, "tuned-presets.json"));
+        await store.SaveAsync("My tuned HEVC", preset.Profile);
+        var saved = Assert.Single(await store.ReadAsync());
+        var preferences = new FramePreferences { SshHost = "paired-device", AdvancedEncoding = new() { MaximumQp = 30, StrictGopTarget = true } };
+        await Profiles.RestoreAsync(saved.Profile, preferences);
+        var driver = await Driver.LoadUserOverridesAsync(); var video = await Video.LoadUserOverridesAsync();
+        Assert.Equal(StreamCodec.Hevc, preferences.RequestedCodec); Assert.Equal(400, preferences.CodecTargetMbps); Assert.Equal(90, preferences.CodecFps);
+        Assert.Equal(400d, Convert.ToDouble(driver["targetBandwidth"])); Assert.Equal(1664, Convert.ToInt32(driver["streamFormatWidth"]));
+        Assert.Equal(false, driver["asyncSend"]); Assert.Equal(true, driver["10bit"]);
+        Assert.Equal(false, driver["automaticBandwidth"]); Assert.Equal(false, driver["automaticStreamFormatWidth"]);
+        Assert.Equal(false, driver["allowMultipleLinks"]); Assert.Equal(90d, Convert.ToDouble(video["preferredRefreshRate"]));
+        Assert.Equal(EncoderRateControl.Cbr, preferences.RateControl); Assert.Equal(EncoderMultiPass.QuarterResolution, preferences.MultiPass);
+        Assert.True(preferences.QualityEnabled); Assert.Equal(-20, preferences.GazeOffset); Assert.Equal(-12, preferences.PeripheralOffset);
+        Assert.True(preferences.ReapplyAfterRestart); Assert.True(preferences.AdvancedEncoding.IsDefault); Assert.True(saved.Profile.BitratePatch);
+        Assert.DoesNotContain("usePool", driver.Keys); Assert.Equal("keep", driver["unrelatedPairingValue"]);
+        Assert.Equal("paired-device", preferences.SshHost); Assert.Equal(true, video["showMirrorView"]);
+        saved.Profile.Driver["streamFormatWidth"] = JsonSerializer.SerializeToElement(1024);
+        var fresh = Assert.Single(BuiltInPresets.Create(), p => p.Id == preset.Id);
+        Assert.Equal(1664, fresh.Profile.Driver["streamFormatWidth"].GetInt32());
+        var high = Assert.Single(BuiltInPresets.Create(), p => p.Name == "High quality HEVC");
+        Assert.Equal(2048, high.Profile.Driver["streamFormatWidth"].GetInt32()); Assert.True(high.Profile.Driver["asyncSend"].GetBoolean());
     }
     [Fact]
     public async Task SavingEditedBuiltInDoesNotReplaceAppPresetOrOtherSavedPresets()

@@ -5,8 +5,8 @@ namespace SteamLinkVRSettings.Frame;
 public sealed record StageTiming(int Samples, double MedianMs, double P99Ms, double MaximumMs);
 public sealed record StreamingFrameTraceSnapshot(string FileName, DateTimeOffset? FirstFrame,
     DateTimeOffset? LastFrame, int SentFrames, int NoTransmitRows, int MissingReceiveFeedback,
-    int MissingIlluminationFeedback, int LateSubmissionFrames, StageTiming? Encode,
-    StageTiming? Transport, StageTiming? Decode, StageTiming? LateSubmission, string Message);
+    int MissingDisplayTargetFeedback, int LaterDisplayTargetFrames, StageTiming? Encode,
+    StageTiming? Transport, StageTiming? Decode, StageTiming? DisplayTargetShift, string Message);
 
 /// <summary>Reads Valve's recovery traces without treating absent feedback as a dropped frame.</summary>
 public sealed class StreamingFrameTrace
@@ -69,14 +69,17 @@ public sealed class StreamingFrameTrace
         // Receive is mapped to the sender's clock by Valve; never subtract remote realtime from host realtime.
         var transport = sent.Select(r => Duration(r.SendStart, r.Receive)).OfType<double>().ToArray();
         var decode = sent.Select(r => Duration(r.DecodeStartRemote, r.DecodeEndRemote)).OfType<double>().ToArray();
-        var late = sent.Where(r => r.Illumination > 0 && r.Predicted > 0)
-            .Select(r => (r.Illumination!.Value - r.Predicted!.Value) / 1000d).Where(v => v > 1 && v < 10000).ToArray();
+        // Despite the CSV's "Submit Illumination" label, the receiver reports its
+        // chosen future display target before SubmitImage. Compare predictions;
+        // this is not an actual submission or physical display timestamp.
+        var shifted = sent.Where(r => r.DisplayTarget > 0 && r.Predicted > 0)
+            .Select(r => (r.DisplayTarget!.Value - r.Predicted!.Value) / 1000d).Where(v => v > 1 && v < 10000).ToArray();
         var first = rows.Count == 0 ? null : Date(rows[0].Realtime);
         var last = rows.Count == 0 ? null : Date(rows[^1].Realtime);
         return new(fileName, first, last, sent.Length, rows.Count(r => r.Tx < 0),
-            sent.Count(r => r.Receive is null or <= 0), sent.Count(r => r.Illumination is null or <= 0), late.Length,
-            Timing(encode), Timing(transport), Timing(decode), Timing(late),
-            "Timing from the last recovery trace; missing feedback and no-transmit rows are not proven packet drops.");
+            sent.Count(r => r.Receive is null or <= 0), sent.Count(r => r.DisplayTarget is null or <= 0), shifted.Length,
+            Timing(encode), Timing(transport), Timing(decode), Timing(shifted),
+            "Recovery-selected timings include driver and scheduling delays, not isolated hardware time. Display-target shifts are prediction differences; missing feedback and no-transmit rows are not proven packet drops.");
 
         StreamingFrameTraceSnapshot Empty(string message) => new(fileName, null, null, 0, 0, 0, 0, 0, null, null, null, null, message);
     }
@@ -97,5 +100,5 @@ public sealed class StreamingFrameTrace
         return new(values.Length, median, values[Math.Clamp((int)Math.Ceiling(values.Length * .99) - 1, 0, values.Length - 1)], values[^1]);
     }
     private sealed record Row(long Present, long Tx, long Realtime, long? EncodeStart, long? EncodeEnd, long? SendStart,
-        long? Receive, long? DecodeStartRemote, long? DecodeEndRemote, long? Illumination, long? Predicted);
+        long? Receive, long? DecodeStartRemote, long? DecodeEndRemote, long? DisplayTarget, long? Predicted);
 }

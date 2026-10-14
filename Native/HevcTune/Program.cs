@@ -43,11 +43,15 @@ if (start)
     if (!before.Installed) throw new InvalidOperationException(before.Message);
     return;
 }
+if (args.Length == 0)
+{
+    Console.WriteLine(JsonSerializer.Serialize(new { Event = "before", Snapshot = before }));
+    return; // Inactive/mismatched sessions still have useful read-only diagnostics.
+}
 if (!before.Installed || before.PairedCodecTrialPresent ||
     (arm ? before.Active : !before.Active || before.Codec != "HEVC"))
     throw new InvalidOperationException("Start the app's HEVC monitor before applying a trial");
 Console.WriteLine(JsonSerializer.Serialize(new { Event = "before", Snapshot = before }));
-if (args.Length == 0) return;
 var request = JsonSerializer.Deserialize<Request>(File.ReadAllText(args[1])) ?? throw new InvalidDataException("Empty request");
 request.Advanced?.Validate();
 if (request.Policy is { IsValid: false }) throw new ArgumentException("Invalid encoding policy");

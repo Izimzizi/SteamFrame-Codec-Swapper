@@ -89,6 +89,8 @@ struct Stats {
     uint32_t lastMapStatus{};
     uint64_t policyCalls{}, policyErrors{}, rejectedPolicyCalls{};
     bool policyObserved{};
+    bool policyNeedsSession{}, policyUnsupported{}, dynamicRc{};
+    uint32_t supportedRc{};
     uint32_t appliedPolicy{}, rateControl{}, multiPass{}, averageBitrate{}, maxBitrate{}, vbvSize{}, vbvDelay{};
     uint32_t encodeWidth{}, encodeHeight{}, frameRateNum{}, frameRateDen{};
     uint32_t bitDepth = 8;
@@ -150,6 +152,7 @@ void recordPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t
         found->second.customPolicy = policy != 0 || advanced.flags != 0 || found->second.initializedAdvanced.flags != 0;
         stats.capsQueried = found->second.capsQueried; stats.dynamicBitrate = found->second.dynamicBitrate;
         stats.customVbv = found->second.customVbv; stats.temporalAq = found->second.temporalAq;
+        stats.dynamicRc = found->second.dynamicRc; stats.supportedRc = found->second.supportedRc;
         const auto& initialPolicy = found->second.initializedAdvanced;
         stats.pendingAdvancedFlags = AdvancedInitializationEqual(advancedRequest, initialPolicy) ? 0
             : (advancedRequest.flags | initialPolicy.flags) & AdvancedInitialization;
@@ -210,6 +213,8 @@ uint32_t validatedPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, u
         const auto current = session.acceptedRcKnown ? session.acceptedRc : params.encodeConfig->rcParams.rateControlMode;
         // NV_ENC_PARAMS_RC_MODE values are already bit flags (VBR=1, CBR=2).
         const bool supported = !(policy & 3u) || (session.supportedRc & desired);
+        stats.policyUnsupported = !supported;
+        stats.policyNeedsSession = supported && !initialization && !session.dynamicRc && current != desired;
         if (supported && (initialization || session.dynamicRc || current == desired)) return policy;
         ++stats.rejectedPolicyCalls;
         if (!initialization && session.acceptedRcKnown && current != static_cast<uint32_t>(params.encodeConfig->rcParams.rateControlMode)) {
@@ -590,11 +595,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI WriteStatus(void* parameter) {
         copy.frameRateNum, copy.frameRateDen, copy.filler ? "true" : "false", copy.preset, copy.policyCalls, copy.policyErrors, copy.rejectedPolicyCalls);
     const auto& rc = copy.effectiveRc;
     const int advancedWritten = fprintf(file,
+        "\"policy_needs_session\":%s,\"policy_unsupported\":%s,\"policy_initialization_rejected\":%s,\"dynamic_rate_control\":%s,\"supported_rate_control_modes\":%u,"
         "\"codec_source\":\"%s\",\"bit_depth\":%u,\"advanced_supported\":true,\"requested_advanced\":{\"flags\":%u,\"cq256\":%u,\"max_qp\":%u,\"peak_bitrate\":%u,\"vbv_bits\":%u,\"vbv_delay_bits\":%u,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"spatial_aq\":%u,\"aq_strength\":%u,\"temporal_aq\":%u,\"preset\":%u,\"strict_gop_target\":%u,\"keyframe_scale\":%u},"
         "\"applied_advanced_flags\":%u,\"pending_advanced_flags\":%u,\"rejected_advanced_flags\":%u,\"last_advanced_error\":%u,"
         "\"effective\":{\"cq256\":%u,\"max_qp_enabled\":%s,\"max_qp_i\":%u,\"max_qp_p\":%u,\"max_qp_b\":%u,\"spatial_aq\":%s,\"aq_strength\":%u,\"temporal_aq\":%s,\"cb_qp_offset\":%d,\"cr_qp_offset\":%d,\"strict_gop_target\":%s,\"keyframe_scale\":%u},"
         "\"advanced_capabilities\":{\"queried\":%s,\"dynamic_bitrate\":%s,\"custom_vbv\":%s,\"temporal_aq\":%s},"
         "\"timing\":{\"reconfigure_calls\":%llu,\"reconfigure_total_us\":%llu,\"reconfigure_max_us\":%llu,\"reconfigure_over_2ms\":%llu,\"encode_calls\":%llu,\"encode_total_us\":%llu,\"encode_max_us\":%llu,\"encode_over_2ms\":%llu,\"completion_calls\":%llu,\"completion_total_us\":%llu,\"completion_max_us\":%llu,\"completion_over_2ms\":%llu}}\n",
+        copy.policyNeedsSession ? "true" : "false", copy.policyUnsupported ? "true" : "false", policyRejected.load() ? "true" : "false",
+        copy.dynamicRc ? "true" : "false", copy.supportedRc,
         copy.codecSource, copy.bitDepth, request.flags, request.cq256, request.maxQp, request.peakBitrate, request.vbvBits, request.vbvDelayBits,
         request.cbQpOffset, request.crQpOffset, request.spatialAq, request.aqStrength, request.temporalAq, request.preset, request.strictGopTarget, request.lowDelayKeyFrameScale,
         copy.appliedAdvancedFlags, copy.pendingAdvancedFlags, copy.rejectedAdvancedFlags, copy.lastAdvancedError,

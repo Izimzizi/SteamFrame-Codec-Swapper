@@ -366,7 +366,12 @@ public sealed partial class EncoderProbe
             FrameRateNum = json.GetProperty("frame_rate_num").GetUInt32(), FrameRateDen = json.GetProperty("frame_rate_den").GetUInt32(),
             Filler = json.GetProperty("filler").GetBoolean(), Preset = json.GetProperty("preset").GetString() ?? "Unknown",
             Calls = json.GetProperty("policy_calls").GetUInt64(), Errors = json.GetProperty("policy_errors").GetUInt64(),
-            RejectedCalls = json.GetProperty("rejected_policy_calls").GetUInt64()
+            RejectedCalls = json.GetProperty("rejected_policy_calls").GetUInt64(),
+            NeedsNewSession = json.TryGetProperty("policy_needs_session", out var pendingSession) && pendingSession.GetBoolean(),
+            Unsupported = json.TryGetProperty("policy_unsupported", out var unsupported) && unsupported.GetBoolean(),
+            InitializationRejected = json.TryGetProperty("policy_initialization_rejected", out var rejectedInit) && rejectedInit.GetBoolean(),
+            DynamicRateControlSupported = json.TryGetProperty("dynamic_rate_control", out var dynamicRc) ? dynamicRc.GetBoolean() : null,
+            SupportedRateControlModes = json.TryGetProperty("supported_rate_control_modes", out var supportedRc) ? supportedRc.GetUInt32() : null
         };
     }
 

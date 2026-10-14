@@ -3,6 +3,28 @@ using SteamLinkVRSettings.Frame;
 public sealed class EncoderControlsTests
 {
     [Fact]
+    public void Pending_cbr_is_not_reported_as_active_or_as_an_nvenc_failure()
+    {
+        var snapshot = new EncodingPolicySnapshot
+        {
+            Observed = true, Requested = new(EncoderRateControl.Cbr, EncoderMultiPass.FullResolution),
+            Applied = new(), RateControl = 1, MultiPass = 0, NeedsNewSession = true,
+            DynamicRateControlSupported = false, RejectedCalls = 75000
+        };
+        Assert.True(snapshot.Pending);
+        Assert.Contains("VBR is still active", snapshot.StatusMessage);
+        Assert.Contains("new encoder session", snapshot.StatusMessage);
+        Assert.False(snapshot.Unsupported);
+        var applied = snapshot with { Applied = snapshot.Requested, RateControl = 2, MultiPass = 2, NeedsNewSession = false };
+        Assert.False(applied.Pending);
+        Assert.Equal("Requested policy accepted.", applied.StatusMessage);
+        Assert.Contains("does not advertise", (snapshot with { Unsupported = true, NeedsNewSession = false }).StatusMessage);
+        Assert.Contains("rejected initialization", (snapshot with { InitializationRejected = true }).StatusMessage);
+        Assert.Contains("Waiting", (snapshot with { Observed = false }).StatusMessage);
+        // Older helpers lack the capability fields: show the mismatch without inventing its cause.
+        Assert.Contains("not active", (snapshot with { NeedsNewSession = false, DynamicRateControlSupported = null }).StatusMessage);
+    }
+    [Fact]
     public void Policies_reject_unknown_fields_and_round_trip()
     {
         foreach (var rate in Enum.GetValues<EncoderRateControl>())

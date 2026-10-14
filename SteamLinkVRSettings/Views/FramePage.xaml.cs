@@ -317,8 +317,8 @@ public sealed partial class FramePage : Page
             HealthEvents.Text = events.Length == 0 ? "No new streaming warnings captured." : string.Join("\n", events.Select(e => $"{e.Timestamp.ToLocalTime():HH:mm:ss.fff}  {e.Message}"));
             if (traceTask != null && await traceTask is { } trace)
                 HealthTrace.Text = $"Last recovery trace {trace.LastFrame?.ToLocalTime():HH:mm:ss} ({TraceAge(trace.LastFrame)}): {trace.SentFrames} sent frames. " +
-                    $"Worst encode {Stage(trace.Encode)}, send-to-receive {Stage(trace.Transport)}, decode {Stage(trace.Decode)}. " +
-                    $"{trace.LateSubmissionFrames} headset submissions >1 ms late; {trace.MissingIlluminationFeedback} without submission feedback.\n{trace.Message}";
+                    $"Worst encoder completion {Stage(trace.Encode)}, send-to-receive {Stage(trace.Transport)}, decoder turnaround {Stage(trace.Decode)}. " +
+                    $"{trace.LaterDisplayTargetFrames} receiver display targets >1 ms after host prediction; {trace.MissingDisplayTargetFeedback} without target feedback.\n{trace.Message}";
 
             RuntimeText.Text = _vrRunning ? "SteamVR running" : "SteamVR stopped";
             UpdatePatchButtons();
@@ -444,12 +444,16 @@ public sealed partial class FramePage : Page
     private void RenderEncodingReadbacks(EncoderSnapshot snapshot)
     {
         var policy = snapshot.EncodingPolicy;
+        EncoderPolicyNotice.IsOpen = snapshot.Active && !snapshot.PairedCodecTrialPresent &&
+            policy is { Observed: true } && (policy.Pending || policy.NeedsNewSession || policy.Unsupported || policy.InitializationRejected);
+        EncoderPolicyNotice.Message = policy is null ? "" :
+            $"Requested: {policy.Requested.Description}. Accepted: {policy.RateControlName} / {policy.MultiPassName}. {policy.StatusMessage}";
         PolicyRequestedReadback.Text = snapshot.PairedCodecTrialPresent ? "The paired codec trial controls the encoder policy; app overrides are disabled."
             : policy is null ? "Requested NVENC policy: unavailable (updated helper required)" : "Requested NVENC policy: " + policy.Requested.Description;
         PolicyAppliedReadback.Text = policy is not { Observed: true } ? "Accepted NVENC configuration: waiting for a verified initialize/reconfigure call" :
             $"Last accepted: {policy.RateControlName} / {policy.MultiPassName} / preset {policy.Preset} • {policy.AverageBitrate / 1_000_000.0:0.0} Mbps encoder target\n" +
             $"{policy.Width} × {policy.Height} at {(policy.FrameRateDen > 0 ? policy.FrameRateNum / (double)policy.FrameRateDen : 0):0.0} fps • bit depth {(snapshot.BitDepth is uint depth ? depth.ToString() : "unavailable")} • VBV {policy.VbvSize / 1_000_000.0:0.00} Mbit / initial {policy.VbvDelay / 1_000_000.0:0.00} Mbit • padding {(policy.Filler ? "enabled" : "disabled")}\n" +
-            (snapshot.PairedCodecTrialPresent ? "Paired codec adapter configuration observed." : policy.Requested == policy.Applied ? "Requested policy accepted." : "Policy change pending; reconnect if it does not apply.") +
+            (snapshot.PairedCodecTrialPresent ? "Paired codec adapter configuration observed." : policy.StatusMessage) +
             $" Calls {policy.Calls}, errors {policy.Errors}, rejected policy/ABI calls {policy.RejectedCalls}." + (snapshot.Active ? "" : " Stream currently inactive.");
         var qp = snapshot.Active ? _quantizers.Sample(snapshot.Generation, snapshot.QuantizerSamples, snapshot.QuantizerSum) : null;
         QuantizerReadback.Text = $"Whole-frame QP: {(qp is double value ? value.ToString("0.00") + " interval mean" : "waiting for new samples")} • last frame {(snapshot.QuantizerSamples > 0 ? snapshot.LastFrameQp?.ToString() : "unavailable")} • {snapshot.LastFrameBytes / 1024.0:0.0} KiB/frame";
@@ -638,7 +642,7 @@ public sealed partial class FramePage : Page
                     var policyResult = await ApplyPolicyAsync(requestedPolicy);
                     qualityMessage += policyResult.EncodingPolicy is { Observed: true } accepted && accepted.Requested == requestedPolicy && accepted.Applied == requestedPolicy
                         ? " NVENC policy accepted."
-                        : " NVENC policy pending: " + policyResult.Message + " Reconnect if the dashboard does not confirm it.";
+                        : " " + (policyResult.EncodingPolicy?.StatusMessage ?? policyResult.Message);
                 }
             }
         }

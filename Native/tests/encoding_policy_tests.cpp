@@ -86,16 +86,18 @@ int main() {
     sessions[handle].dynamicRc = false;
     SetEncodingPolicy(reinterpret_cast<void*>(6));
     hookReconfigure(handle, &reconfigure);
-    if (stats.appliedPolicy || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_VBR) return 13;
+    if (stats.appliedPolicy || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_VBR ||
+        !stats.policyNeedsSession || stats.policyUnsupported || stats.dynamicRc) return 13;
     hookInitialize(handle, &params);
-    if (stats.appliedPolicy != 6 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR) return 14;
+    if (stats.appliedPolicy != 6 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR ||
+        stats.policyNeedsSession || stats.policyUnsupported) return 14;
     hookReconfigure(handle, &reconfigure);
     if (stats.appliedPolicy != 6 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR ||
         memcmp(&config, &originalConfig, sizeof(config))) return 15;
     SetEncodingPolicy(nullptr);
     hookReconfigure(handle, &reconfigure);
     if (stats.appliedPolicy != 2 || seenConfig.rcParams.rateControlMode != NV_ENC_PARAMS_RC_CBR ||
-        !sessions[handle].customPolicy || StopProbe(nullptr) != 1014) return 16;
+        !sessions[handle].customPolicy || !stats.policyNeedsSession || StopProbe(nullptr) != 1014) return 16;
     // A rejected call must never replace the last accepted mode.
     policyResult = NV_ENC_ERR_GENERIC;
     hookInitialize(handle, &params);

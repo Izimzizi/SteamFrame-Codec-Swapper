@@ -12,7 +12,7 @@ The editable [High quality HEVC preset](hevc-high-quality.md) loads a complete
 | Automatic bandwidth | `automaticBandwidth` | When on, SteamVR picks the target itself. |
 | Display refresh rate | `steamvr/preferredRefreshRate` | 90 or 120 Hz, including HEVC. Sets the SteamVR preference; reconnecting may be needed. |
 | Allow AMD AMF encoder | `enableAmfEncoder` | Needs compatible AMD hardware. Takes effect after reconnecting or restarting SteamVR. |
-| Allow additional streaming links | `allowMultipleLinks` | Permits available dedicated wireless, local-network and USB links. Combined throughput is not guaranteed; confirm active links in the dashboard. |
+| Allow additional streaming links | `allowMultipleLinks` | Permits available dedicated wireless, local-network and USB links. The researched transport duplicates datagrams across eligible links rather than striping video; this does not enable additional decoders. Confirm active links in the dashboard. |
 | Stream format width | `streamFormatWidth` | 512–4096 pixels, in multiples of 32. A larger width may improve center detail while increasing encoder/decoder work; reconnecting may be needed. |
 | Automatic stream width | `automaticStreamFormatWidth` | Allows Valve to choose the width. |
 | NVENC rate control | Public NVENC parameter hook | Experimental Valve default, VBR or CBR without filler/padding. Requires the updated live monitor. |

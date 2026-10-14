@@ -29,9 +29,9 @@ including the ones SteamVR doesn't show in its own UI.
 | **Codec selector** | Switch between HEVC, AV1 and H.264, choose H.264 25–500 Mbps or AV1 25–200 Mbps at 90/120 Hz, and restore stock HEVC. AV1/H.264 are exact-build experiments and restart the stream. |
 | **Streaming issue capture** | Timestamps recovery requests, bad-link events, encoder stalls, PC presentation drops and headset receiver faults, and saves them as JSONL. |
 | **Driver patcher** | Raises the driver's 232/350 Mbps ceilings to 500 Mbps and selects HEVC level 6.2, with verified backups and one-click restore. |
-| **Connection tools** | Shows the dongle's negotiated USB 2/USB 3 speed, reads headset link status over paired wireless SSH or ADB, and can restart a stalled Frame USB connection. |
+| **Connection tools** | Shows the dongle's negotiated USB 2/USB 3 speed and headset link status. Reconnect Frame restarts SteamVR once and verifies fresh HEVC output; separate recovery handles the Frame USB daemon. |
 | **Additional settings** | Search less common `driver_vrlink` options. Settings already in Stream settings or Advanced are excluded to avoid duplicate controls. |
-| **Complete presets** | Includes Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass) and Full-resolution HEVC — Experimental (400 Mbps, full-resolution multipass). All use 90 Hz, 10-bit and 2048 width. Edit any control or save a personal preset; built-ins remain available. |
+| **Complete presets** | Includes Tuned HEVC (our current 400 Mbps / 1664-width setup), Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass) and Full-resolution HEVC — Experimental. All use 90 Hz and 10-bit; the other three use 2048 width. Edit any control or save a personal preset; built-ins remain available. |
 | **Back to stock** | Save the current tuning, end experimental codecs, restore a verified original driver and remove app tuning overrides. Load previous tuning to return to it. Pairing and unrelated settings stay intact. |
 
 ## Download and run
@@ -55,6 +55,11 @@ briefly disconnects the headset and may close the running game. Saved encoder
 tuning is restored when **Reapply** is enabled. Background checks never trigger
 this restart, and unapplied edits stay in the editor.
 
+If streaming disconnects after a game, use **Overview → Reconnect Frame** with
+the headset awake. If it still does not return, unplug and replug the dedicated
+dongle (the same USB port or hub is fine), wait for the link, and select this PC
+in the Frame's streaming menu if needed. See the [reconnection guide](docs/live-dashboard.md#reconnecting-after-a-game-closes).
+
 ## Quick start
 
 1. Keep Wi-Fi on the Frame enabled and start a VR stream.
@@ -72,6 +77,13 @@ preferences are left as they are. Save those edits before capturing the preset.
 Passwords, developer pairing paths and temporary awake-test leases are not saved in
 presets. **Back to stock** saves the currently applied tuning before restoring Valve
 defaults; **Load previous tuning** fills the editor with that saved setup.
+
+Choose **Tuned HEVC (built-in)** for our current playable setup: a 400 Mbps target,
+1664-pixel width, quarter-resolution multipass, synchronous sending and center
+−20 / outside-gaze −12 quality offsets. A short current-scene check measured about
+261 Mbps at 89.7 encoded fps; sustained 350–400 Mbps and better results in every
+game are not established. The lower width trades spatial detail for stronger
+compression quality. Every setting remains editable.
 
 Choose **Smooth HEVC (built-in)** for the 300 Mbps single-pass baseline, or
 **High quality HEVC (built-in)** to load the tested high-quality setup.

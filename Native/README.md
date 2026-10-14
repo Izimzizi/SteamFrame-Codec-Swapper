@@ -1,6 +1,14 @@
 # Steam Frame encoder probe
 
 Build on Windows x64 with `powershell -ExecutionPolicy Bypass -File Native/build.ps1`.
+
+For normal-play diagnostics or recovery, build `HevcTune` against the app currently
+in use with `Native/HevcTune/Build-ForApp.ps1 -AppDirectory <app-output-directory>`.
+This copies and verifies that app's exact helper and writes a matching-build receipt.
+Do not restore normal play with an old experiment's `HevcTune.exe`: it can install
+its historical helper into a fresh SteamVR process and cause the current app's
+update warning to return. Use the app's **Reconnect Frame** action for routine
+recovery. Frozen experiment binaries are retained only for reproducing their trials.
 Visual Studio C++ Build Tools, Windows SDK, CMake and Ninja are required. The script
 discovers Visual Studio and its bundled CMake/Ninja; optional parameters override the
 Visual Studio or SDK installation root. Output: `Native/build/SteamFrameEncoderProbe.dll`.

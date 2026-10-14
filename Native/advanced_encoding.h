@@ -9,7 +9,9 @@ enum AdvancedFlag : uint32_t {
     AdvancedTemporalAq = 128, AdvancedPreset = 256, AdvancedStrictGop = 512, AdvancedKeyFrameScale = 1024
 };
 constexpr uint32_t AdvancedAll = 2047;
-constexpr uint32_t AdvancedInitialization = AdvancedChroma | AdvancedSpatialAq | AdvancedTemporalAq | AdvancedPreset | AdvancedStrictGop | AdvancedKeyFrameScale;
+// Reconfigure can return success while retaining the hardware's old max-QP
+// constraint, including when disabling it. Change it only with a new session.
+constexpr uint32_t AdvancedInitialization = AdvancedMaxQp | AdvancedChroma | AdvancedSpatialAq | AdvancedTemporalAq | AdvancedPreset | AdvancedStrictGop | AdvancedKeyFrameScale;
 // Explicit little-endian x64 protocol. Do not marshal C++ bools or SDK structs.
 struct AdvancedEncoding {
     uint32_t size = 64, version = 2, flags{}, cq256{}, maxQp{}, peakBitrate{}, vbvBits{}, vbvDelayBits{};
@@ -90,7 +92,8 @@ inline bool ApplyAdvancedEncoding(const AdvancedEncoding& value, NV_ENC_CONFIG& 
 inline bool AdvancedInitializationEqual(const AdvancedEncoding& a, const AdvancedEncoding& b) {
     const auto flags = a.flags & AdvancedInitialization;
     if (flags != (b.flags & AdvancedInitialization)) return false;
-    return (!(flags & AdvancedChroma) || (a.cbQpOffset == b.cbQpOffset && a.crQpOffset == b.crQpOffset)) &&
+    return (!(flags & AdvancedMaxQp) || a.maxQp == b.maxQp) &&
+        (!(flags & AdvancedChroma) || (a.cbQpOffset == b.cbQpOffset && a.crQpOffset == b.crQpOffset)) &&
         (!(flags & AdvancedSpatialAq) || (a.spatialAq == b.spatialAq && a.aqStrength == b.aqStrength)) &&
         (!(flags & AdvancedTemporalAq) || a.temporalAq == b.temporalAq) &&
         (!(flags & AdvancedPreset) || a.preset == b.preset) &&
@@ -100,6 +103,7 @@ inline bool AdvancedInitializationEqual(const AdvancedEncoding& a, const Advance
 inline AdvancedEncoding AdvancedForReconfigure(const AdvancedEncoding& request, const AdvancedEncoding& initialized) {
     auto effective = request;
     effective.flags = (request.flags & ~AdvancedInitialization) | (initialized.flags & AdvancedInitialization);
+    effective.maxQp = initialized.maxQp;
     effective.cbQpOffset = initialized.cbQpOffset; effective.crQpOffset = initialized.crQpOffset;
     effective.spatialAq = initialized.spatialAq; effective.aqStrength = initialized.aqStrength;
     effective.temporalAq = initialized.temporalAq; effective.preset = initialized.preset;

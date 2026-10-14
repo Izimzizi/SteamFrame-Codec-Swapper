@@ -48,7 +48,7 @@ public static class AdvancedDriverSettings
         new("useSharpening", "Image sharpening", DriverValueKind.Boolean, 0, 1, 1, "Changes apparent crispness; it cannot restore detail lost to compression."),
         new("sharpeningStrength", "Sharpening strength", DriverValueKind.Float, 0, 1, 0.05, "Driver clamps strength to 0–1."),
         new("enableTimedRetry", "Timed video retry", DriverValueKind.Integer, 0, 1, 1, "0 disabled, 1 enabled. Watch receiver retry and decoder recovery events; disabling retry can worsen loss."),
-        new("forceBaselineVideoFEC", "Force baseline video FEC", DriverValueKind.Boolean, 0, 1, 1, "Controls baseline forward-error correction; changes can trade network overhead against unrecoverable loss.", true),
+        new("forceBaselineVideoFEC", "Force baseline video FEC", DriverValueKind.Boolean, 0, 1, 1, "Sends Valve's baseline FEC request. Its effect is unverified in this driver/client build; this is not a confirmed parity or overhead control.", true),
         new("enableQoS", "Network QoS marking", DriverValueKind.Boolean, 0, 1, 1, "Requests packet priority marking. Benefits depend on the network's handling."),
         new("asyncSend", "Asynchronous sending", DriverValueKind.Boolean, 0, 1, 1, "Changes the sender scheduling path. Enabled in High quality HEVC; compare actual delays and recovery counts.", true),
         new("backoffRecoveryCoefficient", "Bandwidth backoff recovery coefficient", DriverValueKind.Float, 0.5, 10, 0.1, "Controls adaptive recovery after bandwidth backoff; monitor stability when changing it.")

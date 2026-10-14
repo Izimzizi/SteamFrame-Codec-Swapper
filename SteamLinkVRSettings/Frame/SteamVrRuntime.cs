@@ -4,6 +4,27 @@ namespace SteamLinkVRSettings.Frame;
 
 public static class SteamVrRuntime
 {
+    public static async Task StartOrRestartForReconnectAsync(SteamPaths paths, int expectedProcessId)
+    {
+        if (expectedProcessId > 0)
+        {
+            await RestartForEncoderAsync(paths, expectedProcessId);
+            return;
+        }
+        // A stopped runtime needs a launch, not an unguarded process kill.
+        foreach (var name in new[] { "vrmonitor", "vrcompositor", "vrserver" })
+        {
+            var processes = Process.GetProcessesByName(name);
+            try
+            {
+                if (processes.Length != 0)
+                    throw new InvalidOperationException("SteamVR is starting or stopping. Wait for it to settle, then try Reconnect Frame again.");
+            }
+            finally { foreach (var process in processes) process.Dispose(); }
+        }
+        Start(paths);
+    }
+
     public static async Task RestartForEncoderAsync(SteamPaths paths, int expectedProcessId)
     {
         // Check launch and process identity before stopping anything. A codec switch

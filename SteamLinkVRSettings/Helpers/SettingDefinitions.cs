@@ -138,7 +138,7 @@ public static class SettingDefinitions
                 {
                     Key = "forceBaselineVideoFEC",
                     DisplayName = "Force Baseline FEC",
-                    Description = "Force baseline Forward Error Correction for the video stream",
+                    Description = "Send Valve's baseline FEC request. Its effect on repair traffic is unverified in the researched driver/client build.",
                     ControlType = ControlType.Toggle,
                     RequiresRestart = true
                 },
