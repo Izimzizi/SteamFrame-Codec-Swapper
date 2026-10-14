@@ -1709,5 +1709,88 @@ This bounds collected IDs, not all bitmap reads or CPU time. It does not repair
 initialization, reset, object lifetime or generation ownership. Emulation also
 confirms the emitter can reload a changed frame ID and send old indices under
 that new identity. Severe-loss recovery intentionally changes, and liveness is
-unproved. No runtime patcher integration or live activation exists at this
-publication cutoff; coherent ownership remains the permanent repair boundary.
+unproved. This initial proof had no runtime integration. The later guarded
+implementation and canaries below preserve those limitations; coherent
+ownership remains the permanent repair boundary.
+
+## Timed-prefix transaction and bounded live attempts
+
+The private backend now implements the reviewed prefix through its existing
+exact-build ptrace transaction. Prefix plus signed timer uses four complete
+aligned words; adding the six-frame ordering window uses six. Apply requires
+all originals, while restoration recognizes mixtures of complete known words.
+Unknown bytes and half-changed comparison/branch pairs are refused. No executable
+file, register, NZCV or receive-frame state is modified by this transaction.
+
+Both apply and restore stop and identify the full surviving thread set, verify
+mapped-file identity and code, and exclude PCs around the comparison/branch
+pairs. This prevents restoring an old branch while resuming condition flags
+produced by the new threshold. A nonmutating inspection at an unsafe PC is not
+authorization for a later write; mutation reacquires stops and repeats guards.
+The window reversal retains its explicit reset-risk acknowledgement.
+
+Ninety-two offline tests passed: 46 existing timer/window tests, 27 backend/
+supervisor cases, 12 independently authored transaction cases and seven runner
+cases. They cover every complete-word mixture, indeterminate write failures,
+readback failures, unknown half-pairs, PC boundaries, cleanup and backend
+refusal. Caught failures attempt convergence to verified original code and all
+detaches. Persistent restoration errors remain failed/emergency results.
+
+These tests do not make multiple writes crash-atomic. A killed worker or kernel
+failure can leave a known mixture until the independent watchdog restores it;
+inaccessibility, unsafe stop positions or persistent write failure can prevent
+verified restoration. Private lease, ownership and recovery controls remain
+required, and no permanent patch or app release follows from this research.
+
+### Prefix canary and first combined attempt
+
+The prefix-plus-signed-timer canary used a 30-second lease and a ten-second
+normal adaptive-budget measurement. It delivered **305.041 useful Mbps at
+89.906 FPS**, with nine presentation timeouts and one counted drop. Application
+readback, original-instruction restoration and all-thread detachment succeeded.
+This validates that bounded transaction lifecycle in one run, not a smoothness
+pass, branch coverage or improved recovery under the earlier fault condition.
+
+The first combined fixed350/prefix/window attempt,
+`coherent350-prefix20-1`, was rejected for a startup shared-texture failure.
+Its later counter window delivered 324.920 Mbps at 90.005 FPS and still contained
+twelve receiver presentation timeouts. The [host phase analysis](host-stream-map.md#retry-prefix-attempt-startup-failure-precedes-the-counter-window)
+locates the texture failure before the counter baseline without discarding it.
+
+The finalized overflow observer ran 125.098 seconds and recorded zero fatal
+events, zero reported losses across eight CPUs, unchanged receiver identity and
+root trace settings, and no remaining owned instance or event definitions.
+That observer outlived the short fixed-budget window: its whole duration is not
+a fixed350 performance interval. It observes fatal edges only; zero events do
+not show whether the new successful prefix branch ran. Final lease receipts
+verify patched-to-original restoration and all detaches, and the coordinator
+verifies cancellation and normal Main10/400-target restart. Cleanup success
+does not convert the attempt into a streaming pass.
+
+The later completed `coherent350-prefix20-scope-2` repeat instead failed its
+cadence guard at 297.881 useful Mbps and 76.519 FPS over 1.999516 seconds, with
+larger pictures and growing decoder turnaround. It recorded zero fatal-overflow
+events and verified receiver/normal-session restoration, but did not count the
+successful prefix edge. Content/map differences and the short guard-aborted
+window prevent a causal mitigation or hardware-capacity conclusion. The
+[host comparison](host-stream-map.md#scoped-repeat-larger-pictures-lower-cadence)
+keeps that cadence failure distinct from earlier underfilling.
+
+### A possible branch observation, still offline
+
+Probing a pre-store guard with a count filter would still trap for each missing
+ID, even when most records are discarded. The shared timed finish at `0x52FC0`
+offers at most one breakpoint per builder that reaches it. Count 20 alone is
+ambiguous with an ordinary exactly-20 request. An architectural snapshot of
+pre-CMP condition flags and loop registers can instead distinguish the new
+early data/parity edges from natural completion.
+
+Independent exact-function emulation checks 1,024 coherent cases per native+
+signed and prefix+signed variant. Every classified finish matches its actual
+incoming edge; native finishes have no false prefix classifications. The matching
+kernel's register table includes PSTATE, but runtime fetch behavior, event/filter
+readback and breakpoint cost remain untested. Filtered record volume is not the
+underlying trap rate. A separate short, capped lifecycle/cadence canary would be
+needed before a longer observation; none was added to the completed live trials.
+Architectural register evidence also would not make later object-field reads
+atomic or solve generation ownership.

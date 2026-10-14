@@ -1100,6 +1100,7 @@ thread detachment and activity cleanup were verified after the abort.
 
 The source/capture hashes and exact comparison scopes are recorded in the
 [experiment register](experiment-register.md#private-evidence-provenance).
+
 The later Coherent350v2 result below remains distinct from measured useful
 350 Mbps: its accepted lower budget did not become that many encoded bits.
 
@@ -1174,3 +1175,120 @@ The measured second attempt verified successful cancellation, restoration of
 the 400 Mbps target and Main10 stream, original receiver instructions, detached threads and activity
 cleanup. Source/capture identities and offline reproducers are indexed in the
 [experiment register](experiment-register.md#private-evidence-provenance).
+
+## Retry-prefix attempt: startup failure precedes the counter window
+
+The completed `coherent350-prefix20-1` attempt combined the existing fixed350
+helper with signed timer arithmetic, a 20-ID timed-prefix bound and the six-frame
+ordering window. It remains **setup/handoff-aborted**, despite the later counter
+interval returning approximately 90 FPS. The fixed budget was already active
+when SteamVR logged a new AcquireSync timeout and ReleaseSync `0x887a0001`.
+
+The log append starts at measurement-script entry; the script establishes its
+counter-loop marker after constructing the observers. The DXGI failure is
+188.921 ms after script entry and **753.843 ms before** that later marker. AFTM
+independently shows a 111.122 ms producer gap enclosing the log timestamp, also
+before the first counter baseline. It is a real fault in this attempt, not an
+old log line. Coincidence with observer setup does not establish that observation
+caused it. The corresponding 99.961 ms display-target shift is a selected-target
+measurement, not physical presentation time.
+
+The actual counter delta spans **9.9994405 seconds**, 900 pictures and 406,127,369
+useful bytes: **324.920 Mbps and 90.005 FPS**. One-second cadence ranges
+89.978--90.071 FPS; accepted average/peak/VBV remains 350M/402.5M/4,472,222 with
+no NVENC/API error increments. The separate receiver counter interval contains
+twelve presentation timeouts. These descriptive numbers do not override the
+whole-attempt failure or establish improved retry reliability.
+
+The retained AFTM history contains 1,049 rows, of which 171 precede the marker.
+The 878 later rows have producer-interval median 11.113 ms, p99 11.144 ms and
+maximum 11.941 ms; decoder turnaround median 16.072 ms and maximum 22.969 ms.
+This is a host-wall-marker subset, not exact membership in the first-to-last
+counter interval, and the sampler excludes the newest 250 ms. The initial
+Waterfall value covers the preceding second and includes the startup gap.
+Neither should be averaged into an unqualified counter-window claim.
+
+No later failed DXGI acquire/release appears in the retained counter-window log.
+A separate WaitForAcquire warning refers to the previously mapped event wait,
+not by itself to a failed DXGI acquire. The strict guard correctly rejects the
+attempt; phase attribution and delayed log consumption need clearer handling.
+A future measurement change must retain startup faults after activation and
+reject ambiguous, rotated or incomplete evidence, rather than resetting offsets
+to erase those faults. No such measurement change is claimed here.
+
+Final receipts verify cancellation, restoration of original receiver instructions,
+all-thread detachment, fresh normal Main10 streaming and the 400 Mbps saved
+target. Activity cleanup was also confirmed.
+
+### Scoped repeat: larger pictures, lower cadence
+
+The completed `coherent350-prefix20-scope-2` repeat failed its cadence guard.
+Its 153 encoded pictures and 74,452,209 bytes over 1.999516 seconds give
+**297.881 useful Mbps at 76.519 FPS**. Mean picture size is 486,616 bytes,
+equivalent to 350.363 Mbps at a hypothetical 90 FPS. That arithmetic is not an
+observed performance result. Unlike the earlier underfilled near-90-Hz prefix,
+the immediate wall-clock deficit here is mainly lost cadence with growing
+decoder turnaround. Independent pairs reconcile all 153 pictures and every
+counter byte; they fill 99.493% of the summed nominal picture allocation.
+Nominal-FPS variation adds only 0.614% to that allocation versus fixed 90.
+
+The 135 same-TX completed timings have median encode completion 6.100 ms,
+transport 6.915 ms and decoder turnaround 52.880 ms; the newest eighteen
+pictures have no retained completed timing. Host queue depth is five to seven,
+with sampled admission holdoff and unchanged retry-send count. The matched
+compositor scope has no long sampled heartbeat age, but it begins after the
+decoder rise already visible in retained startup history. It cannot locate the
+onset or exclude every earlier handoff pause.
+
+The nominal target, accepted tuple, Main10 geometry, quarter-pass policy and
+quality offsets match the earlier attempt, but source/QP-map details differ.
+The first retained protected-tile counts are 232 versus 883, despite unchanged
+5,408 center tiles. This is not a same-content causal test of the prefix change
+or of encoder efficiency. Decoder turnaround includes queueing and observation;
+the counter window has no new hardware-stage timestamp.
+
+Final receipts verify cancellation, normal callback acceptance, original receiver
+instructions, all-thread detachment, fresh normal Main10/400-target streaming
+and activity cleanup. The 12,500-sample scope and zero-event fatal observer
+outlive the two-second counter interval. Their full duration must not be called
+a sustained fixed350 trial, and zero fatal events still do not prove successful
+prefix execution.
+
+## Underfill readback and a source-only full-pass discriminator
+
+The earlier 78-second fixed350 prefix now has a complete RC/QP audit. All 79
+retained effective RC snapshots are identical: CBR, 350M average, 402.5M maximum
+field, 4,472,222-bit VBV, zero initial delay, quarter-resolution multipass and
+DELTA map. QP bounds, initial-QP control, CQ, AQ and lookahead are disabled;
+only zero-reorder is enabled. These are last successful API requests, not
+hardware-normalized encoder internals. In this SDK the maximum field is ignored
+for CBR.
+
+Exactly 7,017 returned `frameAvgQP` samples sum to 84,858, giving **12.0932**.
+This is the SDK's reported average frame QP, not a per-block histogram or proof
+of a hardware quantization floor. Center/periphery additions remain -20/-12;
+retained software map-clamp and protected-mismatch counters are zero. Those
+offsets are the helper's validated range endpoints, not NVENC's proven lower
+quantization limit. Some blocks could still be clipped internally. The known
+92.408% nominal allocation fill remains separate from receiver reliability.
+
+The prepared private `Coherent350Fullv1` source changes quarter-resolution to
+full-resolution multipass while retaining the 350M/402.5M/4,472,222 tuple,
+Main10 geometry, original QP map, offsets, preset and no filler. It is an
+allocation discriminator without an intentional format or quality reduction;
+it does not guarantee equal image quality, more useful bits or acceptable
+latency. Extra encoder work must be checked alongside useful bytes, returned QP,
+encode tails, receiver turnaround and cadence under the same bounded guards.
+
+The original fixed350 lease requires packed policy 10 and NVENC quarter-pass
+enum 1. The derivative explicitly expects policy 14 and full-pass enum 2; a
+CLI-only mode switch would otherwise make the old lease ineligible. At this
+cutoff the derivative is **source-only preparation**, not a compiled, loaded or
+accepted configuration. Its source manifest supplies provenance without implying
+native-test or runtime success.
+
+At unchanged efficiency and cadence, simple proportional arithmetic would put
+350 useful Mbps near a 376.85 Mbps budget. That is a hypothesis, not an encoder
+law or a measured capacity. Earlier 380/400 runs have different failure/quality
+conditions. Padding could flatten traffic without adding useful image detail;
+neither filler nor max-bitrate-only changes establish a quality-preserving fix.

@@ -64,7 +64,24 @@ its frame-phase controller, transport repair or receiver image selection.
 
 ## Current connected reference
 
-The latest original-codec **350 Mbps budget** trial held approximately 90-Hz
+The latest completed scoped retry-prefix repeat was **cadence-aborted**:
+153 pictures in 1.999516 seconds delivered **297.881 useful Mbps at 76.519 FPS**.
+Its larger average picture would arithmetically need 350.363 Mbps at 90 FPS;
+that cadence was not achieved. This differs from the earlier near-90-Hz run's
+bitrate underfill. Content/QP-map differences prevent a clean comparison of the
+retry strategies, and no successful prefix-branch execution was directly counted.
+All experimental instructions and settings were restored after the abort.
+
+The first completed combined retry-prefix attempt was **setup/handoff-aborted**.
+A real shared-texture timeout occurred after fixed-budget activation but before
+the first useful-video counter baseline. The later ten-second counter interval
+was 324.920 useful Mbps at 90.005 FPS, with twelve receiver presentation timeouts;
+it is not a successful reliability test. The [phase analysis](host-stream-map.md#retry-prefix-attempt-startup-failure-precedes-the-counter-window)
+keeps both scopes instead of discarding the startup fault. The receiver strategy
+was restored and a fresh normal Main10 session at the saved 400 Mbps target was
+verified. No sustained smooth useful-350 result exists.
+
+The preceding original-codec **350 Mbps budget** trial held approximately 90-Hz
 encoding for 78 seconds, then failed on a receiver retry overflow. Its first
 77.997863 seconds delivered **325.066 useful Mbps at 89.964 FPS**, not useful
 350 Mbps. Receiver counters had already accumulated 65 presentation timeouts
@@ -124,6 +141,12 @@ above separates lower-load cadence from its underfilled encoded budget and
 receiver reliability failure. A [current-geometry decoder harness](codec-stream-options.md#current-geometry-comparison-prepared-offline-not-yet-run)
 is now implemented and checked offline, but has no prepared clips or hardware
 result. No radio, firmware, clock or thermal control changed in these tests.
+
+The timed-prefix backend now has transaction tests and a short live application/
+restoration canary, rather than only an offline model. Neither proves successful
+branch execution or recovery. A [full-resolution multipass derivative](host-stream-map.md#underfill-readback-and-a-source-only-full-pass-discriminator)
+is prepared as source only at this cutoff; no build, acceptance or performance
+claim is attached to it.
 
 The earlier cross-slice-filter screen verified that the requested codec change
 reached the actual emitted PPS, but still triggered the fixed-400

@@ -11,6 +11,8 @@ It links the detailed maps rather than replacing their build and timing limits.
 | --- | --- |
 | Why can requested CBR differ from measured useful video? | [Host budgeting and coded bytes](host-stream-map.md#requested-bitrate-accepted-budget-and-coded-bytes) |
 | What did the modern350 test establish? | [Near 90-Hz prefix, underfilled budget and terminal repair failure](host-stream-map.md#modern-fixed350-reference-near-90-hz-before-a-receiver-repair-failure) |
+| What happened when the timed-prefix change was tried? | [Guarded transaction and live attempt limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts), plus [startup/counter separation](host-stream-map.md#retry-prefix-attempt-startup-failure-precedes-the-counter-window) |
+| What is the next allocation experiment? | [RC/QP readback and source-only full-pass preparation](host-stream-map.md#underfill-readback-and-a-source-only-full-pass-discriminator) |
 | Why did the signed timer repair still permit an overflow? | [Reused-slot publication and timed request capacity](receiver-stream-map.md#fixed350-timed-overflow-during-rx-slot-reinitialization) |
 | What did the latest minimum-CU change actually do? | [Accepted request, emitted SPS and failed cadence](host-stream-map.md#minimum32-coding-unit-trial-accepted-and-emitted-but-cadence-still-failed) |
 | Do mutexes, PM or IRQ dispatch explain the receiver backlog? | [Matched thirteen-event observation](receiver-stream-map.md#matched-thirteen-event-observation-small-observed-lock-and-pm-spans) |
@@ -35,6 +37,9 @@ A/B tests, and short guard-aborted averages are not sustained capacities.
 | Fixed400 minimum32-CU, CTU32 unchanged | 1.999455 s | 307.79 / 69.02 | Actual emitted SPS verified; cadence guard failed, no simultaneous kernel-stage trace. |
 | Modern fixed350 (`coherent350-v2-matched-2`), before terminal failure | 77.997863 s | 325.066 / 89.964 | Near 90-Hz encoding, but 65 presentation timeouts by the 70-second sample and useful payload below 350. |
 | Same modern350 run, whole partial capture | 79.998168 s | 319.743 / 88.502 | Receiver timed retry-list capacity fault; final intervals 46.015/16.989 FPS. 203 timeouts and one counted drop overall. |
+| Prefix plus signed timer, adaptive-budget canary (`timer-prefix20-canary-1`) | About 10 s counters, 30 s lease | 305.041 / 89.906 | Application/restoration validated; nine presentation timeouts and one counted drop. No branch-execution counter or reliability proof. |
+| Combined fixed350/prefix/window first attempt (`coherent350-prefix20-1`) | 9.999441 s counters | 324.920 / 90.005 | Setup/handoff-aborted: texture fault after activation but before counter baseline. Twelve presentation timeouts; later counters do not erase the startup failure. |
+| Combined fixed350/prefix/window scoped repeat (`coherent350-prefix20-scope-2`) | 1.999516 s counters | 297.881 / 76.519 | Cadence-aborted with growing decoder turnaround. Larger pictures, different source/map; zero fatal-overflow events is not successful-prefix coverage. |
 
 The five fixed400 rows refer respectively to `coherent400-passive-scope-1`,
 `coherent400-irq-1`, `coherent400-no-cross-filter-v2-2`,
@@ -101,8 +106,14 @@ changes and experimental helpers remain private and unreleased.
 - **Timed-prefix mitigation:** 18 offline tests and independent exact-function
   emulation support bounded collection through the existing 20-ID emitter.
   Native capacity aborts intentionally become retries; initialization/generation
-  races and recovery liveness remain unresolved. No runtime integration or live
-  result exists. See the [offline proof and limits](receiver-stream-map.md#timed-prefix-mitigation-offline-evidence-only).
+  races and recovery liveness remain unresolved. A guarded backend, transaction
+  tests and bounded live attempts now exist, but neither successful branch
+  execution nor improved reliability is established. See the [proof](receiver-stream-map.md#timed-prefix-mitigation-offline-evidence-only)
+  and [later transaction/live limits](receiver-stream-map.md#timed-prefix-transaction-and-bounded-live-attempts).
+- **Full-resolution multipass at fixed350:** a source-only derivative retains
+  the current tuple, Main10 geometry and QP map. It has not been built, tested
+  natively, ABI-registered or deployed at this cutoff. Accepted configuration,
+  allocation, latency and image quality remain future measurements.
 - **Equal-current-geometry Main10 one/two/four sessions:** a private harness and
   350/400 CPU-only plans are now implemented and pass 25 offline tests. They
   normalize total 1664 x 6656 area and four requested constrained slices. No
@@ -136,6 +147,11 @@ inputs these hashes alone do not make the measurements independently rerunnable.
 Raw proprietary binaries, decompiler listings, authentication material, personal
 logs and operational captures are excluded. No app release or experimental
 runtime control is shipped by this documentation publication.
+
+This update includes completed evidence through `coherent350-prefix20-scope-2`.
+Its final cleanup receipts supersede the earlier bootstrap note's pending-cleanup
+status for the first attempt. Both attempts remain failed. The source-only full-pass
+manifest establishes preparation, not a compiled or deployed candidate.
 
 ## Private evidence provenance
 
@@ -233,3 +249,61 @@ outer-decoder verification; its current complete-file digest is recorded.
 | `RepairTrial/test_timed_prefix_model.py` | `48b623515878e04a8fd1b20a172828694f2e38628daf9297519ecdd99baad504` |
 | `RepairTrial/timed-prefix-independent-emulation.json` | `a71020cbe6e08bf68e3a56ac08d77f3e6450b5811687198a95e6761102441619` |
 | `RepairTrial/timed_prefix_independent_emulation.py` | `94d27ad05031d22492b728d9c28cb7019867bef22064ca688ad5ee439ba8b863` |
+
+### Guarded prefix implementation, first live attempts and allocation plan
+
+The transaction review records frozen source identities and 92 offline tests;
+its inert test entry points are `test_timed_prefix_transaction_independent.py`,
+`test_timed_prefix_runner.py` and the timer/window/backend test modules. The
+canary and first combined attempt each have separate stream and restoration
+receipts. `coherent350-prefix20-1-bootstrap-review.py` reproduces the startup/
+counter phase split; the final coordination and lease records establish cleanup
+that was still pending when that note was written.
+
+The finish-point discriminator is a separate offline emulator check, and the
+underfill evidence extracts already-saved RC/QP counters. The full-pass manifest
+binds 28 source files; its adapted tests have not been compiled or run. No
+private implementation, executable or capture is included in this publication.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `RepairTrial/timed-prefix-backend-notes.md` | `453c57df5d1ca8b0a517b1dea746907b0c6774cfcddc7d6156fcfe1db22bb071` |
+| `RepairTrial/timed-prefix-backend-manifest.json` | `c1c7bfd67468ca97b32f576b923b88e1778556e8fdbf853c2700ec42b07f6be4` |
+| `RepairTrial/timed-prefix-transaction-independent-review.md` | `e0ba090c36b52810e621c6ee1a1f76822cf4c0f55b5718f9d75f257c5e496b29` |
+| `RepairTrial/timed-prefix-transaction-independent.json` | `76d435434de80c6fe17e70a0152462d95596a5aec7591514d418c1b29a4ed040` |
+| `RepairTrial/timer-prefix20-canary-1-root-assessment.json` | `3f5b67de4a1cb80d2a6eeb24a20513e30665421ac2110547dbc9c1f216b99c22` |
+| `RepairTrial/timer-prefix20-canary-1-lease.json` | `fa68945e87c457d4b81db31a2f2cc2276d4d59bcdd96f2fb0b49ed5d84cc25ae` |
+| `RepairTrial/timer-prefix20-canary-1-stream.json` | `a799f73711e3bf573e69262edaec892527286749fd981bc44f91a3a0cb798376` |
+| `RepairTrial/coherent350-prefix20-1-coordination.json` | `04946a6e92efeb546732ebd117c8e70f5c662ac9c6abf8053e440cc84c98a8bd` |
+| `RepairTrial/coherent350-prefix20-1-stream.json` | `daac5b610ed6300414f002de1335fe3b66e0034c6f3280d437349e5dd78424b5` |
+| `RepairTrial/coherent350-prefix20-1-lease.json` | `cb1884d210299c75751c91dc5ed6c077c1482132ba7c8ce5188b35af187b18a8` |
+| `RepairTrial/coherent350-prefix20-1-overflow.json` | `cd62ffb0b57b3cff86d3321a2e1be005385bed8b658eef974242961d6fbe34c6` |
+| `RepairTrial/coherent350-prefix20-1-bootstrap-review.md` | `0688ce62785c3c8287d529d26791c0fa92f50ff526a8276dcea8509a413f9f9f` |
+| `RepairTrial/coherent350-prefix20-1-bootstrap-review.json` | `134b38cd001a2b0c604b9ae7353aee377924b75029082ed14054a99ac28a34b2` |
+| `RepairTrial/coherent350-prefix20-1-bootstrap-review.py` | `929505e201dc903c4c860ed956fec105ce3cde595d7fd4e365639f09c5087f9d` |
+| `RepairTrial/timed-prefix-observation-and-underfill-plan.md` | `5345dffd08ba2a959e9b02fd5cf50938fe258a4cf600b5853ebb99e675b2642d` |
+| `RepairTrial/timed-prefix-observation-and-underfill-evidence.json` | `ad4b309dfef5d09da71a353fa670c02939dd2d7fe40b4bebe45a25652195b0da` |
+| `RepairTrial/timed_prefix_finish_observation_check.py` | `975aa1f6702b23cd2b0f0eeff76c643ba43fdc9765ef187c0db6ba1f6930a46f` |
+| `RepairTrial/timed_prefix_finish_observation_check.json` | `217439a66250d507f3e7118cddfbffde7ec64b7a42d673038ec2434155cb5bf8` |
+| `RadioTrace/Coherent350Fullv1/source-preparation-manifest.json` | `403f7bccee5fb54350f95f83e245f95329ebaeb13af9cb109de30b24257e3355` |
+| `RadioTrace/Coherent350Fullv1/source-preparation.diff` | `a6e2eb08750694be9b31e8d055802acc4af3c706ed94cf8c77722e9a7864977d` |
+| `RadioTrace/Coherent350Fullv1/request.json` | `6f90d4084dfeb65e0b1a9e2ab6d5453ef4d7fc2536ed95165d4d326b78a30ab8` |
+
+### Completed scoped repeat
+
+The second attempt has its own counter, scope, queue and restoration records.
+The host review reconciles all 153 picture pairs and their bytes, and keeps the
+135 completed timing rows separate from the eighteen newest unmatched timings.
+Its startup history and later read-only scope do not cover identical intervals.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `RepairTrial/coherent350-prefix20-scope-2-root-assessment.json` | `265c384e9bbf07a4fccd211393d1999f650b2ba171f2ab52ff20b58fad085cfd` |
+| `RepairTrial/coherent350-prefix20-scope-2-coordination.json` | `63321c32f5f74fc80e8a0d0a651f5720f6c91ad3168edcb917df725409f1d63e` |
+| `RepairTrial/coherent350-prefix20-scope-2-stream.json` | `78a693765fb16a8c8b5b828144d136e02c1facf385e8de60837f3f1a4be314bf` |
+| `RepairTrial/coherent350-prefix20-scope-2-lease.json` | `3459adf53e6fda6b982ef8a552e767562dd52585e51eea6d5864da765718cacd` |
+| `RepairTrial/coherent350-prefix20-scope-2-overflow.json` | `db6a19a8fbb24e0e3005d3612c026e3b166267cb78d911cb5b04f5b1ab6375b1` |
+| `RepairTrial/coherent350-prefix20-scope-2-scopes.json` | `9c8e8720cab585567c8a22cfcc3566dd24b308347a1e9608248cfee88ac705e3` |
+| `RepairTrial/coherent350-prefix20-scope-2-host-queues.json` | `452dfde1850b88268f749a07d2fd588ee968f10e7c80753eff7c66487fa74321` |
+| `RepairTrial/coherent350-prefix20-scope-2-host-review.json` | `265024f4fd39baa0b85e64064dd3e080fae965c31d3f7c0fab08b0255eebcf87` |
+| `RepairTrial/coherent350-prefix20-scope-2-host-review.py` | `3064d006c6c6e7b7d728cc8bb688eaee32e74b9c8a33ae4e32b2529c658fd5b1` |
