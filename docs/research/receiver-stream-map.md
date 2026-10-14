@@ -1094,9 +1094,11 @@ The separate `coherent400-main8-scope-1` diagnostic selected 8-bit HEVC before a
 fresh session and retained the same 1664×6656 resolution, P2 preset,
 quarter-resolution multipass, -20/-12 quality offsets and no filler. The average
 and max-field targets were 400/460 Mbps, with a 5,111,111-bit VBV and the same
-temporary receiver timer/window-six corrections. All three accepted
-configuration samples confirmed 8-bit output and the 400 Mbps average target.
-No memory-bandwidth vote was changed.
+temporary receiver timer/window-six corrections. All three accepted NVENC
+configuration samples confirmed 8-bit HEVC and the 400 Mbps average target.
+No contemporaneous receiver `VIDIOC_G_FMT` was captured, so this does not prove
+that the decoder's CAPTURE surfaces changed from QC10C to an 8-bit format or
+that its memory work decreased. No memory-bandwidth vote was changed.
 
 After initial settling, the guard stopped the measurement after **1.999192
 seconds**. Encoded-counter differences were 86,016,301 bytes and 163 frames:
@@ -1119,8 +1121,9 @@ controller and do not extend the fixed-400 measurement.
 This short failed transition neither establishes a hard bitrate ceiling nor
 shows that Main8 and Main10 provide matched image quality. The precision change
 and different session/workload prevent a controlled quality or performance
-comparison with the earlier Main10 run. Cancellation restored normal budget
-control; receiver original bytes and detachment were verified, followed by a
+comparison with the earlier Main10 run. It establishes only that requesting
+8-bit HEVC alone did not resolve pacing in this attempt. Cancellation restored
+normal budget control; receiver original bytes and detachment were verified, followed by a
 normal-helper restart with accepted **10-bit HEVC**. Main8 was not retained as
 the normal preset. Steady 350 Mbps useful video with smooth 90 Hz delivery remains
 unverified.
