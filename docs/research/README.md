@@ -81,9 +81,20 @@ They also do not measure radio throughput or native game image quality.
 
 The [resource and control analysis](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control)
 preserves those distinctions. Jobs drained and their visible resources returned
-to idle; normal Main10 streaming was restored. A separate one-session memory-vote
-throughput control is prepared but **unrun at this publication cutoff**. No new
-release or permanent runtime change follows from these negative results.
+to idle; normal Main10 streaming was restored. The later
+[single-session memory-vote control](radio-stream-map.md#completed-single-session-memory-vote-control)
+also missed 90 Hz: an added 1,134,000 kB/s software request yielded 74.497800 Hz,
+essentially unchanged. Requests and reported clocks do not prove delivered
+memory bandwidth, and the new observation profile was not fully matched.
+
+A separate [input-copy/QBUF observation](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost)
+found mean synchronous costs of 0.044453 and 0.020230 ms versus 13.424729 ms mean
+callback spacing. Those measured operations cannot explain most of the mean
+deficit in that run; the result does not identify hardware decoding as its cause.
+A [retained 208.075080-Mbps workload](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run)
+is validated and packaged but **has not run on the headset**. It changes codec
+level/HRD signaling as well as coded workload. No new release or permanent
+runtime change follows from this research.
 
 ## Current connected reference
 

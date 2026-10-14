@@ -1326,3 +1326,26 @@ A same-clip one-session control without active resource reads was effectively
 unchanged at 74.495895 Hz. This bounds the sparse telemetry explanation in one
 sequential pair; it does not eliminate other harness costs. Native streaming
 was restored afterward, and the existing full-pass derivative remains source-only.
+
+## Coded-byte correlation and the measured input-copy boundary
+
+Across three sequential one-session decoder jobs, the median callback interval
+for each repeated source-frame phase correlates about 0.999 with that same
+access unit's coded bytes. Adjacent-phase correlations are only about 0.18--0.20.
+This association motivated measuring the lab's input-copy and QBUF boundaries;
+it does not by itself identify entropy decoding or a firmware limiter.
+
+A separately built observation-only executable retained the exact clip, queue
+sizes, memory type, pacing and callback behavior. All 900 input identities and
+lengths reconcile to the source. Mean input `memcpy` and QBUF wall times were
+0.044453 and 0.020230 ms, against 13.424729 ms mean output-callback spacing.
+The [receiver timing audit](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost)
+records the boundary and population differences. Synchronous whole-picture copy
+and QBUF are too small to explain most of this run's mean deficit; asynchronous
+work, other queue boundaries and firmware/device scheduling remain unresolved.
+
+The retained [lower-rate workload](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run)
+now has CPU validation and a separate manifest, without encoding again or
+changing the original 350-Mbps package. Its emitted level/HRD fields differ,
+so any future comparison must preserve that confound. No lower-rate hardware
+result or new native-stream throughput gain exists at this publication cutoff.

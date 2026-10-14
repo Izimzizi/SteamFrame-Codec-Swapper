@@ -1843,5 +1843,60 @@ process, runtime suspend, disabled MVS0/MVS0C and zero video-consumer votes.
 The filtered process scan is not an exhaustive device-FD census, and runtime
 suspend is not a firmware session-destruction acknowledgement. A final receipt
 verifies normal Main10 streaming restoration. No new native-game smoothness or
-multistream gain is established, and the separate memory-vote throughput control
-remains prepared/unrun at this cutoff.
+multistream gain is established. The later
+[memory-vote control](radio-stream-map.md#completed-single-session-memory-vote-control)
+completed with essentially unchanged cadence; its stronger software cleanup and
+different observation profile are documented separately.
+
+## Measured compressed-input copy and QBUF cost
+
+A later private executable times only the existing input `memcpy` and QBUF
+wall intervals, leaving the coded clip, eight-input/twenty-capture MMAP requests,
+pacing and output callbacks unchanged. Its native build and executable are
+bound separately from the original baseline. All 900 input IDs and byte counts
+match the repeated clip, and all 900 output identities complete without reported
+decode/empty/missing errors. It still fails the capacity and cadence criteria.
+
+| Synchronous operation | Mean ms | Median ms | p99 ms | Maximum ms | Total for 900 inputs ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Whole-picture input copy | 0.044453 | 0.037915 | 0.119996 | 0.345614 | 40.008108 |
+| Input QBUF | 0.020230 | 0.018646 | 0.043748 | 0.667584 | 18.207195 |
+
+The standard 898-interval window contains 438,073,321 coded bytes over
+12.055406322 seconds: **74.489401 FPS / 290.706632 Mbps**, with 13.424729-ms mean
+callback spacing. The two operation totals are about 0.483% of that window;
+this is a scale comparison, since the 900-input totals and bootstrap-excluding
+output interval do not have identical boundaries. It is not CPU occupancy.
+
+Clock samples immediately surround `memcpy` and the QBUF wrapper; timing-row
+recording follows. Durations include caller scheduling and syscall retries.
+Asynchronous device/cache work after QBUF is outside the QBUF interval. Thus
+dominant synchronous whole-picture copying is unsupported in this run, while
+kernel/firmware/device work, completion handling and other software costs remain.
+No capacity ceiling or hardware-entropy diagnosis follows from the short copy.
+
+Native input ownership also matters. Cached receiver `0x32E38` requests sixteen
+MMAP OUTPUT slots; `0x31B00` acquires one, and `0x52650` associates its pointer
+with the RX frame. `0x533D0` copies received data chunks directly into that input
+mapping at 1,024-byte chunk offsets. `0x31CC0` queues the existing mapped buffer
+and encoded extent, with no second whole-picture copy on that submit path.
+Native renderer CAPTURE uses DMABUF, a separate queue. The native post-submit
+marker follows that call, whereas the lab latency start precedes input copying.
+Neither path should be described as zero-copy merely because the submit does
+not copy the whole picture again.
+
+The installed Iris audit finds zero-initialized vb2 queue attributes and
+`vb2_dma_contig_memops`. In the exact installed kernel, `dma_pgprot` selects
+Normal Non-Cacheable protection when the device is not DMA-coherent, and
+preserves incoming protection when it is. This is conditional static evidence:
+the exact vb2 DMA-contig module and final device-coherence/user-VMA attributes
+were not captured. It does **not** prove these actual mappings were uncached.
+No explicit userspace flush in the inspected functions does not exclude kernel
+DMA synchronization. The short measured copy supplies no justification for
+changing cache policy, bypassing synchronization or converting buffer ownership.
+
+The job terminated and the filtered process/resource check showed absence and
+runtime suspend. That is weaker than the memory-vote coordinator's separate
+global FD check and is not a firmware-destruction acknowledgement. The
+[lower-rate clip](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run)
+is prepared but unrun; it changes level/HRD metadata as well as coded workload.

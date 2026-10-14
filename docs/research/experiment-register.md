@@ -20,6 +20,9 @@ It links the detailed maps rather than replacing their build and timing limits.
 | Is H.264 or multistream already a working alternative? | [Codec and decoder-session audit](codec-stream-options.md) |
 | Did one/two/four Main10 sessions reach 90 Hz in isolation? | [Completed current-geometry comparison](#completed-current-geometry-decoder-comparison) |
 | Did active resource reads explain the decoder shortfall? | [Same-clip telemetry-removal control](radio-stream-map.md#isolated-decoder-resource-votes-and-telemetry-control) |
+| Did an additional memory request improve the single-session result? | [Completed ICC control](radio-stream-map.md#completed-single-session-memory-vote-control) |
+| Is compressed-input copying consuming the missing frame time? | [Measured copy/QBUF boundaries](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost) |
+| Is the retained lower-rate clip a measured improvement? | [Prepared, unrun workload and header differences](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run) |
 | What caused the long captured image jumps? | [Shared-texture ownership](pc-texture-handoff.md) and [receiver repair ordering](receiver-stream-map.md#packet-receive-repair-and-ordering) |
 
 ## Recent completed outcomes
@@ -137,6 +140,39 @@ and zero video-consumer votes. A separate final receipt verifies normal Main10
 streaming restoration. This is not an exhaustive FD-holder census or firmware
 destruction acknowledgement. No smooth useful-350 game-stream result was achieved.
 
+## Completed memory-vote and input-copy follow-ups
+
+These two later jobs retain the selected single-session 350-Mbps source. The
+ICC job retains the original executable; the copy-timing job binds a separate
+native build that adds observation around the existing copy/QBUF operations.
+
+| Case | Exact 898-interval window | Coded Mbps / group Hz | Outcome |
+| --- | ---: | ---: | --- |
+| Additional 1,134,000 kB/s ICC request | 12.054047251 s | 290.739409 / 74.497800 | All 900 identities and drain complete; 855 late inputs. No material mean gain; capacity/cadence failed. |
+| Copy/QBUF timing executable | 12.055406322 s | 290.706632 / 74.489401 | All 900 input/output identities validated; capacity/cadence failed. Synchronous copy and QBUF are small. |
+
+Both windows credit 438,073,321 coded bytes. The ICC run verifies the added
+owner/request, child lifetime bounds, global FD/format checks and software
+cleanup. Its extra observation profile, temperatures and foreign requests differ
+from historical controls. Reported DDR duration remains at 4224 MHz within the
+sampled intervals; that is neither delivered bandwidth nor a matched active
+no-vote baseline. See the [resource evidence](radio-stream-map.md#completed-single-session-memory-vote-control).
+
+The copy experiment measures means of 0.044453 ms for `memcpy` and 0.020230 ms
+for QBUF, versus 13.424729 ms mean callback spacing. The 900-input sums and
+898-interval output window differ at bootstrap boundaries; they are a scale
+comparison, not CPU utilization. A near-0.999 association between repeated-phase
+coded bytes and callback intervals prompted this test, but did not prove copying
+was responsible. The [input ownership audit](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost)
+distinguishes native chunk copies before submission from the lab's whole-picture
+copy, and preserves unknown actual mapping/cache attributes.
+
+Final receipts verify normal Main10 streaming restoration, original saved
+target/geometry/policy and no remaining lab decoder or ICC module. After copy
+timing, direct stream start resumed the existing normal host session; this was
+not a fresh helper restart. No native game smoothness pass or permanent decoder/
+cache-policy change follows.
+
 ## Controls that remain untested or incomplete
 
 - **Coherent350v2 reliability and useful-rate filling:** the modern result above
@@ -158,12 +194,14 @@ destruction acknowledgement. No smooth useful-350 game-stream result was achieve
   comparison above found no 90-Hz gain. Its 400-Mbps plan remains unexecuted;
   native foveation/quality equivalence and a sustainable multistream renderer
   remain unproved.
-- **Isolated memory-vote throughput control:** a bounded coordinator is prepared,
-  with 59 offline tests passing, including the 34 existing preparation/runtime
-  checks. No throughput result exists at this cutoff. Its additional device-
-  holder/format and DDR observations differ from the earlier baseline. The
-  earlier insertion/vote canary demonstrated observability and cleanup, not a
-  decoder-capacity gain.
+- **Matched ICC observation control:** the completed added-vote job above supplies
+  a measured null result. A no-vote active job with its newer FD/G_FMT/DDR
+  observation profile has not run; the old sparse-telemetry control is different.
+- **Retained lower-rate workload:** the 208.075080-Mbps clip is separately
+  packaged and CPU-validated with 10 focused tests. Its fixed-single-clip runtime
+  has 15 dedicated tests within 76 passing harness tests, but has not executed
+  on the headset. Emitted level and HRD values differ from the selected350 clip;
+  it is not a pure byte-rate control. See the [header comparison](codec-stream-options.md#retained-lower-rate-workload-prepared-not-run).
 - **HFI command publication and firmware response readiness:** useful missing
   boundaries. Verified existing events do not expose those times. Additional
   graph/probe instrumentation is not declared safe or ready by static support.
@@ -181,10 +219,12 @@ use monotonic-raw markers and explicit activation/cancellation brackets; no
 host-QPC, wall-clock or receiver-raw epochs are equated. Sampled queues can miss
 brief events; a stable double read is not a formal atomic snapshot.
 
-Each latest experiment restored a fresh normal Main10 helper, original receiver
-instructions, detached threads and cleared activity state. Observer cleanup and
-root tracing preservation are separate from performance acceptance. Same-trace
-90-Hz preroll/tail does not rule out workload-dependent observation cost.
+The earlier receiver-patch trials restored a fresh normal Main10 helper, original
+receiver instructions, detached threads and cleared activity state. The later
+isolated decoder jobs have their own process/resource and normal-stream resume
+receipts; they do not all restart the host. Observer cleanup and root tracing
+preservation are separate from performance acceptance. Same-trace 90-Hz preroll/
+tail does not rule out workload-dependent observation cost.
 
 The repository publishes original explanatory research. Private reproducer
 names, formulas and digests make local evidence auditable; without the retained
@@ -193,12 +233,12 @@ Raw proprietary binaries, decompiler listings, authentication material, personal
 logs and operational captures are excluded. No app release or experimental
 runtime control is shipped by this documentation publication.
 
-This update includes the completed current-geometry 350-Mbps preparation,
-ARM64 build, one/two/four decoder jobs and same-clip no-active-telemetry control,
-including final normal-stream restoration. The preceding scoped retry attempts
-remain failed. The full-pass derivative is still source-only and the separate
-memory-vote throughput coordinator is unrun; neither acquires a performance
-claim from this publication.
+This update includes completed current-geometry preparation, decoder comparisons,
+telemetry-removal and additional-memory-request controls, copy/QBUF observation,
+independent source/resource audits and final normal-stream restoration. The
+preceding scoped retry attempts remain failed. The full-pass derivative is still
+source-only and the retained208 hardware workload is unrun; neither acquires a
+performance claim from this publication.
 
 ## Private evidence provenance
 
@@ -372,8 +412,10 @@ Local reproductions are `validate_prepared_350.py`,
 `decoder350-independent-comparison.py`, `decoder350-resource-comparison.py` and
 `decoder350-resource-control.py`. The first reads existing clips and headers;
 the latter scripts recompute recorded results without running a decoder.
-The additional memory-vote contract/freeze is explicitly prepared/unrun and
-records only offline validation. Its fields must not be treated as an outcome.
+The historical version-one memory-vote contract/freeze below records preparation
+only. Those exact bytes were preserved under `icc-coordinator-v1/` before a
+canonical-executable detection fix produced version two. The later completed
+receipt is separate evidence; historical manifests were not rewritten as results.
 
 | Retained private evidence | SHA-256 |
 | --- | --- |
@@ -397,8 +439,8 @@ records only offline validation. Its fields must not be treated as an outcome.
 | `HEVC/current-geometry-lab/decoder350-independent-comparison.json` | `8ef94f498f26c1431f824ba9fc6425c5a04c86f778ca18762c8321ecfd2a9bd4` |
 | `HEVC/current-geometry-lab/decoder350-independent-comparison.py` | `eb86c067ba530565de9c202510ea6ee242e4b9db1f9fec4f1c6a84e83d6694b5` |
 | `HEVC/current-geometry-lab/runtime-coordination-350-1.json` | `df7da0e859561d752ee45ba10c76e58694d2ebcd5844b66e43212ca3ca9112eb` |
-| `HEVC/current-geometry-lab/icc-decode-coordinator-freeze.json` | `81fb7906cdc84d5cf089c01f42df16b05ce9f00269c07620ece9bdfa622690c2` |
-| `HEVC/current-geometry-lab/icc-decode-coordinator-contract.md` | `f3ea2ead45830e6ccac486179ae0a7bbc198a0f4d1b28a980f920d98e71bddf3` |
+| `HEVC/current-geometry-lab/icc-coordinator-v1/icc-decode-coordinator-freeze.json` | `81fb7906cdc84d5cf089c01f42df16b05ce9f00269c07620ece9bdfa622690c2` |
+| `HEVC/current-geometry-lab/icc-coordinator-v1/icc-decode-coordinator-contract.md` | `f3ea2ead45830e6ccac486179ae0a7bbc198a0f4d1b28a980f920d98e71bddf3` |
 | `RepairTrial/current-geometry-operating-state-plan.md` | `c51d23129396d10d51d77ec0b35fb42153a436f30826fc8b8ef3ba0908d7ecd1` |
 | `RepairTrial/current-geometry-operating-state-evidence.json` | `30045117abb61429866e5301e89c088cb3d33056b8627ef4d6ef55b112738701` |
 | `RepairTrial/decoder350-resource-comparison.json` | `0b621e7b3f81bce3689881656aaea0a58ab45539c62561ac2f68dc951f575bdd` |
@@ -406,3 +448,59 @@ records only offline validation. Its fields must not be treated as an outcome.
 | `RepairTrial/decoder350-resource-comparison.md` | `80cf9bd3ff378d61a013cb74dd3f032c95df6591d2c620a8f64def863707d760` |
 | `RepairTrial/decoder350-resource-control.json` | `5d5eb5d90a8c094390dde71733939723f7af5c310af4c52434874e83fe0fcf30` |
 | `RepairTrial/decoder350-resource-control.py` | `4662f4365282de380b0ca41f538f3bb56e8eda26f054aef0e086ba65a1a6a961` |
+
+### Completed ICC and copy-timing follow-ups; unrun retained208
+
+Version two of the ICC coordinator was prepared after fixing canonical native-
+receiver detection, passed 61 offline tests and then ran the recorded workload.
+Its freeze still says prepared/not executed because it is a source checkpoint;
+the completed receipt supplies runtime evidence. The copy-timing source manifest
+also predates execution and must be read with its separate build and job receipts.
+Neither historical status was rewritten. Final normal-stream receipts distinguish
+resume of an existing host from a fresh restart.
+
+Local replays are `decoder350-icc-independent.py`,
+`decoder350-icc-independent-review.py` and `decoder350-input-copy-review.py`.
+They reaggregate recorded identities/bytes/times and verify source or resource
+binding. The retained208 `verify.py` rereads the separately frozen package; its
+software-decode receipt and parameter-set comparison do not constitute a headset
+run. Ten preparation tests and the 15 dedicated/76 total runtime tests passed.
+No retained208 runtime result exists at this cutoff.
+
+| Retained private evidence | SHA-256 |
+| --- | --- |
+| `HEVC/current-geometry-lab/icc-decode-coordinator-freeze.json` | `147dbb2987ef5b3d508b636998c6ecb7fe546335f1eb25817d4c1155fa8576a9` |
+| `HEVC/current-geometry-lab/icc-decode-coordinator-contract.md` | `065ca25180d39aa67538bf24369e39b66eaed67f1ec7fd32261da0acd24c677d` |
+| `HEVC/current-geometry-lab/run_icc_decode_case.py` | `cdaa4483bc5f543097de290fe4f2942ee4fb64ae5ec64caa6aa67181acb3041f` |
+| `HEVC/current-geometry-lab/icc_decode_contract.py` | `0cbe6754d7274c2b0915d134169527cc5d35d85708f8407923cb90fe6c33b48f` |
+| `HEVC/current-geometry-lab/decoder350-one-icc-1.json` | `c75771a626c128256982353660878d4d4a95c747bab4f18e7aca8ba28c4e0e3f` |
+| `HEVC/current-geometry-lab/decoder350-icc-independent.json` | `da2549dd150bc26abaec6df590f04099404795efe41a16deaa88acb697708e63` |
+| `HEVC/current-geometry-lab/decoder350-icc-independent.py` | `229f5f78a972f2f3ac473f9c3abbc5b4cac2a5d66c14383f45485a290a724e59` |
+| `HEVC/current-geometry-lab/decoder350-icc-independent.md` | `7d801fdbdeeb7c9aa7d22d5639b8a859d8f886dad3f3760b93689642ba30ef5e` |
+| `HEVC/current-geometry-lab/runtime-coordination-icc-1.json` | `8a7fe2271c96e16ce8c2e48b5a02aa5fce8fefcb146c0fcbb8994d228cfc2e0e` |
+| `HEVC/current-geometry-lab/normal-restore-after-icc-1.json` | `6cc445213cbea8430fa80b345e9f2e4c7321e8b3f518e1bcc900abfd17d051d5` |
+| `RepairTrial/decoder350-icc-independent-review.json` | `8841bf9f93309c0aed4281660e9de32794814a24c77e24eba2590b1186e49ee7` |
+| `RepairTrial/decoder350-icc-independent-review.py` | `1ea4a1ed808a122945c8d250872d280f4a2c3b428932181cb0e717df6cb2c80e` |
+| `RepairTrial/decoder350-icc-independent-review.md` | `a98477f849302b049b636b0c28b9d101bc0c1679975faa2fa6f9fbd913a97198` |
+| `HEVC/current-geometry-lab/decoder350-byte-cadence-correlation.json` | `165d660279f0f9e95185aa18a88ff234a079def903e5b538c775fc3d39d61d01` |
+| `HEVC/current-geometry-lab/copy-timing-v1/source.json` | `249a1f0eccff381d3a55a05b6a6a11f3458af454f8b4a94d1025e19f7f893294` |
+| `HEVC/current-geometry-lab/copy-timing-v1/native-build.json` | `ddb7291ad812b1972996f174e795eeda23bfb5e5204fdb86ddf540e260220fec` |
+| `HEVC/current-geometry-lab/copy-timing-v1/hardware_decode.cpp` | `86d28c308ab1a5fb5e5699d16dd649a43184a799a6b1e4ae296f184885a3d085` |
+| `HEVC/current-geometry-lab/run_copy_timing_case.py` | `66a909d44af62047138253933e450db0c822d3cc7daedf7c36fe13c65a0cab46` |
+| `HEVC/current-geometry-lab/decoder350-copytiming-1.json` | `71fa7e04358648a203566bef7f9003386746ff3c2575a3345a2f598a3b0ab102` |
+| `HEVC/current-geometry-lab/decoder350-copytiming-summary.json` | `16c9b12994994df8ddbe1c753d273b9271d28026c1ae42d63447a066755f9cbb` |
+| `HEVC/current-geometry-lab/runtime-coordination-copytiming-1.json` | `224af45ccdc466cefbd81c44695bf49a64f81dc90f5eafce16dbc765a75eba2e` |
+| `HEVC/current-geometry-lab/normal-restore-after-copytiming-1.json` | `3a60161373ccbf3add622d0f2d4e919678dfe7a4db27699c7f3684d7c3e5bebe` |
+| `RepairTrial/decoder350-input-copy-review.json` | `9f7c97c51e055d35d65941cf1e3cde2e86cf60f94ede579d210587aee6506868` |
+| `RepairTrial/decoder350-input-copy-review.py` | `b100eb21a5bb384f3aaca75c244f3348d82bc8424b9826476b54de5c774aaa5c` |
+| `RepairTrial/decoder350-input-copy-review.md` | `9e3fa71d7f9ac182b552793e92fde86a0e955e19f69c21adfcbd464ac3bb4dd1` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/freeze.json` | `28ddc843c36ce8e9c2dd318da1229647e122cbe815b9be174852bc6d036532fb` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/manifest.json` | `fceddeca7cd9e17faaa4762370c48751ca74c60b166a68c939c79f22d5ab03e6` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/README.md` | `6a5f753531ac31b46d44e6396b6ceb1d8c01d7796520836fa02b9baed769542a` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/preparation-report.json` | `ea07840f99e2a21aba7c83678c9174db4269af8ab7fe0d1a1baff5f495fae957` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/parameter-set-comparison.json` | `3334dee9645aebdd226af51b39efdf3ab6ff912f402806969188821d97f184a2` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/software-decode-receipt.json` | `49156806b9570cc7cf1419ea791d9e1e98597a69f43eb322ff2bb84ecd6dee39` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/prepare.py` | `689f087d33321e6494ae4ca60db90b5efb92ca10d3dbca5e0ac83593f9f5f632` |
+| `HEVC/current-geometry-lab/prepared-one-rate208/verify.py` | `cdbbede4aa0b24dec97a6889218237d3bd666afa8762f9fc72348bc13ee8340b` |
+| `HEVC/current-geometry-lab/retained208-runtime-freeze.json` | `20a6235f2d9fb0fa895c085d71c928f2ced03651e106ee7971fb787c79f67ce0` |
+| `HEVC/current-geometry-lab/retained208-runtime-contract.md` | `d6eae59f1e86df592db5f47645afa7a3b22da224ccafdb0fe86b911be8ed0bb7` |

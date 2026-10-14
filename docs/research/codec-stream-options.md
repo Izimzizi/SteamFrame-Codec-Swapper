@@ -195,6 +195,51 @@ not an exhaustive device-holder census or a firmware session-destruction reply.
 The [experiment register](experiment-register.md#completed-current-geometry-decoder-comparison)
 binds preparation, native build, jobs, control, analyses and restoration separately.
 
+Two later one-session observations retain the selected 350-Mbps clip. A verified
+additional memory request yielded 74.497800 Hz / 290.739409 coded Mbps, while a
+separate copy/QBUF-timed executable yielded 74.489401 Hz / 290.706632 Mbps.
+Both completed all 900 pictures and failed capacity/cadence. The
+[resource control](radio-stream-map.md#completed-single-session-memory-vote-control)
+has added observation and environmental differences; the
+[timing experiment](receiver-stream-map.md#measured-compressed-input-copy-and-qbuf-cost)
+rules out dominant synchronous input-copy cost in its run, not all software cost.
+
+## Retained lower-rate workload: prepared, not run
+
+The first calibration attempt already contained a 208.075080-Mbps one-session
+stream from the same deterministic source. A separate package now preserves
+that elementary stream and validates all 90 access units, Main10 1664 x 6656,
+four independent 2,704-CTU slices, CU16/CTU32, no tiles/WPP, cross-slice filtering
+and no filler. Explicit CPU HEVC decoding passed, and its new lab framing
+concatenates exactly to the original bytes. No GPU regeneration was needed.
+
+The original encoder request was 350 Mbps; the 26,009,385 coded bytes establish
+the lower actual rate. The unchanged ten-repeat aggregation would credit
+259,385,846 bytes for IDs 2--899, but **no headset callback times or measured
+throughput exist for this package**. Its separate fixed-single-clip launcher
+has 15 dedicated tests within 76 passing harness tests; the original
+three-configuration comparison gate and decoder binary were not weakened.
+
+| Emitted parameter-set field | Retained 208-Mbps clip | Selected 350-Mbps clip |
+| --- | ---: | ---: |
+| Profile ID / tier flag | 2 / 1 | 2 / 1 |
+| VPS/SPS level ID | 183 | 186 |
+| NAL HRD bitrate, bits/s | 350,000,000 | 520,590,080 |
+| NAL HRD CPB size, bits | 3,888,880 | 5,784,320 |
+| Maximum decoded-picture buffering minus one | 3 | 3 |
+| Reordered pictures | 0 | 0 |
+| PPS default active L0/L1 references minus one | 2 / 2 | 2 / 2 |
+| VUI time scale / units per tick | 90 / 1 | 90 / 1 |
+
+The full FFmpeg parameter-set trace differs only in level for VPS, and level,
+HRD bitrate and CPB size for SPS; PPS bytes are identical. The structural
+prefix parser alone does not establish the full comparison. HRD signals the
+encoder's allocation, not measured delivered bytes. Quantization, residuals,
+prediction choices and image quality can also differ. Any later rate gain would
+therefore test lower coded workload **and** different capability/rate metadata,
+not isolate an entropy engine, memory bandwidth or byte count alone. Firmware
+policy may respond to that metadata. The package remains unrun at this cutoff.
+
 ## Tested, proposed and still unknown
 
 Only a measured current-geometry gain would justify building a native-quality

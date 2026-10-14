@@ -775,11 +775,10 @@ Four sessions requested about 2.055 times the single-session average vote yet
 did not improve cadence. That increase was insufficient for this workload;
 it neither proves that delivered bandwidth increased nor rules out memory as
 a constraint. Session count changes demand, reference domains and scheduling
-too. A separate single-session memory-vote control using the same clip/workload
-is prepared but **has not run** at this publication cutoff. Its proposed device-
-holder/format and DDR observations differ from the earlier baseline, so its
-observer profile is not fully matched. It cannot be reported as a throughput
-improvement or a failed compensation experiment.
+too. The later [single-session memory-vote control](#completed-single-session-memory-vote-control)
+uses the same clip/workload and now has a completed result. Its device-holder,
+format and DDR observations differ from the earlier baseline, so its observer
+profile is not fully matched.
 
 The four active reads took a combined 166.5/135.4/149.1 ms per job, with individual
 elapsed reads of 31.6--54.0 ms; those are reader durations, not decoder-blocked
@@ -797,3 +796,50 @@ reads retained active PM and a 1,000 vote before suspend; this transient alone
 was not a session leak. The process scan can miss unrelated holders and does
 not acknowledge firmware destruction. Normal Main10 streaming was restored
 afterward. No radio, forced-clock or thermal policy changed for this comparison.
+
+## Completed single-session memory-vote control
+
+A bounded private run added a separate tag-7 average request of 1,134,000 kB/s
+to the one-session Iris request of 1,608,000, with peak zero. Four active reads
+verify both owners across the six expected route nodes; SUM/MAX accounting
+matches the saved route totals. The added software request is 70.522% of the
+single-session baseline. Confirmed activity bounds enclose the 12.461955-second
+child lifetime. This establishes the requested state, not delivered bandwidth
+or firmware acceptance.
+
+Independent byte/callback replays match the frozen clip and native binary:
+438,073,321 coded bytes over 12.054047251 seconds give **74.497800 Hz /
+290.739409 Mbps**. All 900 pictures decode and drain, with 855 late inputs;
+capacity/cadence still fail. The difference is only +0.003344 Hz versus the
+original sampled baseline and +0.001905 Hz versus its no-active-read control.
+The verified added request did not produce a material observed gain in this run.
+
+All four active format/holder checks identify the same decoder and file:
+HEVC 1664 x 6656 input, Q10C 1728 x 6656 capture, stride 2304. Framework rates
+remain MVS0/MVS0C 600/900 MHz with force zero. Loaded Iris `srcversion` was
+unavailable, so the file hash, kernel and QUERYCAP identity must not be called
+a hash of all running module memory. Video temperatures were 47.1--50.2 C,
+versus 43.2--44.4 C in the earlier baseline; no thermal cause is established.
+
+Six DDR samples reproduce valid before/active/after counter deltas. All reported
+frequency-duration increments are at 4224 MHz, with no increase in the recorded
+4761-MHz row. The active interval covers 3.189717 seconds of the child lifetime;
+idle before/after intervals are not a matched no-vote active workload. Ticks,
+not an assumed firmware frequency, are the basis of the calculation. Frequency
+and low-power durations are not added together. Unchanged reported residency
+does not establish unchanged NoC latency, memory throughput or RPMh acceptance.
+Foreign CPU/PMU requests also changed.
+
+This coordinator adds global FD scans, duplicated-FD QUERYCAP/G_FMT and DDR/QMP
+refreshes absent from the earlier controls. Its active snapshot bodies take
+75.9--106.7 ms, not decoder-blocked time. The old no-active-read control does
+not measure this new observation profile. These single sequential runs therefore
+do not isolate a causal ICC effect, rule out memory limits or prove a universal
+decoder ceiling.
+
+The child was reaped, ordinary removal left the owned module/root device and
+consumer rows absent, all after-snapshots had no video-device holders, final
+runtime PM was suspended, the watchdog exited cleanly and no new taint bits
+appeared. The bounded kernel record contains activation, release and exit only.
+This verifies software cleanup, not opaque firmware-state restoration. The
+observed run used ordinary removal; expiry was not its primary cleanup path.
