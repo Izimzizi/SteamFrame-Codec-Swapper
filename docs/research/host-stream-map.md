@@ -836,17 +836,176 @@ between its first initialization request and later retained configuration:
 Consequently a warm retained request or emitted startup picture can show four
 slices without proving that the first initialize call requested that same
 layout. The candidate required mode 3/count 4 at that first call. This is a
-concrete possible mismatch, but **the actual preset-returned values and failing
-predicate were not captured**. They must not be inferred to be zero, one or
+concrete possible mismatch, but **that audit had not captured the actual
+first-call values or failing predicate**. They could not be inferred to be zero, one or
 four. Other preset-derived first-call fields also remain unobserved. The audit
 used installed bytes for the copy target because the older cached decompilation
 does not match that local call operand.
 
-The next proposed diagnostic would record the original first initialization
+The next proposed diagnostic was to record the original first initialization
 request, the normal post-policy copied request and the returned API status,
 without assigning any codec field or allowing fixed-budget activation. A
 capture-once record plus later-initialization detection would distinguish this
 missing first-call evidence from warm state. It would require a fresh process,
 exact helper identity and bounded passive readback. No such diagnostic result,
-relaxed guard or successful cross-slice-filter performance comparison is
-established by this offline audit.
+relaxed guard or successful cross-slice-filter performance comparison was
+established by that offline audit. The subsequent observation below closes the
+first-call gap without treating the earlier refusal as an API rejection.
+
+## Observed first initialization and capacity versus active dimensions
+
+A separate observation-only helper captured the first original initialization
+request, its normal post-policy copy, and the first/fallback/final API outcomes.
+It could not arm the fixed-budget lease or change codec fields. Its 440-byte
+capture-once record retained the first call and counted later initialization
+entries separately. Native fixtures checked forwarding bytes, input immutability,
+fallback outcomes and passive decoder layout. The bounded passive read verified
+the exact helper and loaded executable bytes; two equal copies under observed
+free-mutex states are race filters, not an atomic publication protocol.
+
+The live record contained exactly **one initialization, NVENC success, no
+fallback and no later initialization**. Both recorded request shapes were
+**3200×8192, 90/1, Main10/P2, CBR with quarter-resolution multipass**, with
+slice mode/count **0/0** and zero average, maximum and VBV fields. The
+retrospective guard mask was `0x30300`: only width, height, slice mode and
+slice count differed from the original candidate's warm-state requirements.
+These are accepted API request fields, not hardware-normalized settings or
+the dimensions of an emitted picture.
+
+The same process later reported **1664×6656** after 188 reconfiguration calls.
+Its latest accepted rate-control request was 400000000/459999999/5111111
+average/max-field/VBV, with 186 completed output frames. The first diagnostic
+coordinator incorrectly required warm dimensions in its validation and therefore
+reported failure; it preserved the raw capture and restored normal streaming.
+A separate offline assessment corrected that interpretation without replacing
+the original failed report. The error was in the observer's expectation, not
+the recorded NVENC result.
+
+The exact installed driver explains the distinction. Its constructor sets a
+capacity of 3200×12800. A mode updater selects among 6400×6400, 3200×6400 and
+3200×12800, after which positive NVENC maximum-width/height capability results
+can reduce each dimension. First initialization copies those capacity fields
+to encode dimensions and maximum encode dimensions. The observed 8192 height
+is consistent with that capability clamp; the capability return and selected
+mode were not separately captured. Later reset/per-frame code uses the active
+dimensions and restores slice mode 3 and the requested count. The preset copy
+described above explains how the first effective slice request can be 0/0.
+This does not imply that pictures were streamed at the capacity dimensions.
+
+## Phase-specific cross-slice-filter trial and emitted PPS
+
+The revised private candidate kept separate predicates for the two phases:
+
+| Phase | Required request shape | Additional limits |
+| --- | --- | --- |
+| First initialization | 3200×8192, 90/1, slice mode/count 0/0 | Zero average, max-field and VBV; one candidate initialization |
+| Warm reconfiguration | 1664×6656, positive rate numerator over 1, slice mode/count 3/4 | Same accepted encoder session; no earlier guard/API/fallback failure |
+
+Both retain the Main10/P2, constrained encoding, no filler/picture-timing SEI,
+CBR/quarter-multipass, quality and disabled advanced-override checks. The sole
+candidate codec assignment is `disableDeblockAcrossSliceBoundary=1` in the
+copied configuration. It does not change dimensions, slice count, startup
+budgets or nominal frame rate. A separate 216-byte first-failure diagnostic
+records the refused phase, predicate mask and request shape before bit mutation.
+Any failure stops fixed-budget readiness; it does not progressively relax the
+guards. Cancel or expiry returns the adaptive budget but preserves the accepted
+initialization property until a fresh normal session replaces it.
+
+A fresh production-prefix capture from the actual candidate generation
+recovered complete VPS/SPS/PPS. The emitted PPS reported
+**`pps_loop_filter_across_slices_enabled_flag=false`**. Dimensions remained
+1664×6656, 10-bit 4:2:0 with 32×32 CTUs, independent slice segments, and tiles
+and WPP disabled. This proves the requested syntax change reached the emitted
+stream in that session. The 8 KiB prefix contained only the first slice start;
+it does not prove a complete slice count, decode correctness, hardware slice
+parallelism or performance improvement. API acceptance and emitted syntax were
+checked separately and linked by fresh process identity.
+
+The resulting fixed-400 screen still triggered the combined persistent-backlog
+or decoder-turnaround-above-40-ms guard after about two seconds:
+**336.35 useful Mbps at 82.02 FPS**, with no new NVENC encode,
+lock or rejected-API errors. The three Waterfall samples were approximately
+370.51–421.22 binary Mbps at 81–83 FPS. A graph above 300 therefore did not
+meet the smooth-streaming objective. Across the broader retained 312-frame
+timing history, median decoder turnaround was 45.464 ms, transport 6.895 ms
+and encoder completion 6.079 ms. That timing history is not identical to the
+two-second encoded-counter interval, and decoder turnaround is not pure
+hardware execution time.
+
+The screen used the existing temporary receiver timer correction and six-frame
+ordering/drain window. It did not run the new thirteen-event lock/PM observer.
+Low cadence demonstrates the performance failure, but cadence itself was not
+the condition that triggered this particular guard.
+
+The exact counter interval contained 164 frames and 84,062,854 useful bytes
+over 1.9994355 seconds. Matching frame IDs restrict the AFTM comparison to
+144 of those 164 pictures: decoder-turnaround median 46.226 ms, transport
+median 6.652 ms and encoder-completion median 6.079 ms. The 20 newest missing
+timing rows are consistent with the observer's deliberate newest-row exclusion;
+they are not automatically lost pictures. Sparse host samples in this interval
+showed no reset, retry-send increment or sampled send failure, while admission
+queues and holdoff remained active. They cannot exclude unsampled stalls.
+
+Per-picture nominal-rate pairing covered all 164 encoded pictures and all
+useful bytes. The nominal field ranged from 86 to 94 FPS, averaging 89.470.
+The hypothetical allocation `400000000 / (8 * nominal_fps)` averaged only
+0.611% above the same arithmetic at fixed 90. Actual bytes were 91.704% of
+that allocation sum. Unpadded CBR does not guarantee this arithmetic allocation
+for every picture, so the remainder is not evidence of a hidden cap or a
+particular VBV factor. The small mean nominal-rate effect does not explain
+the much lower observed output cadence, and does not establish a fixed-90 fix.
+
+The small difference from earlier short fixed-400 failures is not an isolated
+or randomized comparison. It is not evidence of a gain, regression or precise
+throughput ceiling. Disabling this filter alone did not restore 90 Hz in the
+observed screen; useful 350 Mbps with smooth pacing remains unproved.
+
+After the guard abort, the coordinator verified restoration of the normal
+Main10 helper/session. The bounded receiver lease reported original instruction
+state, all threads detached and no cleanup errors; the activity lease was
+explicitly cleared. These are separate cleanup checks, not evidence that the
+failed performance window met its goal.
+
+## Bounded startup discovery for production-header observation
+
+The first candidate header-observation attempt encountered Windows module
+snapshot error 299 before reading target memory. Its failure did not establish
+a codec or streaming failure. The observer was adjusted to retry only module
+discovery errors 24 or 299 while no module base had been accepted and no graph
+had been pinned, within the existing maximum 60-second startup deadline. It
+requires a 64-bit observer. Once the exact module is found, path/size identity
+and executable-byte guards still apply; a failed code read or guard remains
+fatal and cannot reopen module discovery. Error counts are retained.
+
+The existing pre-pin object-discovery path still treats selected incomplete
+startup graph reads as pending. Thus this change does not make every pre-pin
+memory read fatal, nor does it permit recovery by retargeting an already pinned
+process or graph. Twenty-five offline tests passed. The successful subsequent
+header capture needed no snapshot retry. No observer source or experimental
+helper is included in this research publication.
+
+### Private evidence provenance for the startup and codec observations
+
+These source/capture identifiers and SHA-256 digests identify the retained local
+evidence. The files remain under ignored `artifacts/`; raw captures, local
+identifiers, executable binaries and installed-code extracts are not published.
+
+| Private file | SHA-256 |
+| --- | --- |
+| `RadioTrace/InitDiag1/source-manifest.json` | `e2ed61fd66c5d06624d85308d7522d871830817a6cbe9dbe89ebfd8e66e7ce34` |
+| `RepairTrial/initdiag-first-1-coordination.json` | `8a102ae4b37b77846080eeab96e34919c92ed169578df74b7424055da2abfc70` |
+| `RadioTrace/Coherent400NoCrossFilterv2/source-manifest.json` | `b309cbc89aa36d655b537d86d54116771681b1edf89fa91dc58f907ec7a66700` |
+| `RadioTrace/Coherent400NoCrossFilterv2/installed-capacity-provenance.json` | `3055f7db90ba714c4b0a4e5b07a6ea42dbdce45c16684c907e8b732d51ad8cb9` |
+| `RepairTrial/production-hevc-no-cross-filter-v2-2.json` | `c27d33552ee0de58037ea07a514d1267291220d0fdf5dc9f7b6b0c42a6e43027` |
+| `RepairTrial/coherent400-no-cross-filter-v2-2-stream.json` | `1767510532991cf90f987d32d25e37187d561187b688735a166aeba9fc8cbeab` |
+| `RepairTrial/coherent400-no-cross-filter-v2-2-coordination.json` | `422bc59c9cca9601f0958c4f13f154eed835ba5ca64468f29fec59017f318853` |
+| `RepairTrial/coherent400-no-cross-filter-v2-2-assessment.json` | `f5ef44861de26b3b35ab40db0796a43fe1f098e64d6e158fdc7d573594452958` |
+| `RepairTrial/coherent400-no-cross-filter-v2-2-host-review.json` | `a9df0e1a5c3cdb93694e1c2e09fbd3dfef5e04c3e19b9d6463e7f831ff204dd2` |
+| `RepairTrial/coherent400-no-cross-filter-v2-2-host-review.py` | `1b4e12e5540b6b587590ce879eb054e69aadc3fdaf99dc5710270b44ea786d84` |
+
+The observation-only helper hash is
+`890ba51d2c7c08ad83f77e077176b1d7972e31a586dddfb42cf9df0c4ef83110`;
+the revised codec helper hash is
+`21f1ffeca01c24b1a090378c2d9a121472f78af8ec22235f9a0623217cebac7e`.
+The latter's accepted request and emitted syntax checks remain separate from
+the failed performance result.

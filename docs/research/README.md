@@ -62,18 +62,37 @@ its frame-phase controller, transport repair or receiver image selection.
 
 ## Current connected reference
 
-A later cross-slice-filter candidate stopped at its own startup guard before
-any experimental NVENC API call. The original fallback worked; this supplies
-no codec-performance result. The [host audit](host-stream-map.md#startup-guard-refusal-and-first-initialization-ordering)
-shows that preset copying overwrites early slice settings before first
-initialization, while later reset restores them. The actual first-call values
-and failed predicate remain unknown. Separately, the
-[receiver audit](receiver-stream-map.md#offline-discriminator-for-locking-power-management-and-hfi-service)
-maps existing mutex-contention and runtime-PM events as the next proposed
-discriminator, with runtime validation still pending and shared tracing
-controls explicitly bounded.
+The latest cross-slice-filter screen verified that the requested codec change
+reached the actual emitted PPS, but still triggered the fixed-400
+decoder-delay/backlog guard:
+**336.35 useful Mbps at 82.02 FPS** over about two seconds. Waterfall remained
+above 300, at approximately 370.51–421.22 binary Mbps, while its frame counter
+was 81–83 FPS. No encoder API errors were counted. This is a failed smoothness
+test, not evidence of an improvement over earlier short failures. The normal
+Main10 helper, original receiver instructions, detached threads and cleared
+activity lease were verified after the abort. The
+[host result](host-stream-map.md#phase-specific-cross-slice-filter-trial-and-emitted-pps)
+separates accepted requests, same-generation emitted syntax and pacing evidence.
 
-The latest matched **400 Mbps** trial added existing IRQ and scheduler events
+The earlier candidate's startup refusal is now explained by a captured first
+initialization: **3200×8192, slice mode/count 0/0**, followed by warm streaming
+at **1664×6656**. The first API call succeeded; only the old width/height/slice
+predicates failed. An [installed-code capacity audit](host-stream-map.md#observed-first-initialization-and-capacity-versus-active-dimensions)
+links the first dimensions to capacity selection/clamping and the later
+dimensions to active-frame reconfiguration. It does not imply that the stream
+used capacity-sized pictures. The revised guard handles those phases separately
+and does not relax automatically after a failure.
+
+A separate [normal lock/PM canary](receiver-stream-map.md#normal-thirteen-event-locking-and-runtime-pm-canary)
+validated thirteen existing events and cleanup: 179 output responses over
+2.000389 seconds, zero reported trace loss, and approximately 90 FPS in adjacent
+host counters. Complete PM calls were at most 5 microseconds and bounded mutex
+contentions at most 96 microseconds in that normal capture. Four acquisitions
+remain censored. The observer can now test those stages under a matched load;
+normal intervals do not establish their behavior during the fixed-400 failure.
+No firmware, thermal, scheduling-priority or clock control was changed.
+
+The preceding matched **400 Mbps** trial added existing IRQ and scheduler events
 to the decoder trace. It again failed the guard after about two seconds,
 producing **333.91 useful Mbps at 81.54 FPS**. Across normal control, the mixed
 override/cancellation interval and the post-cancel tail, output events changed

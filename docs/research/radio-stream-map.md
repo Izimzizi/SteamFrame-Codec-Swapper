@@ -655,3 +655,25 @@ spikes. It does not rule out radio tails in other captures, establish an exact
 decoder ceiling, or demonstrate smooth sustained useful 350/400 Mbps. The
 middle phase includes uncertain cancellation and recovery, and the retained
 frame history differs from the short encoded-counter window.
+
+## Subsequent codec and lock/PM observations do not isolate a radio limit
+
+The [phase-specific codec experiment](host-stream-map.md#phase-specific-cross-slice-filter-trial-and-emitted-pps)
+subsequently verified a fresh emitted PPS with cross-slice filtering disabled.
+Its fixed-400 screen still failed near 82 FPS, with 336.35 useful Mbps and no
+encoder API error increments. Across its broader retained timing history,
+median transport was 6.895 ms, encoder completion 6.079 ms and decoder turnaround
+45.464 ms. Those medians are not all from the exact two-second encoded-counter
+window; turnaround includes queueing and software observation. The result does
+not establish a radio throughput ceiling or prove this codec field improved
+anything. No radio, USB, aggregation or firmware setting changed for that screen.
+
+The separate [normal thirteen-event canary](receiver-stream-map.md#normal-thirteen-event-locking-and-runtime-pm-canary)
+validated scoped IRQ-thread mutex and runtime-PM events without a cadence
+failure. It preserved root trace state and removed its owned instance; foreign
+instances were not written, but their full state was not compared. Fast normal
+PM/lock intervals do not eliminate those stages under the higher load. A future
+matched observation must retain the measured event caps, phase coverage and
+first-acquisition censoring. It would narrow a receiver software boundary,
+while firmware response readiness, exact command publication and rare wireless
+delivery tails remain distinct unresolved measurements.

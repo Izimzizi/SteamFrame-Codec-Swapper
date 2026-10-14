@@ -1332,9 +1332,9 @@ streams. Smooth, sustained useful 350/400 Mbps remains unproven.
 ## Offline discriminator for locking, power management and HFI service
 
 The matching Iris module and kernel ELF expose narrower software boundaries
-around the added pre-input-response residence. This is an offline mapping;
-the proposed event extension has not been implemented or enabled, and its
-runtime event formats, filter support and overhead remain untested.
+around the added pre-input-response residence. This began as an offline mapping;
+the later normal-canary section below records runtime validation of the proposed
+event extension. A matched high-load result is not established by that canary.
 
 The threaded handler first takes a separate PM mutex before requesting runtime
 resume. It then takes the core mutex, clears the interrupt and releases that
@@ -1392,3 +1392,93 @@ Lock/PM intervals could identify a material software contribution or direct the
 next observation toward command publication and response-ring consumption.
 They cannot alone assign all overlapping time to an individual TX, isolate pure
 decoder execution, or justify firmware, clock or priority changes.
+
+## Normal thirteen-event locking and runtime-PM canary
+
+A separate observer added the four existing lock/PM events to the nine-event
+Iris/IRQ/scheduler trace. Runtime event-format hashes were checked before
+enabling any event. Both contention events were filtered by the freshly
+verified IRQ thread's `common_pid`; both PM events additionally required the
+video device name, with the return event restricted to the verified
+`rpm_resume` return address. Kernel/module identity, device binding, thread
+start time, real-time policy and CPU affinity were checked. No priority,
+affinity, clock, power setting, dynamic probe or function-graph control changed.
+
+The worker used its own random trace instance and independent expiry watchdog,
+with path/inode identity and terminal cleanup guards. Cleanup covered all
+thirteen enables, and root controls/filters/enables were compared before and
+after. The observer made no writes to foreign instances; their entire state
+was not inventoried, so preservation of every foreign setting was not separately
+measured. Shared tracepoint activation still has kernel-wide instrumentation
+cost despite private-instance filtering.
+
+The retained two-second normal-stream canary had **5,473 events**, 662,293 trace
+bytes and **179 output responses in 2.000389 seconds**, or **89.48 per second**.
+All eight CPUs had zero overrun/drop/unread counters, and retained line count
+matched kernel read-event accounting. Root trace state was preserved, the
+owned instance was removed and its watchdog completed cleanly. Host counters
+before/during/after were **89.71/90.21/89.86 FPS** and
+**257.89/259.32/261.49 useful Mbps**, with no encode/lock/rejection increments.
+The middle host interval includes SSH setup and result collection, not only
+the two-second trace. These checks establish a usable normal canary, not
+zero observer cost or a high-load performance result.
+
+The first parser rejected a PM return-symbol suffix: the exact ELF's function
+size is `0x648`, while the next-symbol/kallsyms span printed by the kernel is
+`0x650`. Offline replay accepted only the verified
+`rpm_resume+0x140/0x650` form or the exact numeric return address. The required
+offset, address, worker and runtime filter did not change. The original failed
+assessment and raw record were preserved; replay produced a new assessment
+and did not require another trace to obtain the result.
+
+The normal observation contained **536 complete PM calls**, all returning 1,
+with median/p99/maximum software intervals of **2/4/5 microseconds**. This is
+not evidence of 536 hardware power transitions, and it excludes the preceding
+Iris PM mutex and wrapper spinlock. There were **35 fully bounded successful
+contention acquisitions**, with median/p99/maximum **11/70/96 microseconds**,
+plus four censored acquisitions. Three first task-context spans remain lower
+bounds; one interrupt-context span is also censored. The first observed begin
+for a token may be a spin/sleep phase update rather than acquisition entry.
+The parser preserves repeated phases in one acquisition and does not infer
+lock identity or ownership from hashed tokens. Running-state overlap includes
+nested interrupts rather than isolated Iris CPU work.
+
+A separate optional matched integration revalidates the entire raw canary,
+recomputes its source counters and direct output cadence, and checks PM
+coverage before use. The unchanged rule of twice measured density plus a
+1,000-event allowance permits **10 seconds at 55,720 events and 6,621,643
+bytes**; a 12-second request exceeds the fixed 60,000-event ceiling and is
+refused. Caps produce incomplete evidence rather than being silently increased.
+Readiness requires the same verified IRQ/PM identities, and completion requires
+clock-bracket coverage, session-marker continuity, owned cleanup, full parser
+validity and a bounded inode-pinned appended log slice. Neither matching
+allocation pointers nor an error-free log slice proves a unique decoder
+generation or complete logging. The private runner integration and related
+regressions passed 221 offline tests; no matched thirteen-event capture had
+been run at this publication cutoff.
+
+The [cross-slice-filter screen](host-stream-map.md#phase-specific-cross-slice-filter-trial-and-emitted-pps)
+separately verified an emitted PPS change but still ran near 82 FPS. This normal
+lock/PM canary was not that fixed-400 screen. Short normal mutex/PM intervals
+cannot exclude contention under the higher load, and do not yet explain the
+added pre-input-response residence or justify a firmware/priority change.
+
+### Private evidence provenance for the lock/PM observation
+
+The following identifiers are relative to ignored `artifacts/RepairTrial/`.
+Only this original synthesis is published; raw trace lines, process/device
+identifiers and experimental worker/controller source remain local.
+
+| Private file | SHA-256 |
+| --- | --- |
+| `iris-lock-pm-canary-2-events.json` | `1281deb5dc2c1ff777a7cc7de18fd2171fd566185e08ce2f626dec534c7bf10b` |
+| `iris-lock-pm-canary-2-assessment-replay1.json` | `114a2892592e41c5d4f4f07e09f3349e4b78f82bb913813d6eb24204e70d6210` |
+| `iris-lock-pm-canary-2-symbol-span-provenance.json` | `dbe95fd3a10ac44dab5950bff2808162f09c21a26f3314b475045e040f71234f` |
+| `iris-lock-pm-postcanary-review1.json` | `37aa9f294ce1b3878b52977a40bdd0f5abe3fd9185896b25543914a7e8eaf435` |
+| `iris-lock-pm-matched-freeze1.json` | `58cf4b28e5b5c9bbce7a276dfd2f85407a0b696c78c7b8fac2e4d6ac8129a7e2` |
+
+The unchanged thirteen-event worker hash is
+`6b8dace4600d762155a99db3ce78502b86591b0029ea6191d4db573e1f4c4816`;
+the corrected parser hash is
+`311ca8682c07381166435ffcb8bbc435750737d19df57a06b6aae478d86e688c`.
+The source review and normal canary do not establish a matched high-load result.
