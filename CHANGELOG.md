@@ -38,6 +38,12 @@
 - A sweep that finds no clean step now leads the card (nothing above its best marginal rate is
   worth trying now), retires the saved ceiling instead of leaving an "Apply N Mbps" button for a
   rate the link just refused, and is kept in the history as such.
+- **Apply N Mbps now** is no longer a permanent button: it appears for 20 minutes after a sweep
+  whose winning step the encoder actually filled, and older or lightly tested ceilings stay in
+  the text and the Measured ceiling preset. Lightly tested results are left out of the history
+  range and of the Automatic from N Mbps suggestion.
+- Before the first step the sweep and the check wait for ten quiet seconds without a stream
+  recovery request (up to 40 s), so a stream that has just restarted is not scored as failing.
 - **Check this rate (30 s)** measures the live target once, as one sweep step with the same
   rules, re-check and test scene, and reports whether that rate is clean today without changing
   or saving anything.

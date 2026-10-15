@@ -3,7 +3,11 @@ using System.Text.Json;
 namespace SteamLinkVRSettings.Frame;
 
 /// <summary>One finished sweep, kept in preferences so the card can show how the link varies between runs.</summary>
-public sealed record SweepRecord(DateTimeOffset At, int CeilingMbps, int RefreshHz, string Summary, bool NoCleanStep = false);
+public sealed record SweepRecord(DateTimeOffset At, int CeilingMbps, int RefreshHz, string Summary, bool NoCleanStep = false, bool LightlyTested = false)
+{
+    /// <summary>A clean ceiling the encoder never filled; records written before the flag existed carry it in their text.</summary>
+    public bool IsFullyTested => !NoCleanStep && !LightlyTested && !Summary.Contains("lightly tested", StringComparison.Ordinal);
+}
 
 public sealed class FramePreferences
 {

@@ -29,6 +29,11 @@ public static class LinkCapacitySweep
 {
     public static readonly TimeSpan SettleTime = TimeSpan.FromSeconds(6);
     public static readonly TimeSpan MeasureTime = TimeSpan.FromSeconds(24);
+    /// <summary>
+    /// A freshly started stream (or a scene switch) asks for stream resets for a while; the first step waits until
+    /// none arrived for this long, up to the limit, so start-up noise is not scored as the link failing.
+    /// </summary>
+    public static readonly TimeSpan QuietTime = TimeSpan.FromSeconds(10), QuietLimit = TimeSpan.FromSeconds(40);
     public const int DefaultStepMbps = 50, MinimumStepSeconds = 10;
     /// <summary>Extra passes a sweep may spend re-checking marginal steps, plus one confirmation of the winner.</summary>
     public const int MaxRechecks = 2, ExtraPasses = MaxRechecks + 1;
@@ -143,7 +148,7 @@ public static class LinkCapacitySweep
     /// </summary>
     public static int? AutomaticStart(IReadOnlyList<SweepRecord> history, DateTimeOffset now)
     {
-        var clean = history.Where(r => !r.NoCleanStep && now - r.At <= HistoryWindow && r.At - now <= TimeSpan.FromMinutes(5)).Select(r => r.CeilingMbps).ToList();
+        var clean = history.Where(r => r.IsFullyTested && now - r.At <= HistoryWindow && r.At - now <= TimeSpan.FromMinutes(5)).Select(r => r.CeilingMbps).ToList();
         if (clean.Count < 2) return null;
         int low = clean.Min(), high = clean.Max();
         return high - low >= DefaultStepMbps ? high : null;
@@ -156,9 +161,11 @@ public static class LinkCapacitySweep
     public static string? DescribeHistory(IReadOnlyList<SweepRecord> history, DateTimeOffset now)
     {
         var window = history.Where(r => now - r.At <= HistoryWindow && r.At - now <= TimeSpan.FromMinutes(5)).OrderBy(r => r.At).ToList();
-        var recent = window.Where(r => !r.NoCleanStep).ToList();
-        var noClean = window.Count - recent.Count;
-        var noCleanText = noClean == 0 ? "" : noClean == 1 ? " One sweep found no clean step at all." : $" {noClean} sweeps found no clean step at all.";
+        var recent = window.Where(r => r.IsFullyTested).ToList();
+        var noClean = window.Count(r => r.NoCleanStep);
+        var light = window.Count - recent.Count - noClean;
+        var noCleanText = (noClean == 0 ? "" : noClean == 1 ? " One sweep found no clean step at all." : $" {noClean} sweeps found no clean step at all.")
+            + (light == 0 ? "" : light == 1 ? " One lightly tested result (a still scene) is not counted." : $" {light} lightly tested results (still scenes) are not counted.");
         if (recent.Count < 2) return noClean > 0 && window.Count >= 2 ? $"The last {window.Count} sweeps disagreed." + noCleanText + " Sweep again before trusting any single result." : null;
         int low = recent.Min(r => r.CeilingMbps), high = recent.Max(r => r.CeilingMbps);
         var runs = recent.Count == 2 ? "two sweeps" : $"{recent.Count} sweeps";

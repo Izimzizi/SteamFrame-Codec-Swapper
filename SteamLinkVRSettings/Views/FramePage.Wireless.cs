@@ -232,11 +232,11 @@ public sealed partial class FramePage
         AdviceHeadline.Foreground = new SolidColorBrush(sweep is { BestCleanMbps: not null } ? Good : sweep is { Check: true, HighestMarginalMbps: not null } ? Amber : sweep is { Check: true } ? Bad : _advice.LinkLimited ? Amber : _advice.Headroom ? Good : Neutral);
         // For a minute after a sweep the live counters still hold its top steps, so the moment-to-moment advice would argue with the result.
         var sweepSettling = sweep is not null && now - _sweepConcludedAt < TimeSpan.FromSeconds(90);
-        var reasons = sweepSettling ? new List<string> { "Right now: the last minute still includes the sweep's highest steps; live advice resumes in a moment." }
+        var reasons = sweepSettling ? new List<string> { sweep is { Check: true } ? "Right now: the last minute still includes the check; live advice resumes in a moment." : "Right now: the last minute still includes the sweep's highest steps; live advice resumes in a moment." }
             : sweep is not null ? _advice.Reasons.Prepend("Right now: " + _advice.Headline).ToList() : _advice.Reasons.ToList();
         var context = new List<string>();
         if (sweep is null && _preferences.LastSweepCeilingMbps is int earlier && _preferences.LastSweepAt is { } at)
-            context.Add($"Last measured ceiling: {earlier} Mbps on {at.ToLocalTime():MMM d HH:mm} with {_preferences.LastSweepRefreshHz} fps delivered ({ValveComparison(earlier)}). Run Find my link's limit again after changing the dongle position, headset refresh rate or game.");
+            context.Add($"Last measured ceiling: {earlier} Mbps on {at.ToLocalTime():MMM d HH:mm} with {_preferences.LastSweepRefreshHz} fps delivered ({ValveComparison(earlier)}); it is saved as the Measured ceiling preset in Stream settings. Sweep again before relying on it, and after changing the dongle position, headset refresh rate or game.");
         else if (sweep is null && _preferences.LastSweepCeilingMbps is null && _preferences.LastSweepAt is { } last && _preferences.LastSweepSummary.Length > 0)
             context.Add($"Last sweep on {last.ToLocalTime():MMM d HH:mm}: {_preferences.LastSweepSummary} Sweep again before trusting a rate.");
         // Several sweeps say more than one: a link that measures differently from hour to hour needs different advice.
@@ -290,13 +290,16 @@ public sealed partial class FramePage
     }
 
     private SweepConclusion? RecentSweep() => _sweepConclusion is not null && DateTimeOffset.Now - _sweepConcludedAt <= TimeSpan.FromMinutes(20) ? _sweepConclusion : null;
-    /// <summary>The highest clean sweep target: this session's, else the one saved from an earlier run.</summary>
-    private int? MeasuredCeiling() => _sweepConclusion is { Check: false } concluded ? concluded.BestCleanMbps : _preferences.LastSweepCeilingMbps;
+    /// <summary>
+    /// The ceiling worth a one-click Apply: a sweep that finished in the last 20 minutes with the encoder near the
+    /// target. An older or lightly tested result stays in the text and the saved preset, not on a permanent button.
+    /// </summary>
+    private int? MeasuredCeiling() => RecentSweep() is { Check: false, LightlyTested: false, BestCleanMbps: int best } ? best : null;
 
     private async void ApplyCeiling_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
         await EnsureCodecStableAsync();
-        if (MeasuredCeiling() is not int ceiling) throw new InvalidOperationException("Run Find my link's limit first; there is no measured ceiling yet.");
+        if (MeasuredCeiling() is not int ceiling) throw new InvalidOperationException("Run Find my link's limit first; a ceiling is applied from a sweep that just finished with the encoder near the target. Older results are in the Measured ceiling preset.");
         if (SelectedCodec != StreamCodec.Hevc || _codecService.Live) throw new InvalidOperationException("The measured ceiling applies to the HEVC stream. End the codec session first.");
         if (_bandwidthEdited || _codecEdited || _pendingPreset != null) throw new InvalidOperationException("Apply or reload the pending Stream settings edits first.");
         return await ApplyMeasuredCeilingAsync(ceiling);
@@ -517,6 +520,9 @@ public sealed partial class FramePage
                 await Task.Delay(TimeSpan.FromSeconds(5), token);
                 if (_streamHealth.Current.LinkActive == false && recoveries < 2 && await RecoverLinkForSweepAsync(token)) recoveries++;
             }
+            // A stream that just (re)started asks for resets for a while: in testing the first window after a restart
+            // failed on them three times out of four. Wait for a quiet stretch before scoring anything.
+            await WaitForQuietLinkAsync(token);
             for (run.Index = 0; run.Index < run.Plan.Count; run.Index++)
             {
                 token.ThrowIfCancellationRequested();
@@ -609,6 +615,22 @@ public sealed partial class FramePage
         }
     }
 
+    /// <summary>Waits until no stream reset request has arrived for <see cref="LinkCapacitySweep.QuietTime"/>, giving up after the limit.</summary>
+    private async Task WaitForQuietLinkAsync(CancellationToken token)
+    {
+        var started = DateTimeOffset.Now;
+        var resets = _streamHealth.Current.StreamResetRequests;
+        var quietSince = started;
+        while (DateTimeOffset.Now - started < LinkCapacitySweep.QuietLimit)
+        {
+            if (DateTimeOffset.Now - quietSince >= LinkCapacitySweep.QuietTime) return;
+            SweepStatus.Text = $"Waiting for the stream to settle ({(DateTimeOffset.Now - quietSince).TotalSeconds:0} s without a recovery request)…";
+            await Task.Delay(1000, token);
+            var now = _streamHealth.Current.StreamResetRequests;
+            if (now != resets) { resets = now; quietSince = DateTimeOffset.Now; }
+        }
+    }
+
     /// <summary>
     /// Starts Auto tune's moving test scene for the sweep when asked and it is not already running, so a headset
     /// on the desk gives the encoder real work. A scene that cannot start is noted, not fatal.
@@ -687,7 +709,7 @@ public sealed partial class FramePage
             // A sweep with no clean step retires the saved ceiling: the card must not offer a rate the link just refused.
             _preferences.LastSweepCeilingMbps = conclusion.BestCleanMbps; _preferences.LastSweepAt = DateTimeOffset.Now;
             _preferences.LastSweepSummary = conclusion.Summary; _preferences.LastSweepRefreshHz = hz;
-            LinkCapacitySweep.Record(_preferences.SweepHistory, new SweepRecord(DateTimeOffset.Now, conclusion.BestCleanMbps ?? conclusion.HighestMarginalMbps ?? 0, hz, conclusion.Summary, conclusion.BestCleanMbps is null));
+            LinkCapacitySweep.Record(_preferences.SweepHistory, new SweepRecord(DateTimeOffset.Now, conclusion.BestCleanMbps ?? conclusion.HighestMarginalMbps ?? 0, hz, conclusion.Summary, conclusion.BestCleanMbps is null, conclusion.LightlyTested));
             await _preferences.SaveAsync();
         }
         catch (Exception error) { return " The measured ceiling could not be saved: " + error.Message; }

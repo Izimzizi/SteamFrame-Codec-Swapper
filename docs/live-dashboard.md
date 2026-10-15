@@ -122,7 +122,9 @@ the sweep had to bring the stream back itself (an idle headset), the video link 
 20 Mbps of video is being encoded, that is when nothing is really playing; a still headset view
 still encodes most of any target on a padded CBR stream, so the encoded rate alone cannot tell.
 The scene takes over the headset view from any running VR app, so leave it off while you play. Switching SteamVR to the scene can make the Frame reset its stream once; the sweep waits
-five seconds and restarts the stream before the first step if that happens. With the scene the
+five seconds and restarts the stream before the first step if that happens. A stream that has
+just started also asks for recovery for a while, so before the first step the sweep (and Check
+this rate) waits until ten seconds pass without a stream recovery request, up to 40 seconds. With the scene the
 tested setup encoded 145 Mbps of video at a 150 Mbps target and 182 at 200, against 115 and 157
 from a still headset. The sweep and Auto tune refuse to run at the same time.
 
@@ -176,9 +178,13 @@ one click turns automatic bitrate on with SteamVR starting at the highest ceilin
 `recommendedBandwidthMbit` Valve leaves at 200) and raises the manual target to at least that so
 it does not cap the start. SteamVR then steps down on link trouble and the card shows the rate it
 settles at. A link whose sweeps agree keeps the fixed measured ceiling instead.
-**Apply N Mbps now** sets that target on the running stream (or saves it for the next session)
-with automatic bitrate off, in one click and without touching any other control; **Use N Mbps**
-still loads it into Stream settings for review instead.
+**Apply N Mbps now** appears for 20 minutes after a sweep whose winning step the encoder
+filled (at least 85% of the target) and sets that target on the running stream with automatic
+bitrate off, in one click and without touching any other control; **Use N Mbps** still loads it
+into Stream settings for review instead. An older or lightly tested ceiling is not kept on a
+button: it stays in the card's text and in the Measured ceiling preset, because one afternoon's
+number is not a standing recommendation. Lightly tested results are also left out of the history
+range and of the Automatic from N Mbps suggestion.
 
 ### Restart Frame stream
 

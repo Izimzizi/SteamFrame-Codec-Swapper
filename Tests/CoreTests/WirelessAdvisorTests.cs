@@ -308,6 +308,11 @@ public class LinkCapacitySweepTests
         Assert.Null(LinkCapacitySweep.AutomaticStart(history, now.AddDays(8)));
         Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 250, 90, ""), new(now.AddHours(-1), 250, 90, "")], now));
         Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 150, 90, ""), new(now.AddHours(-1), 500, 90, "", NoCleanStep: true)], now));
+        // A still-scene result never fills the target: it is not a start worth suggesting, whether flagged or only described.
+        Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 150, 90, ""), new(now.AddHours(-1), 500, 90, "", LightlyTested: true)], now));
+        Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 150, 90, ""), new(now.AddHours(-1), 500, 90, "Highest clean target: 500 Mbps. Encoded video averaged 266 Mbps at that step, so higher rates were only lightly tested; play something heavier for a fuller test.")], now));
+        var lightListing = LinkCapacitySweep.DescribeHistory([new(now.AddHours(-3), 150, 90, ""), new(now.AddHours(-2), 300, 90, ""), new(now.AddHours(-1), 500, 90, "", LightlyTested: true)], now)!;
+        Assert.StartsWith("The last two sweeps ranged from 150 to 300 Mbps (", lightListing); Assert.Contains("One lightly tested result (a still scene) is not counted.", lightListing);
         // A sweep that found no clean step is left out of the range but mentioned.
         LinkCapacitySweep.Record(history, new(now.AddMinutes(-2), 200, 120, "No step was fully clean; 200 Mbps was the best marginal result.", NoCleanStep: true));
         var withGap = LinkCapacitySweep.DescribeHistory(history, now)!;
