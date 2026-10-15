@@ -178,6 +178,18 @@ one click turns automatic bitrate on with SteamVR starting at the highest ceilin
 `recommendedBandwidthMbit` Valve leaves at 200) and raises the manual target to at least that so
 it does not cap the start. SteamVR then steps down on link trouble and the card shows the rate it
 settles at. A link whose sweeps agree keeps the fixed measured ceiling instead.
+
+Measured once on the tested setup, late on the same afternoon whose manual sweeps had called
+350 Mbps and above marginal: automatic mode started at 300 Mbps with the moving test scene running,
+climbed to about 460 to 475 Mbps within 35 seconds, and over the next three minutes logged only
+three step-downs of a few Mbps each and 13 held frames (199 ms in total), which the sweep's own
+rules would call clean. Two things follow. Automatic mode ignores the manual target while it is
+on; its ceiling is the driver's (500 Mbps with the override, 232 stock), so the override matters
+as much for automatic mode as for manual targets. And on a link that varies, letting SteamVR climb
+from a measured start can deliver more than any fixed target the sweep will certify, because the
+sweep must hold a rate for a full window while automatic mode only has to back off from it. The
+driver logs no "Link BW: Est" lines in automatic mode; the rate it is running at shows in the
+step-down lines and on the card's dashed target line.
 **Apply N Mbps now** appears for 20 minutes after a sweep whose winning step the encoder
 filled (at least 85% of the target) and sets that target on the running stream with automatic
 bitrate off, in one click and without touching any other control; **Use N Mbps** still loads it
