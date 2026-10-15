@@ -38,6 +38,9 @@
 - A sweep that finds no clean step now leads the card (nothing above its best marginal rate is
   worth trying now), retires the saved ceiling instead of leaving an "Apply N Mbps" button for a
   rate the link just refused, and is kept in the history as such.
+- **Check this rate (30 s)** measures the live target once, as one sweep step with the same
+  rules, re-check and test scene, and reports whether that rate is clean today without changing
+  or saving anything.
 - **Automatic from N Mbps** appears once the week's clean ceilings disagree by a step or more:
   one click turns automatic bitrate on with SteamVR starting at the highest ceiling measured
   instead of Valve's 200, with the manual target raised so it does not cap the start.

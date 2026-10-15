@@ -92,7 +92,7 @@ public sealed partial class FramePage
         public readonly List<SweepStepResult> Results = [];
         public double OriginalTarget;
         public bool OriginalAutomatic;
-        public bool ApplyWhenDone, UseTestScene;
+        public bool ApplyWhenDone, UseTestScene, QuickCheck;
         public BenchmarkSceneProcess? Scene;
         public string SceneNote = "";
         public bool Measuring;
@@ -218,7 +218,9 @@ public sealed partial class FramePage
         _advice = WirelessAdvisor.Advise(input);
         var sweep = RecentSweep();
         // A measured sweep outranks the moment-to-moment reading; the live advice stays in the reasons.
-        var headline = sweep is { BestCleanMbps: int best }
+        var headline = sweep is { Check: true }
+            ? $"{sweep.Summary} " + (sweep.BestCleanMbps is int ? "Keep this rate." : sweep.HighestMarginalMbps is int ? "Step down a notch if you see held frames, or sweep again later." : "Step down now, or run Find my link's limit.")
+            : sweep is { BestCleanMbps: int best }
             ? $"Sweep result ({Age(_sweepConcludedAt)}): {sweep.Summary} Use {best} Mbps as the measured ceiling for this setup ({ValveComparison(best)})."
             : sweep is not null
                 // No clean step: the sweep still outranks the live reading, and the advice is to hold back, not to try harder.
@@ -227,7 +229,7 @@ public sealed partial class FramePage
                     : " Check the dongle position and the radio signal, then sweep again.")
                 : _advice.Headline;
         AdviceHeadline.Text = headline;
-        AdviceHeadline.Foreground = new SolidColorBrush(sweep is { BestCleanMbps: not null } ? Good : _advice.LinkLimited ? Amber : _advice.Headroom ? Good : Neutral);
+        AdviceHeadline.Foreground = new SolidColorBrush(sweep is { BestCleanMbps: not null } ? Good : sweep is { Check: true, HighestMarginalMbps: not null } ? Amber : sweep is { Check: true } ? Bad : _advice.LinkLimited ? Amber : _advice.Headroom ? Good : Neutral);
         // For a minute after a sweep the live counters still hold its top steps, so the moment-to-moment advice would argue with the result.
         var sweepSettling = sweep is not null && now - _sweepConcludedAt < TimeSpan.FromSeconds(90);
         var reasons = sweepSettling ? new List<string> { "Right now: the last minute still includes the sweep's highest steps; live advice resumes in a moment." }
@@ -258,7 +260,7 @@ public sealed partial class FramePage
         AutoStartButton.Visibility = autoStart is int ? Visibility.Visible : Visibility.Collapsed;
         AutoStartButton.Content = autoStart is int s0 ? (autoActive ? $"Automatic from {s0} Mbps (active)" : $"Automatic from {s0} Mbps") : "Automatic from measured";
         AutoStartButton.IsEnabled = autoStart is int && !busy && _vrRunning && !autoActive && !snapshot.PairedCodecTrialPresent && !_codecService.Live;
-        SweepButton.IsEnabled = !busy && _vrRunning && !snapshot.PairedCodecTrialPresent && !_codecService.Live;
+        SweepButton.IsEnabled = QuickCheckButton.IsEnabled = !busy && _vrRunning && !snapshot.PairedCodecTrialPresent && !_codecService.Live;
         RestartStreamButton.IsEnabled = !busy && _vrRunning && !string.IsNullOrWhiteSpace(_preferences.SshHost);
     }
 
@@ -289,7 +291,7 @@ public sealed partial class FramePage
 
     private SweepConclusion? RecentSweep() => _sweepConclusion is not null && DateTimeOffset.Now - _sweepConcludedAt <= TimeSpan.FromMinutes(20) ? _sweepConclusion : null;
     /// <summary>The highest clean sweep target: this session's, else the one saved from an earlier run.</summary>
-    private int? MeasuredCeiling() => _sweepConclusion is { } concluded ? concluded.BestCleanMbps : _preferences.LastSweepCeilingMbps;
+    private int? MeasuredCeiling() => _sweepConclusion is { Check: false } concluded ? concluded.BestCleanMbps : _preferences.LastSweepCeilingMbps;
 
     private async void ApplyCeiling_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
@@ -340,7 +342,7 @@ public sealed partial class FramePage
     private static string ValveComparison(int mbps) => mbps == WirelessAdvisor.ValveDefaultStartMbps ? "the same as Valve's 200 Mbps automatic start"
         : mbps > WirelessAdvisor.ValveDefaultStartMbps ? $"{(mbps - WirelessAdvisor.ValveDefaultStartMbps) * 100 / WirelessAdvisor.ValveDefaultStartMbps}% above Valve's 200 Mbps automatic start"
         : $"{(WirelessAdvisor.ValveDefaultStartMbps - mbps) * 100 / WirelessAdvisor.ValveDefaultStartMbps}% below Valve's 200 Mbps automatic start";
-    private int? EffectiveRecommendation() => RecentSweep() is { BestCleanMbps: int best } ? best : _advice.RecommendedMbps;
+    private int? EffectiveRecommendation() => RecentSweep() is { Check: false, BestCleanMbps: int best } ? best : _advice.RecommendedMbps;
 
     private void DrawCapacityGraph(LinkCapacityHistogram? histogram)
     {
@@ -385,29 +387,68 @@ public sealed partial class FramePage
         ShowStatus($"{mbps} Mbps loaded into Stream settings with automatic bitrate off. Review the controls and click Apply stream settings.", false);
     }
 
+    /// <summary>
+    /// What a sweep and a quick check both need: no Auto tune, a stable codec, SteamVR up, nothing pending in the
+    /// editor, and a live video link (restarted from the headset when it idled). Returns whether the link was down.
+    /// </summary>
+    private async Task<(StreamingHealthSnapshot Health, bool WasDown)> PrepareLinkMeasurementAsync()
+    {
+        if (_benchmarkStop is not null) throw new InvalidOperationException("Auto tune is running. Wait for it to finish or stop it before measuring the link.");
+        await EnsureCodecStableAsync();
+        if (!await Task.Run(() => OpenVrSettings.IsRunning)) throw new InvalidOperationException("Start SteamVR and a wireless stream before measuring the link.");
+        if (SelectedCodec != StreamCodec.Hevc || _codecService.Live) throw new InvalidOperationException("The capacity sweep measures the HEVC stream. End the codec session first.");
+        if (_bandwidthEdited || _codecEdited || _pendingPreset != null) throw new InvalidOperationException("Apply or reload the pending Stream settings edits first; the sweep changes the live target and restores it afterwards.");
+        var health = _streamHealth.Current;
+        // A link the sweep has to bring back itself means the headset was idle: nobody is playing.
+        var wasDown = health.LinkActive == false;
+        if (health.LinkActive == false && FrameSshConfigured)
+        {
+            // The headset paused or stopped streaming: do what the user would do on the headset, stop and stream again.
+            ShowStatus("The video link is down; asking the Frame to stop and restart its PC stream before the sweep…", false);
+            if (!await FrameStreamControl.RestartAsync(_preferences, _streamHealth, message => ShowStatus(message, false), _lifetime?.Token ?? default))
+                throw new InvalidOperationException("The Frame was asked to restart its PC stream, but the video link did not come back. Keep the Frame awake and check its streaming menu.");
+            health = _streamHealth.Current;
+        }
+        var streaming = health.LinkActive == true || _links.ActiveLinks.Length > 0 || _monitorInstalled || health.LatestEstimate is { } est && DateTimeOffset.Now - est.ObservedAt <= FreshLimit;
+        if (!streaming) throw new InvalidOperationException("No active stream was detected. Put the headset on, start streaming, and wait for the first link estimate (about 30 s).");
+        return (health, wasDown);
+    }
+
+    private void StartSweepRun(SweepRun run)
+    {
+        _sweep = run;
+        _sweepCancellation?.Dispose();
+        _sweepCancellation = new();
+        _sweepRunning = true;
+        SweepStopButton.Visibility = Visibility.Visible;
+        SweepResultsCard.Visibility = Visibility.Visible;
+        SweepResults.Text = "";
+        RefreshCodecButtons();
+        _sweepTask = RunSweepAsync(run, _sweepCancellation.Token);
+    }
+
+    /// <summary>Is the current rate still clean today? One step at the live target, nothing changed or saved.</summary>
+    private async void QuickCheck_Click(object sender, RoutedEventArgs e)
+    {
+        if (_actionPending || _sweepRunning) return;
+        try
+        {
+            var (health, wasDown) = await PrepareLinkMeasurementAsync();
+            var live = await Task.Run(() => OpenVrSettings.Read(_paths));
+            var target = (int)Math.Clamp(Math.Round(live.Target), 25, WirelessAdvisor.PatchedCeilingMbps);
+            var idle = wasDown || health.LinkActive != true || (_lastVideoMbps ?? 0) < 20;
+            StartSweepRun(new SweepRun { Plan = [target], OriginalTarget = live.Target, OriginalAutomatic = live.Automatic, UseTestScene = idle, QuickCheck = true });
+            await _sweepTask!;
+        }
+        catch (Exception error) when (error is not OperationCanceledException) { ShowStatus(error.Message, true); }
+    }
+
     private async void Sweep_Click(object sender, RoutedEventArgs e)
     {
         if (_actionPending || _sweepRunning) return;
         try
         {
-            if (_benchmarkStop is not null) throw new InvalidOperationException("Auto tune is running. Wait for it to finish or stop it before measuring the link.");
-            await EnsureCodecStableAsync();
-            if (!await Task.Run(() => OpenVrSettings.IsRunning)) throw new InvalidOperationException("Start SteamVR and a wireless stream before measuring the link.");
-            if (SelectedCodec != StreamCodec.Hevc || _codecService.Live) throw new InvalidOperationException("The capacity sweep measures the HEVC stream. End the codec session first.");
-            if (_bandwidthEdited || _codecEdited || _pendingPreset != null) throw new InvalidOperationException("Apply or reload the pending Stream settings edits first; the sweep changes the live target and restores it afterwards.");
-            var health = _streamHealth.Current;
-            // A link the sweep has to bring back itself means the headset was idle: nobody is playing.
-            var wasDown = health.LinkActive == false;
-            if (health.LinkActive == false && FrameSshConfigured)
-            {
-                // The headset paused or stopped streaming: do what the user would do on the headset, stop and stream again.
-                ShowStatus("The video link is down; asking the Frame to stop and restart its PC stream before the sweep…", false);
-                if (!await FrameStreamControl.RestartAsync(_preferences, _streamHealth, message => ShowStatus(message, false), _lifetime?.Token ?? default))
-                    throw new InvalidOperationException("The Frame was asked to restart its PC stream, but the video link did not come back. Keep the Frame awake and check its streaming menu.");
-                health = _streamHealth.Current;
-            }
-            var streaming = health.LinkActive == true || _links.ActiveLinks.Length > 0 || _monitorInstalled || health.LatestEstimate is { } est && DateTimeOffset.Now - est.ObservedAt <= FreshLimit;
-            if (!streaming) throw new InvalidOperationException("No active stream was detected. Put the headset on, start streaming, and wait for the first link estimate (about 30 s).");
+            var (health, wasDown) = await PrepareLinkMeasurementAsync();
             var live = await Task.Run(() => OpenVrSettings.Read(_paths));
             var ceiling = _patch?.IsPatched == true ? WirelessAdvisor.PatchedCeilingMbps : WirelessAdvisor.StockCeilingMbps;
             var start = (int)Math.Clamp(Math.Round(live.Target * 0.5 / 50) * 50, 100, ceiling);
@@ -439,16 +480,8 @@ public sealed partial class FramePage
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             var applyChosen = applyWhenDone.IsChecked == true;
             if (_preferences.SweepApplyWhenDone != applyChosen) { _preferences.SweepApplyWhenDone = applyChosen; try { await _preferences.SaveAsync(); } catch (Exception) { } }
-            _sweep = new SweepRun { Plan = plan, OriginalTarget = live.Target, OriginalAutomatic = live.Automatic, ApplyWhenDone = applyChosen, UseTestScene = testScene.IsChecked == true };
-            _sweepCancellation?.Dispose();
-            _sweepCancellation = new();
-            _sweepRunning = true;
-            SweepStopButton.Visibility = Visibility.Visible;
-            SweepResultsCard.Visibility = Visibility.Visible;
-            SweepResults.Text = "";
-            RefreshCodecButtons();
-            _sweepTask = RunSweepAsync(_sweep, _sweepCancellation.Token);
-            await _sweepTask;
+            StartSweepRun(new SweepRun { Plan = plan, OriginalTarget = live.Target, OriginalAutomatic = live.Automatic, ApplyWhenDone = applyChosen, UseTestScene = testScene.IsChecked == true });
+            await _sweepTask!;
         }
         catch (Exception error) when (error is not OperationCanceledException) { ShowStatus(error.Message, true); }
     }
@@ -488,7 +521,7 @@ public sealed partial class FramePage
             {
                 token.ThrowIfCancellationRequested();
                 var target = run.CurrentTarget;
-                var label = $"Step {run.Index + 1} of {run.Plan.Count}: {target} Mbps";
+                var label = run.QuickCheck ? $"Checking {target} Mbps" : $"Step {run.Index + 1} of {run.Plan.Count}: {target} Mbps";
                 var result = await MeasureStepAsync(run, target, label, token);
                 if (result is not null && LinkCapacitySweep.NeedsRecheck(result, rechecks))
                 {
@@ -520,7 +553,7 @@ public sealed partial class FramePage
                 if (LinkCapacitySweep.ShouldStop(run.Results)) break;
             }
             // The step about to become the measured ceiling gets a second pass before it is saved and recommended.
-            if (outcome == "Sweep ended." && LinkCapacitySweep.Conclude(run.Results).BestCleanMbps is int best)
+            if (!run.QuickCheck && outcome == "Sweep ended." && LinkCapacitySweep.Conclude(run.Results).BestCleanMbps is int best)
             {
                 var index = run.Results.FindLastIndex(r => r.TargetMbps == best && r.Verdict == SweepVerdict.Clean);
                 if (index >= 0 && run.Results[index].Passes == 1)
@@ -533,7 +566,7 @@ public sealed partial class FramePage
                     }
                 }
             }
-            if (outcome == "Sweep ended.") outcome = "Sweep finished.";
+            if (outcome == "Sweep ended.") outcome = run.QuickCheck ? "Check finished." : "Sweep finished.";
         }
         catch (OperationCanceledException) { outcome = "Sweep stopped."; }
         catch (Exception error) { outcome = "Sweep ended early: " + error.Message; }
@@ -547,7 +580,15 @@ public sealed partial class FramePage
             _sweepRunning = false;
             _sweepTask = null;
             SweepStopButton.Visibility = Visibility.Collapsed;
-            if (run.Results.Count > 0)
+            if (run.QuickCheck && run.Results.Count > 0)
+            {
+                // The check changes nothing: no ceiling, no preset, no history; the card just says how the rate is doing today.
+                _sweepConclusion = LinkCapacitySweep.ConcludeCheck(run.Results[^1]);
+                _sweepConcludedAt = DateTimeOffset.Now;
+                SweepStatus.Text = _sweepConclusion.Summary;
+                RenderSweepResults(run);
+            }
+            else if (run.Results.Count > 0)
             {
                 _sweepConclusion = LinkCapacitySweep.Conclude(run.Results);
                 _sweepConcludedAt = DateTimeOffset.Now;
@@ -564,7 +605,7 @@ public sealed partial class FramePage
             }
             else SweepStatus.Text = outcome + restore;
             RefreshCodecButtons();
-            ShowStatus(outcome + (run.Results.Count > 0 ? " " + _sweepConclusion!.Summary : "") + restore + run.SceneNote, false);
+            ShowStatus(outcome + (run.Results.Count > 0 ? " " + _sweepConclusion!.Summary : "") + (run.QuickCheck ? "" : restore) + run.SceneNote, false);
         }
     }
 

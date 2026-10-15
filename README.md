@@ -92,7 +92,8 @@ what your link really carries and use it:
    any marginal or failed step, confirms the winner with a second pass, and applies the highest
    clean target when it finishes (about 5 to 8 minutes).
 2. Play. The Wireless link card shows held frames, headset loss and SteamVR's own link estimate
-   at that rate; **Apply N Mbps now** brings a saved result back any time.
+   at that rate; **Apply N Mbps now** brings a saved result back any time, and **Check this
+   rate (30 s)** tells you whether today's link still carries it before a long session.
 3. Sweep again on another day. Once the week's results disagree by a step or more, the card
    says so and offers **Automatic from N Mbps**: automatic bitrate with SteamVR starting at the
    highest ceiling you measured instead of 200, backing off only when the link dips.

@@ -344,6 +344,19 @@ public class LinkCapacitySweepTests
     }
 
     [Fact]
+    public void A_quick_check_concludes_the_current_rate_without_a_ceiling()
+    {
+        var clean = LinkCapacitySweep.ConcludeCheck(LinkCapacitySweep.Evaluate(270, Sample(video: 240)));
+        Assert.True(clean.Check); Assert.Equal(270, clean.BestCleanMbps); Assert.Null(clean.HighestMarginalMbps); Assert.Equal(240, clean.CarriedVideoMbps);
+        Assert.Equal("Checked 270 Mbps just now: clean. Clean; encoded video averaged 240 Mbps.", clean.Summary);
+        var marginal = LinkCapacitySweep.ConcludeCheck(LinkCapacitySweep.Evaluate(270, Sample(throttles: 12)));
+        Assert.Null(marginal.BestCleanMbps); Assert.Equal(270, marginal.HighestMarginalMbps); Assert.StartsWith("Checked 270 Mbps just now: marginal. 30 held frames per minute", marginal.Summary);
+        var failing = LinkCapacitySweep.ConcludeCheck(LinkCapacitySweep.Evaluate(270, Sample(resets: 2)));
+        Assert.Null(failing.BestCleanMbps); Assert.Null(failing.HighestMarginalMbps); Assert.Contains("failing", failing.Summary);
+        Assert.False(LinkCapacitySweep.Conclude([LinkCapacitySweep.Evaluate(270, Sample())]).Check);
+    }
+
+    [Fact]
     public void Only_presets_the_sweep_named_itself_are_replaced()
     {
         var name = LinkCapacitySweep.MeasuredPresetName(300, new DateTime(2026, 10, 15, 14, 52, 0));

@@ -14,7 +14,7 @@ public sealed record SweepStepResult(int TargetMbps, SweepSample Sample, SweepVe
     public double HeldMsPerMinute => Sample.Seconds > 0 ? Sample.ThrottleMs * 60.0 / Sample.Seconds : 0;
 }
 
-public sealed record SweepConclusion(int? BestCleanMbps, int? HighestMarginalMbps, string Summary, double? CarriedVideoMbps = null)
+public sealed record SweepConclusion(int? BestCleanMbps, int? HighestMarginalMbps, string Summary, double? CarriedVideoMbps = null, bool Check = false)
 {
     /// <summary>True when the encoder produced well under the clean target, so higher rates were only lightly tested.</summary>
     public bool LightlyTested => BestCleanMbps is int best && CarriedVideoMbps is double carried && carried < best * LinkCapacitySweep.FullTestShare;
@@ -183,6 +183,14 @@ public static class LinkCapacitySweep
     public static bool ShouldStop(IReadOnlyList<SweepStepResult> results)
         => results.Count > 0 && (results[^1].Verdict == SweepVerdict.Failed
             || results.Count >= 2 && results[^1].Verdict == SweepVerdict.Marginal && results[^2].Verdict == SweepVerdict.Marginal);
+
+    /// <summary>A single-step check of the current rate: the verdict for today, never a ceiling to save.</summary>
+    public static SweepConclusion ConcludeCheck(SweepStepResult result)
+    {
+        var verdict = result.Verdict switch { SweepVerdict.Clean => "clean", SweepVerdict.Marginal => "marginal", _ => "failing" };
+        var summary = $"Checked {result.TargetMbps} Mbps just now: {verdict}. {result.Reason}";
+        return new(result.Verdict == SweepVerdict.Clean ? result.TargetMbps : null, result.Verdict == SweepVerdict.Marginal ? result.TargetMbps : null, summary, result.Sample.MeanVideoMbps, Check: true);
+    }
 
     public static SweepConclusion Conclude(IReadOnlyList<SweepStepResult> results)
     {

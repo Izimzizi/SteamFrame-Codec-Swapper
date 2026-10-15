@@ -200,6 +200,7 @@
                             </StackPanel>
                             <StackPanel Spacing="12" Orientation="Horizontal">
                                 <Button x:Name="SweepButton" Content="Find my link's limit" Click="Sweep_Click" IsEnabled="False" />
+                                <Button x:Name="QuickCheckButton" Content="Check this rate (30 s)" Click="QuickCheck_Click" IsEnabled="False" ToolTipService.ToolTip="Measures the current target once, about 30 seconds, without changing or saving anything: is this rate still clean today?" />
                                 <Button x:Name="SweepStopButton" Content="Stop sweep" Click="StopSweep_Click" Visibility="Collapsed" />
                                 <Button x:Name="RestartStreamButton" Content="Restart Frame stream" Click="RestartFrameStream_Click" />
                             </StackPanel>

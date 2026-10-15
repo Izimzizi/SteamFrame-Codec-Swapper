@@ -140,6 +140,16 @@ loss with two stream recovery requests, and 150 Mbps was confirmed clean on a se
 rules and the sweep history line came out of those runs. A measured ceiling is a property of that
 link and scene at that hour, not a general Frame limit.
 
+### Check this rate
+
+**Check this rate (30 s)** answers the daily question without a full sweep: is the target I am
+on still clean today? It measures the live target once, exactly as one sweep step (6 s settle,
+24 s measure, the same verdict rules, a second pass if the first is marginal or failed, the
+moving test scene when the headset is idle, the keep-awake lease and the stream restart), then
+leaves the target as it was. Nothing is saved: no ceiling, no preset, no history entry. The
+headline reports "Checked 270 Mbps just now: clean" with the step's figures, or tells you to step
+down when it was marginal or failing.
+
 ### Keep Frame awake
 
 With the Frame off your head, its proximity sensor lets streaming idle about a minute after the
