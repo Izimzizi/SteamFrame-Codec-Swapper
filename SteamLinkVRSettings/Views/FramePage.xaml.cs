@@ -113,6 +113,10 @@ public sealed partial class FramePage : Page
             if (_powerLease.RecoveryPending && !CodecHooksPaused(await _codecController.ReadStatusAsync()))
                 await ActionAsync(async () => { try { await _powerLease.RestoreAsync(); return "Recovered the app's previous temporary power settings."; } finally { UpdatePowerLease(); } }, reportSuccess: false);
             await ActionAsync(InspectPatchAsync, reportSuccess: false);
+            try { await ShowFirstRunSetupAsync(); }
+            catch (Exception error) { ShowStatus("First-run setup could not finish: " + error.Message, true); }
+            if (BenchmarkRecoveryPending)
+                ShowStatus("An interrupted auto-tune test has settings to recover. Reconnect the Frame, then open Auto tune and choose Restore starting settings.", true);
             if (_disposed || lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
         }
         _timer.Start();
@@ -125,6 +129,9 @@ public sealed partial class FramePage : Page
     }
     public async Task CloseAsync()
     {
+        _benchmarkStop?.Cancel();
+        // A running capacity sweep restores the user's target before anything else is released.
+        await StopSweepAsync();
         // Release only the ephemeral port created by this page, never the ADB server.
         await _actions.WaitAsync();
         try
@@ -189,6 +196,7 @@ public sealed partial class FramePage : Page
             if (values.TryGetValue("enableAmfEncoder", out var amf)) AmfInput.IsOn = amf is true;
             if (pictureValues.TryGetValue("streamFormatWidth", out var width)) StreamWidthInput.Value = Convert.ToDouble(width);
             if (pictureValues.TryGetValue("automaticStreamFormatWidth", out var automaticWidth)) AutomaticWidthInput.IsOn = automaticWidth is true;
+            if (values.TryGetValue("recommendedBandwidthMbit", out var starting) && starting is not null) StartingBandwidthInput.Value = Math.Clamp(Convert.ToDouble(starting), 25, 500);
             _target = double.IsFinite(BitrateInput.Value) ? BitrateInput.Value : null;
             TargetReadback.Text = _target is double t ? $"{t:0} Mbps" : "— Mbps";
             TargetMode.Text = "Saved setting";
@@ -234,6 +242,7 @@ public sealed partial class FramePage : Page
         {
             var at = Now;
             PollUsbDongle(at);
+            PollRadio(at);
             var runningTask = Settle(Task.Run(() => OpenVrSettings.IsRunning), _ => false);
             // A paired switch installs its backend into the fresh process before ordinary hooks may start.
             var codecService = await _codecController.ReadStatusAsync(lifetime.Token);
@@ -293,7 +302,7 @@ public sealed partial class FramePage : Page
 
             var health = await healthTask;
             HealthSummary.Text = health.Summary + (health.CaptureError is null ? "" : " Capture file unavailable: " + health.CaptureError);
-            HealthCounts.Text = $"This app session: {health.StreamResetRequests} recovery requests • {health.NetworkBadLinkEvents} network delays • {health.EncoderPerformanceWarnings} encoder stalls • {health.CompositorAcquireTimeouts} compositor handoff warnings";
+            HealthCounts.Text = $"This app session: {health.StreamResetRequests} recovery requests • {health.NetworkBadLinkEvents} network delays ({health.BitrateChanges} bitrate changes) • {health.ThrottleEventsLastMinute} held frames in the last minute • {health.EncoderPerformanceWarnings} encoder stalls • {health.CompositorAcquireTimeouts} compositor handoff warnings";
             var compositor = _lastCompositor = await compositorTask;
             CompositorStatus.Text = compositor.Available && compositor.ScenePid is int scene
                 ? $"PC scene {scene}: {compositor.DroppedFrames} dropped presentations • {compositor.ReprojectedFrames} reprojected • {compositor.TimedOutEvents} timeout events • {compositor.LateRenderFrames} frames on an unpredicted vsync"
@@ -328,6 +337,7 @@ public sealed partial class FramePage : Page
                 TargetReadback.Text = "— Mbps";
                 TargetMode.Text = "Codec session reconnecting; live settings read paused";
                 SupersampleFilteringReadback.Text = "Codec session reconnecting; SteamVR video readback paused.";
+                RefreshReadback.Text = "Reconnecting; active display Hz has not been verified.";
             }
             else if (_vrRunning && at >= _nextRuntimeRead)
             {
@@ -336,19 +346,30 @@ public sealed partial class FramePage : Page
                 {
                     var (live, supersample) = await ReadOpenVrAsync("runtime", () => (OpenVrSettings.Read(_paths), OpenVrSettings.ReadSupersampleFiltering(_paths)));
                     if (lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
-                    _target = live.Target;
+                    _target = live.Target; _liveAutomatic = live.Automatic; NoteTarget(live.Target);
                     if (!_bandwidthEdited && _pendingPreset == null) ShowSupersampleValue(supersample, "Live SteamVR readback");
                     TargetReadback.Text = $"{live.Target:0} Mbps";
                     TargetMode.Text = live.Automatic ? "Live • automatic" : "Live • manual";
+                    try
+                    {
+                        var activeHz = await ReadOpenVrAsync("display-hz", () => OpenVrSettings.ReadDisplayHz(_paths));
+                        var requestedHz = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+                        RefreshReadback.Text = $"Active PC headset display: {activeHz:0.##} Hz" + (FrameDisplayRate.Matches(activeHz, requestedHz) ? "" : $" · {requestedHz} Hz selected, not active");
+                    }
+                    catch (IOException) { RefreshReadback.Text = "Active display Hz unavailable; the selected value is only a request."; }
                     // External/live changes should become the next Apply value,
                     // while an in-progress user edit remains untouched.
-                    if (!_bandwidthEdited && (SelectedCodec == StreamCodec.Hevc && !snapshot.PairedCodecTrialPresent || _codecService.Live && _codecService.ActiveCodec == (SelectedCodec == StreamCodec.Av1 ? "AV1" : "H.264")) && !ContainsFocus(BitrateInput) && !ContainsFocus(AutomaticInput) && !ContainsFocus(StreamWidthInput) && !ContainsFocus(AutomaticWidthInput))
+                    if (!_bandwidthEdited && (SelectedCodec == StreamCodec.Hevc && !snapshot.PairedCodecTrialPresent || _codecService.Live && _codecService.ActiveCodec == (SelectedCodec == StreamCodec.Av1 ? "AV1" : "H.264")) && !ContainsFocus(BitrateInput) && !ContainsFocus(AutomaticInput) && !ContainsFocus(StreamWidthInput) && !ContainsFocus(AutomaticWidthInput) && !ContainsFocus(StartingBandwidthInput))
                     {
                         _syncingBandwidth = true;
                         try
                         {
                             BitrateInput.Value = live.Target; AutomaticInput.IsOn = live.Automatic;
-                            if (SelectedCodec == StreamCodec.Hevc) { StreamWidthInput.Value = live.StreamWidth; AutomaticWidthInput.IsOn = live.AutomaticWidth; }
+                            if (SelectedCodec == StreamCodec.Hevc)
+                            {
+                                StreamWidthInput.Value = live.StreamWidth; AutomaticWidthInput.IsOn = live.AutomaticWidth;
+                                if (live.StartingMbit is int startingMbit) StartingBandwidthInput.Value = Math.Clamp(startingMbit, 25, 500);
+                            }
                         }
                         finally { _syncingBandwidth = false; }
                     }
@@ -359,13 +380,14 @@ public sealed partial class FramePage : Page
                         finally { _syncingBandwidth = false; }
                     }
                 }
-                catch (Exception ex) { TargetMode.Text = "Live read unavailable: " + ex.Message; _target = null; TargetReadback.Text = "— Mbps"; }
+                catch (Exception ex) { TargetMode.Text = "Live read unavailable: " + ex.Message; _target = null; NoteTarget(null); TargetReadback.Text = "— Mbps"; }
             }
             else if (!_vrRunning)
             {
-                _target = null;
+                _target = null; _liveAutomatic = null; NoteTarget(null);
                 TargetReadback.Text = "— Mbps";
                 TargetMode.Text = "Start SteamVR to read the live target";
+                RefreshReadback.Text = "SteamVR stopped; active display Hz has not been verified.";
             }
             if (_preferences.ReapplyAfterRestart && !codecPaused && !snapshot.RequiresSteamVrRestart && !snapshot.PairedCodecTrialPresent && snapshot.ProcessId > 0 && _configuredPid != snapshot.ProcessId && at >= _nextAutoApply && !CodecHooksPaused(await _codecController.ReadStatusAsync(lifetime.Token)))
             {
@@ -423,7 +445,11 @@ public sealed partial class FramePage : Page
             LinkReadback.Text = _links.HasInfo ? string.Join("\n", _links.Links.Where(l => l.Type != 255 && l.Type != 4).Select(l => $"{l.Name}: {(l.Active ? "active" : "inactive")} • {l.LatencyMs:0.0} ms • {l.LossRatio:P2} loss")) : "Active links unavailable";
             LinkStatus.Text = _links.Message;
             UsbTraffic.Text = adapters.Count == 0 ? "No Steam Frame dongle or USB network adapter detected." : string.Join("\n", adapters.Select(a => $"{(a.LinkType == 2 ? "Dedicated dongle" : "USB cable")} — {a.Name}: {(a.Up ? "up" : "down")} • {a.Address}\nSend {Rate(a.SendMbps)} Mbps / receive {Rate(a.ReceiveMbps)} Mbps"));
-            _history.Add((Now, measured.Mbps, FrameTrafficMonitor.ActiveSendMbps(_links, adapters), _target));
+            ObserveSweep(health, measured);
+            RenderWirelessLink(health, snapshot, measured);
+            if (_vrRunning && !codecPaused && _target is double && _liveAutomatic == true && health.LatestEstimate is { } autoEstimate && DateTimeOffset.Now - autoEstimate.ObservedAt <= FreshLimit)
+                TargetMode.Text = $"Live • automatic • SteamVR estimate {autoEstimate.Mbps:0} Mbps";
+            _history.Add((Now, measured.Mbps, FrameTrafficMonitor.ActiveSendMbps(_links, adapters), DriverFollowedTarget(health)));
             _history.RemoveAll(x => x.At < Now - 60);
             DrawGraph();
         }
@@ -569,6 +595,8 @@ public sealed partial class FramePage : Page
             ceilingNote = AutomaticInput.IsOn ? "" : await CheckBitrateCeilingAsync(Math.Round(BitrateInput.Value));
         }
         var presetNeedsReconnect = _pendingPreset != null;
+        var refreshMustApply = _refreshEdited || _pendingPreset != null;
+        if (SelectedCodec == StreamCodec.Hevc && refreshMustApply) _refreshEdited = true;
         await PreparePendingPresetAsync();
         if (SelectedCodec != StreamCodec.Hevc)
         {
@@ -601,6 +629,7 @@ public sealed partial class FramePage : Page
         var requestedReapply = ReapplyInput.IsChecked == true;
         var requestedWidth = (int)StreamWidthInput.Value;
         var requestedAutomaticWidth = AutomaticWidthInput.IsOn;
+        var requestedStarting = (int)Math.Round(StartingBandwidthInput.Value);
         var requestedFps = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
         var requestedRefreshEdited = _refreshEdited;
         var requestedPolicy = new EncodingPolicy(_pendingPreset != null ? (EncoderRateControl)RateControlInput.SelectedIndex : _preferences.RateControl, _pendingPreset != null ? (EncoderMultiPass)MultiPassInput.SelectedIndex : _preferences.MultiPass);
@@ -609,8 +638,9 @@ public sealed partial class FramePage : Page
         {
             ["automaticBandwidth"] = requestedAutomatic,
             // Stored as a float, matching SteamVR and the Additional settings editor.
-            // recommendedBandwidthMbit is edited under Additional settings.
             ["targetBandwidth"] = requestedTarget,
+            // The adaptive algorithm's starting rate; SteamVR stores it as an integer.
+            ["recommendedBandwidthMbit"] = requestedStarting,
             ["allowMultipleLinks"] = requestedMultiple,
             ["enableAmfEncoder"] = requestedAmf,
             ["streamFormatWidth"] = requestedWidth,
@@ -661,14 +691,16 @@ public sealed partial class FramePage : Page
         if (_linkEditRevision == requestLinkRevision) _linkEdited = false;
         await ApplyPendingPresetAsync(paired: false);
         await ApplySupersampleAsync();
-        if (_basicEditRevision == requestRevision) _refreshEdited = false;
         if (_presetRestartNeeded) { SteamVrRuntime.Start(_paths); _presetRestartNeeded = false; }
+        var refreshMessage = refreshMustApply ? await VerifyHevcRefreshAsync(requestedFps) : "";
+        if (_basicEditRevision == requestRevision) _refreshEdited = false;
         _codecEdited = false; UpdateStreamEditStatus();
-        return (running ? "Stream settings accepted by SteamVR. Encoder, width and refresh changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + qualityMessage + ceilingNote;
+        return (running ? "Stream settings accepted by SteamVR. Encoder and width changes may require reconnecting." : "Stream settings saved for the next session. Start SteamVR and Apply to set foveation and NVENC policy.") + refreshMessage + qualityMessage + ceilingNote;
     });
     private void ValidateHevcInputs()
     {
         if (!double.IsFinite(BitrateInput.Value) || BitrateInput.Value < 25 || BitrateInput.Value > 500) throw new ArgumentException("Choose a bitrate between 25 and 500 Mbps.");
+        if (!double.IsFinite(StartingBandwidthInput.Value) || StartingBandwidthInput.Value < 25 || StartingBandwidthInput.Value > 500 || StartingBandwidthInput.Value % 1 != 0) throw new ArgumentException("Choose a whole-number automatic starting bandwidth between 25 and 500 Mbps.");
         if (!FoveationOffsets.IsValid(GazeInput.Value, FoveationOffsets.MaximumGaze, FoveationOffsets.MinimumGaze) || !FoveationOffsets.IsValid(PeripheralInput.Value, FoveationOffsets.MaximumPeripheral))
             throw new ArgumentException("Use whole-number offsets: gaze −20 to +12, outside gaze −12 to +31.");
         if (!double.IsFinite(StreamWidthInput.Value) || StreamWidthInput.Value < 512 || StreamWidthInput.Value > 4096 || StreamWidthInput.Value % 32 != 0)

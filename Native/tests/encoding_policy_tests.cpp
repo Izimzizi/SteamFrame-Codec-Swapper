@@ -65,6 +65,9 @@ int main() {
     policyResult = NV_ENC_SUCCESS;
     if (StopProbe(nullptr) != 1014 || !installed || encodingPolicy != 0) return 7;
     hookReconfigure(handle, &reconfigure);
+    if (!stats.policyNeedsSession || stats.multiPass != NV_ENC_TWO_PASS_QUARTER_RESOLUTION) return 47;
+    hookInitialize(handle, &params); // Restore multipass only with a fresh session.
+    hookReconfigure(handle, &reconfigure);
     if (seenPointer != &reconfigure || stats.appliedPolicy || sessions[handle].customPolicy ||
         memcmp(&seenConfig, &config, sizeof(config))) return 8;
     // Exact ABI versions and a verified caller are required. Unknown calls pass through unchanged.
@@ -125,12 +128,39 @@ int main() {
             memcmp(&params, &untouchedParams, sizeof(params)) || memcmp(&reconfigure, &untouchedReconfigure, sizeof(reconfigure)) ||
             memcmp(&config, &originalConfig, sizeof(config))) return 41;
         SetEncodingPolicy(nullptr); hookReconfigure(handle, &reconfigure);
+        if (!stats.policyNeedsSession || stats.multiPass != NV_ENC_TWO_PASS_FULL_RESOLUTION) return 48;
+        hookInitialize(handle, &params);
         if (stats.appliedPolicy || sessions[handle].customPolicy || memcmp(&seenConfig, &config, sizeof(config))) return 42;
         policyResult = NV_ENC_ERR_GENERIC; SetEncodingPolicy(reinterpret_cast<void*>(12));
         hookReconfigure(handle, &reconfigure);
         if (stats.appliedPolicy || sessions[handle].customPolicy || stats.multiPass != NV_ENC_MULTI_PASS_DISABLED) return 43;
         policyResult = NV_ENC_SUCCESS;
     }
+    // Default monitoring (and multipass-only requests) must not turn Valve's
+    // own RC changes into app overrides, even when dynamic-RC caps report false.
+    auto valveHandle = reinterpret_cast<void*>(987);
+    params.encodeGUID = NV_ENC_CODEC_HEVC_GUID;
+    config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+    SetEncodingPolicy(nullptr);hookInitialize(valveHandle,&params);
+    sessions[valveHandle].dynamicRc=false;
+    if(sessions[valveHandle].rateControlOverridden)return 44;
+    config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_VBR;
+    reconfigure.reInitEncodeParams=params;
+    hookReconfigure(valveHandle,&reconfigure);
+    if(seenPointer!=&reconfigure || stats.appliedPolicy || stats.policyNeedsSession ||
+        sessions[valveHandle].rateControlOverridden || seenConfig.rcParams.rateControlMode!=NV_ENC_PARAMS_RC_VBR)return 45;
+    SetEncodingPolicy(reinterpret_cast<void*>(8)); // quarter multipass; inherited RC
+    config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+    hookReconfigure(valveHandle,&reconfigure);
+    if(!stats.policyNeedsSession || sessions[valveHandle].rateControlOverridden ||
+        seenConfig.rcParams.rateControlMode!=NV_ENC_PARAMS_RC_CBR || stats.multiPass!=NV_ENC_MULTI_PASS_DISABLED)return 46;
+    hookInitialize(valveHandle,&params);
+    if(stats.appliedPolicy!=8 || stats.policyNeedsSession || stats.multiPass!=NV_ENC_TWO_PASS_QUARTER_RESOLUTION)return 49;
+    SetEncodingPolicy(reinterpret_cast<void*>(12));
+    hookReconfigure(valveHandle,&reconfigure);
+    if(!stats.policyNeedsSession || stats.multiPass!=NV_ENC_TWO_PASS_QUARTER_RESOLUTION || stats.appliedPolicy!=8)return 50;
+    hookInitialize(valveHandle,&params);
+    if(stats.policyNeedsSession || stats.multiPass!=NV_ENC_TWO_PASS_FULL_RESOLUTION || stats.appliedPolicy!=12)return 51;
     // No caller-owned structure or unrequested parameter changed in this test.
     printf("PASS: public API policy copy, exact ABI/caller guards, no-padding CBR, preserved frame/GOP/VBV, failed-call telemetry, restoration-before-stop.\n");
     return 0;

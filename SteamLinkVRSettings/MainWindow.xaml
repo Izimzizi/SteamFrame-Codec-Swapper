@@ -30,6 +30,7 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Overview" Tag="overview" Icon="Home"/>
                 <NavigationViewItem Content="Stream settings" Tag="stream" Icon="Play"/>
+                <NavigationViewItem Content="Auto tune" Tag="benchmark" Icon="Find"/>
                 <NavigationViewItem Content="Diagnostics" Tag="diagnostics" Icon="ShowResults"/>
                 <NavigationViewItem Content="Connection" Tag="connection" Icon="Link"/>
                 <NavigationViewItemSeparator/>

@@ -15,7 +15,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'App build failed.' }
     # xUnit projects. PatcherTests skips unless SLVR_PATCHER_FIXTURE names a verified original driver.
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) { Write-Warning 'Python 3 is not on PATH; Frame receiver diagnostics tests will be skipped.' }
-    foreach ($testProject in @('CoreTests', 'StreamingHealthTests', 'StreamingFrameTraceTests', 'FrameReceiverDiagnosticsTests', 'PatcherTests')) {
+    foreach ($testProject in @('CoreTests', 'BenchmarkTests', 'StreamingHealthTests', 'StreamingFrameTraceTests', 'FrameReceiverDiagnosticsTests', 'PatcherTests')) {
         & dotnet test (Join-Path 'Tests' $testProject) --configuration $Configuration --nologo
         if ($LASTEXITCODE -ne 0) { throw "$testProject failed." }
     }

@@ -2,6 +2,20 @@ namespace SteamLinkVRSettings.Frame;
 
 public static partial class OpenVrSettings
 {
+    // A live benchmark needs only its five owned controls. Reading the entire
+    // advanced-settings catalog every second adds unrelated runtime IPC work.
+    internal static (double Target, bool Automatic, int StreamWidth, bool AutomaticWidth, bool AsyncSend)
+        ReadBenchmarkControls(SteamPaths paths) => Session(paths, table =>
+    {
+        int error = 0;
+        var target = Function<GetFloat>(table, 7)(Section, "targetBandwidth", ref error); Check(error, "Read target");
+        var automatic = Function<GetBool>(table, 5)(Section, "automaticBandwidth", ref error); Check(error, "Read automatic bandwidth");
+        var width = Function<GetInt>(table, 6)(Section, "streamFormatWidth", ref error); Check(error, "Read stream width");
+        var automaticWidth = Function<GetBool>(table, 5)(Section, "automaticStreamFormatWidth", ref error); Check(error, "Read automatic stream width");
+        var asyncSend = Function<GetBool>(table, 5)(Section, "asyncSend", ref error); Check(error, "Read sender request");
+        return ((double)target, automatic, width, automaticWidth, asyncSend);
+    });
+
     public static Dictionary<string, DriverSettingReadback> ReadAdvanced(SteamPaths paths) => Session(paths, table =>
     {
         var result = new Dictionary<string, DriverSettingReadback>(StringComparer.Ordinal);

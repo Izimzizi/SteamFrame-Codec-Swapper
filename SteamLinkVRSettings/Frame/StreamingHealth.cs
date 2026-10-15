@@ -12,7 +12,56 @@ public enum StreamingHealthCategory
     NetworkBadLink,
     EncoderPerformance,
     CompositorAcquireTimeout,
-    EncoderReconfiguration
+    EncoderReconfiguration,
+    /// <summary>The driver's own periodic link-bandwidth estimate ("Link BW: Est").</summary>
+    LinkEstimate,
+    /// <summary>The driver's periodic per-frame link-capacity histogram ("Link BW hist").</summary>
+    LinkHistogram,
+    /// <summary>A frame the sender held back because the link could not take it yet ("THROTTLE EVENT").</summary>
+    SenderThrottle,
+    /// <summary>The driver's video link to the headset became active or inactive ("Connection active/inactive at").</summary>
+    LinkConnection
+}
+
+/// <summary>
+/// One "Link BW hist" sample: counts of per-frame link-capacity measurements in fixed-width
+/// buckets. The last bucket is open-ended and counts every measurement at or above its lower edge.
+/// </summary>
+public sealed record LinkCapacityHistogram(double BucketMbps, IReadOnlyList<long> Counts)
+{
+    public const int MaximumBuckets = 128;
+    [JsonIgnore] public long TotalSamples => Counts.Sum();
+    /// <summary>Lower edge of the open-ended last bucket.</summary>
+    [JsonIgnore] public double OverflowEdgeMbps => BucketMbps * Math.Max(0, Counts.Count - 1);
+    [JsonIgnore] public double OverflowShare => TotalSamples == 0 ? 0 : Counts[^1] / (double)TotalSamples;
+    /// <summary>Share of measurements whose bucket lies entirely below the given rate.</summary>
+    public double ShareBelow(double mbps)
+    {
+        var total = TotalSamples;
+        if (total == 0 || BucketMbps <= 0) return 0;
+        long below = 0;
+        for (var i = 0; i < Counts.Count - 1; i++) if ((i + 1) * BucketMbps <= mbps) below += Counts[i];
+        return below / (double)total;
+    }
+    /// <summary>
+    /// Lower edge of the bucket containing the given percentile. AtOrAbove is true when it lands in
+    /// the open-ended last bucket: the link measured at least that rate, and the histogram cannot say how much more.
+    /// </summary>
+    public (double Mbps, bool AtOrAbove) Percentile(double fraction)
+    {
+        var total = TotalSamples;
+        if (total == 0 || Counts.Count == 0) return (0, false);
+        var threshold = Math.Clamp(fraction, 0, 1) * total;
+        long cumulative = 0;
+        for (var i = 0; i < Counts.Count; i++)
+        {
+            cumulative += Counts[i];
+            if (cumulative >= threshold && cumulative > 0) return (i * BucketMbps, i == Counts.Count - 1);
+        }
+        return (OverflowEdgeMbps, true);
+    }
+    public static bool IsValid(LinkCapacityHistogram? histogram) => histogram is { BucketMbps: > 0 and <= 1000, Counts.Count: >= 2 and <= MaximumBuckets }
+        && histogram.Counts.All(c => c is >= 0 and <= 100_000_000);
 }
 
 // Only synthesized text and validated numeric metadata cross the log boundary.
@@ -23,7 +72,19 @@ public sealed record StreamingHealthEvent(
     double? DurationMs = null, double? PingMs = null,
     double? PreviousBitrateMbps = null, double? NewBitrateMbps = null,
     long? SuppressedCount = null, long? ResetRequestId = null, long? PreviousResetId = null,
-    string? CauseMask = null);
+    string? CauseMask = null,
+    double? EstimateMbps = null, bool? Automatic = null, long? HoldoffSteps = null,
+    double? ThrottleMs = null, LinkCapacityHistogram? Histogram = null, bool? LinkActive = null)
+{
+    /// <summary>True for a bad-link event in which the driver moved the stream to a different bitrate.</summary>
+    [JsonIgnore] public bool ChangedBitrate => Category == StreamingHealthCategory.NetworkBadLink
+        && PreviousBitrateMbps is double before && NewBitrateMbps is double after && Math.Abs(before - after) >= 0.5;
+}
+
+/// <summary>The driver's latest statement of the bitrate it is sending at, and which log line said so.</summary>
+public sealed record DriverBitrateReading(double Mbps, bool? Automatic, DateTimeOffset Timestamp, DateTimeOffset ObservedAt, StreamingHealthCategory Source);
+
+public sealed record LinkHistogramReading(LinkCapacityHistogram Histogram, DateTimeOffset Timestamp, DateTimeOffset ObservedAt);
 
 public sealed record StreamingHealthSnapshot(
     DateTimeOffset ObservedAt, long TotalEvents, long StreamResetRequests,
@@ -32,9 +93,18 @@ public sealed record StreamingHealthSnapshot(
     long EncoderReconfigurations, long SkippedBytes, long DiscardedLines,
     long CaptureSkippedEvents, bool DriverLogAvailable, bool CompositorLogAvailable,
     string Summary, string CapturePath, string? CaptureError,
-    IReadOnlyList<StreamingHealthEvent> RecentEvents)
+    IReadOnlyList<StreamingHealthEvent> RecentEvents,
+    long SenderThrottleEvents = 0, double SenderThrottleMs = 0, long LinkEstimates = 0, long LinkHistograms = 0, long BitrateChanges = 0,
+    long ThrottleEventsLastMinute = 0, double ThrottleMsLastMinute = 0,
+    DriverBitrateReading? DriverBitrate = null, DriverBitrateReading? LatestEstimate = null,
+    StreamingHealthEvent? LatestBitrateChange = null, LinkHistogramReading? LatestHistogram = null)
 {
     public bool ServerLogAvailable { get; init; }
+    /// <summary>The driver's last statement about its video link; null until one has been seen this session.</summary>
+    public bool? LinkActive { get; init; }
+    public DateTimeOffset? LinkChangedAt { get; init; }
+    /// <summary>Sender throttles of a second or more, or while the link was down: stalls and reconnects, not held frames.</summary>
+    public long LinkStalls { get; init; }
 }
 
 /// <summary>
@@ -51,12 +121,23 @@ public sealed class StreamingHealth
     private const int MaximumBacklogBytes = 1024 * 1024;
     private const int MaximumCapturedEventsPerPoll = 512;
     private const string DriverName = "driver_vrlink.txt", CompositorName = "vrcompositor.txt", ServerName = "vrserver.txt";
+    private static readonly TimeSpan ThrottleWindow = TimeSpan.FromMinutes(1);
+    /// <summary>A frame held this long is a stall or a reconnect, not a link holding one frame back.</summary>
+    public const double StallThrottleMs = 1000;
     private readonly object _gate = new();
     private readonly Tail _driver, _compositor, _server;
     private readonly Queue<StreamingHealthEvent> _recent = new();
+    private readonly Queue<(DateTimeOffset At, double Ms)> _throttles = new();
     private long _total, _resets, _links, _encoder, _compositorTimeouts, _suppressed, _reconfigurations;
+    private long _throttleEvents, _estimates, _histograms, _bitrateChanges, _linkStalls;
+    private double _throttleMs;
     private long _skippedBytes, _discardedLines, _captureSkipped;
     private string? _captureError;
+    private DriverBitrateReading? _driverBitrate, _latestEstimate;
+    private StreamingHealthEvent? _latestBitrateChange;
+    private LinkHistogramReading? _latestHistogram;
+    private bool? _linkActive;
+    private DateTimeOffset? _linkChangedAt;
     private StreamingHealthSnapshot _current;
     public string CapturePath { get; }
     public StreamingHealthSnapshot Current { get { lock (_gate) return _current; } }
@@ -72,7 +153,35 @@ public sealed class StreamingHealth
         _driver = new Tail(Path.Combine(logs, DriverName), DriverName);
         _compositor = new Tail(Path.Combine(logs, CompositorName), CompositorName);
         _server = new Tail(Path.Combine(logs, ServerName), ServerName);
+        SeedLinkState(_driver.Path);
         _current = Snapshot(DateTimeOffset.Now);
+    }
+
+    /// <summary>
+    /// Events start at the end of an existing log, but the video link's last state is still worth
+    /// knowing: read the tail of the driver log once for its latest "Connection active/inactive" line.
+    /// Nothing is counted or captured from it.
+    /// </summary>
+    private void SeedLinkState(string driverPath)
+    {
+        try
+        {
+            using var stream = new FileStream(driverPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var size = (int)Math.Min(stream.Length, 512 * 1024);
+            if (size == 0) return;
+            stream.Position = stream.Length - size;
+            var buffer = new byte[size];
+            stream.ReadExactly(buffer);
+            var now = DateTimeOffset.Now;
+            foreach (var line in Encoding.UTF8.GetString(buffer).Split('\n'))
+            {
+                var text = line.TrimEnd('\r');
+                if (!text.Contains("Connection ", StringComparison.Ordinal)) continue;
+                if (TryParseLine(DriverName, text, now, out var item) && item!.Category == StreamingHealthCategory.LinkConnection)
+                { _linkActive = item.LinkActive; _linkChangedAt = item.Timestamp; }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
     }
 
     public static StreamingHealth FromSteamRoot(string steamRoot, string? diagnosticsDirectory = null)
@@ -99,11 +208,15 @@ public sealed class StreamingHealth
     private StreamingHealthSnapshot Snapshot(DateTimeOffset observed)
     {
         var summary = _total == 0 ? "No new streaming log events recorded."
-            : FormattableString.Invariant($"Recorded {_links} bad-link events, {_encoder} encoder warnings, {_compositorTimeouts} compositor acquire timeouts, {_resets} stream recovery requests and {_reconfigurations} encoder reconfigurations. These are not exact headset dropped-frame counts.");
+            : FormattableString.Invariant($"Recorded {_links} bad-link events ({_bitrateChanges} bitrate changes), {_throttleEvents} held frames, {_linkStalls} sender stalls, {_encoder} encoder warnings, {_compositorTimeouts} compositor acquire timeouts, {_resets} stream recovery requests and {_reconfigurations} encoder reconfigurations. These are not exact headset dropped-frame counts.");
+        while (_throttles.Count > 0 && observed - _throttles.Peek().At > ThrottleWindow) _throttles.Dequeue();
         return new(observed, _total, _resets, _links, _encoder, _compositorTimeouts,
             _suppressed, _reconfigurations, _skippedBytes, _discardedLines, _captureSkipped,
             _driver.Available, _compositor.Available, summary, CapturePath, _captureError,
-            Array.AsReadOnly(_recent.ToArray())) { ServerLogAvailable = _server.Available };
+            Array.AsReadOnly(_recent.ToArray()),
+            _throttleEvents, _throttleMs, _estimates, _histograms, _bitrateChanges,
+            _throttles.Count, _throttles.Sum(t => t.Ms),
+            _driverBitrate, _latestEstimate, _latestBitrateChange, _latestHistogram) { ServerLogAvailable = _server.Available, LinkActive = _linkActive, LinkChangedAt = _linkChangedAt, LinkStalls = _linkStalls };
     }
 
     private void ReadTail(Tail tail, DateTimeOffset observed, List<StreamingHealthEvent> capture)
@@ -181,17 +294,54 @@ public sealed class StreamingHealth
     private void Record(StreamingHealthEvent item, List<StreamingHealthEvent> capture)
     {
         ++_total;
+        // Periodic statistics and per-frame throttles are summarized through dedicated snapshot
+        // fields; only notable events enter the recent list shown to the user.
+        var notable = true;
         switch (item.Category)
         {
             case StreamingHealthCategory.StreamResetRequest: ++_resets; break;
-            case StreamingHealthCategory.NetworkBadLink: ++_links; break;
+            case StreamingHealthCategory.NetworkBadLink:
+                ++_links;
+                if (item.ChangedBitrate) { ++_bitrateChanges; _latestBitrateChange = item; }
+                if (item.NewBitrateMbps is double after)
+                    _driverBitrate = new(after, item.Automatic, item.Timestamp, item.ObservedAt, item.Category);
+                break;
             case StreamingHealthCategory.EncoderPerformance: ++_encoder; break;
             case StreamingHealthCategory.CompositorAcquireTimeout:
                 ++_compositorTimeouts; _suppressed += item.SuppressedCount ?? 0; break;
             case StreamingHealthCategory.EncoderReconfiguration: ++_reconfigurations; break;
+            case StreamingHealthCategory.LinkEstimate:
+                ++_estimates; notable = false;
+                if (item.EstimateMbps is double estimate)
+                    _driverBitrate = _latestEstimate = new(estimate, item.Automatic, item.Timestamp, item.ObservedAt, item.Category);
+                break;
+            case StreamingHealthCategory.LinkHistogram:
+                ++_histograms; notable = false;
+                if (item.Histogram is not null) _latestHistogram = new(item.Histogram, item.Timestamp, item.ObservedAt);
+                break;
+            case StreamingHealthCategory.SenderThrottle:
+                var held = item.ThrottleMs ?? 0;
+                if (held >= StallThrottleMs || _linkActive == false)
+                {
+                    // Multi-second holds and holds while the link is down are stalls or reconnects: shown
+                    // as events, but never as held frames that would blame the bitrate.
+                    ++_linkStalls;
+                    item = item with { Message = FormattableString.Invariant($"Sender stalled for {held / 1000:0.0} s; frames were not being delivered{(_linkActive == false ? " while the video link was down" : "")}.") };
+                    break;
+                }
+                ++_throttleEvents; notable = false;
+                _throttleMs += held;
+                _throttles.Enqueue((item.ObservedAt, held));
+                break;
+            case StreamingHealthCategory.LinkConnection:
+                _linkActive = item.LinkActive; _linkChangedAt = item.ObservedAt;
+                break;
         }
-        if (_recent.Count == MaximumRecentEvents) _recent.Dequeue();
-        _recent.Enqueue(item);
+        if (notable)
+        {
+            if (_recent.Count == MaximumRecentEvents) _recent.Dequeue();
+            _recent.Enqueue(item);
+        }
         if (capture.Count < MaximumCapturedEventsPerPoll) capture.Add(item);
         else ++_captureSkipped;
     }
@@ -295,7 +445,11 @@ public sealed class StreamingHealth
     private static readonly Regex Header = Pattern(@"^(?<time>[A-Za-z]{3} [A-Za-z]{3} [0-9]{1,2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})\s+\[[A-Za-z]{1,16}\]\s+-\s+");
     private static readonly Regex ResetRequest = Pattern(@"^Reset video stream because we had a stream reset request(?: \[wgpReset:(?<request>[0-9]{1,10}) != lastReset:(?<previous>[0-9]{1,10})\])?(?:\s|$)");
     private static readonly Regex FrameIdReset = Pattern(@"^Reset video stream because frame ID was not what we expected\. wgp id \((?<request>[0-9]{1,10})\) - last id \((?<previous>[0-9]{1,10})\)(?:\s|$)");
-    private static readonly Regex BadLink = Pattern(@"^Bad link event: d=(?<duration>" + Number + @") ms (?<before>" + Number + @") mbit/s -> (?<after>" + Number + @") mbit/s, ping (?<ping>" + Number + @") ms(?:\s|,|$)");
+    private static readonly Regex BadLink = Pattern(@"^Bad link event: d=(?<duration>" + Number + @") ms (?<before>" + Number + @") mbit/s -> (?<after>" + Number + @") mbit/s, ping (?<ping>" + Number + @") ms(?:, holdoff (?<holdoff>[0-9]{1,6}), auto (?<auto>[01]))?(?:\s|,|$)");
+    private static readonly Regex LinkEstimate = Pattern(@"^Link BW: Est (?<estimate>" + Number + @") Mbit/s \(auto: (?<auto>[01])\)(?:\s|$)");
+    private static readonly Regex LinkHistogram = Pattern(@"^Link BW hist: w (?<width>" + Number + @")\s+(?<counts>(?:[0-9]{1,9},){2,128})\s*$");
+    private static readonly Regex Throttle = Pattern(@"^THROTTLE EVENT: (?<microseconds>[0-9]{1,10})(?:\s|$)");
+    private static readonly Regex LinkConnection = Pattern(@"^Connection (?<state>active|inactive) at (?<seconds>" + Number + @")(?:\s|$)");
     private static readonly Regex EncoderPerf = Pattern(@"^\[Perf warning\]\s+(?<duration>" + Number + @")\s*ms\s+-\s+(?<stage>Encode Time|videonvenc::SubmitFrame|videonvenc::GetEncodedPacket|videonvenc::StartEncodeData|StartEncodeData::nvEncReconfigureEncoder|StartEncodeData::nvEncEncodePicture|Submitting EOS encode)(?:\s|$)");
     private static readonly Regex SubmitDelay = Pattern(@"^Perf warning: Getting from SubmitFrame to StartEncode took (?<duration>" + Number + @")\s*ms(?:\s|$)");
     private static readonly Regex Reconfiguration = Pattern(@"^Starting NVENC reset configuration Cause Mask: (?<mask>[01]{1,32})(?:\s|$)");
@@ -358,9 +512,53 @@ public sealed class StreamingHealth
                 if (match.Success && Numeric(match, "duration") is { } delay && Numeric(match, "ping") is { } ping &&
                     Numeric(match, "before") is { } before && Numeric(match, "after") is { } after)
                 {
-                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.NetworkBadLink,
-                        FormattableString.Invariant($"Driver reported a bad-link event with delay {delay:0.###} ms and ping {ping:0.###} ms."),
-                        delay, ping, before, after); return true;
+                    var holdoff = match.Groups["holdoff"].Success ? Count(match, "holdoff") : null;
+                    bool? automatic = match.Groups["auto"].Success ? match.Groups["auto"].Value == "1" : null;
+                    var message = Math.Abs(before - after) >= 0.5
+                        ? FormattableString.Invariant($"SteamVR {(after < before ? "lowered" : "raised")} the stream from {before:0.#} to {after:0.#} Mbps after a {delay:0.#} ms link stall (ping {ping:0.#} ms).")
+                        : FormattableString.Invariant($"Link stall of {delay:0.#} ms at {before:0.#} Mbps (ping {ping:0.#} ms); the bitrate was not changed.");
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.NetworkBadLink, message,
+                        delay, ping, before, after, HoldoffSteps: holdoff, Automatic: automatic); return true;
+                }
+                match = LinkEstimate.Match(body);
+                if (match.Success && Numeric(match, "estimate") is { } estimate)
+                {
+                    var automatic = match.Groups["auto"].Value == "1";
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.LinkEstimate,
+                        FormattableString.Invariant($"SteamVR link estimate {estimate:0.#} Mbps ({(automatic ? "automatic bitrate" : "manual target")})."),
+                        EstimateMbps: estimate, Automatic: automatic); return true;
+                }
+                match = LinkHistogram.Match(body);
+                if (match.Success && Numeric(match, "width") is { } width && width > 0 && width <= 1000)
+                {
+                    var counts = new List<long>();
+                    foreach (var text in match.Groups["counts"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (!long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count > 100_000_000) return false;
+                        counts.Add(count);
+                    }
+                    var histogram = new LinkCapacityHistogram(width, counts.AsReadOnly());
+                    if (!LinkCapacityHistogram.IsValid(histogram)) return false;
+                    var p10 = histogram.Percentile(0.10);
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.LinkHistogram,
+                        FormattableString.Invariant($"Link capacity histogram: {histogram.TotalSamples} frames, {histogram.OverflowShare:P0} at or above {histogram.OverflowEdgeMbps:0} Mbps, 10th percentile {(p10.AtOrAbove ? "at least " : "")}{p10.Mbps:0} Mbps."),
+                        Histogram: histogram); return true;
+                }
+                match = Throttle.Match(body);
+                if (match.Success && Count(match, "microseconds") is { } microseconds)
+                {
+                    var ms = microseconds / 1000.0;
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.SenderThrottle,
+                        FormattableString.Invariant($"Sender held a frame for {ms:0.0} ms because the link could not take it yet."),
+                        ThrottleMs: ms); return true;
+                }
+                match = LinkConnection.Match(body);
+                if (match.Success && Numeric(match, "seconds") is not null)
+                {
+                    var active = match.Groups["state"].Value == "active";
+                    item = new(timestamp, observedAt, fromLog, source, StreamingHealthCategory.LinkConnection,
+                        active ? "The video link to the headset became active." : "The video link to the headset became inactive; the headset stopped or paused streaming.",
+                        LinkActive: active); return true;
                 }
                 match = EncoderPerf.Match(body);
                 if (match.Success && Numeric(match, "duration") is { } duration)

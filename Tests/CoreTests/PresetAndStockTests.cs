@@ -73,8 +73,13 @@ public sealed class PresetAndStockTests : IDisposable
     {
         await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":false,"unrelatedPairingValue":"keep"},"steamvr":{"preferredRefreshRate":120,"showMirrorView":true}}""");
         var presets = BuiltInPresets.Create();
-        Assert.Equal(4, presets.Select(p => p.Id).Distinct().Count());
+        Assert.Equal(5, presets.Select(p => p.Id).Distinct().Count());
         foreach (var entry in presets) { StockProfiles.Validate(entry.Profile); Assert.True(entry.IsBuiltIn); }
+        var balanced = Assert.Single(presets, p => p.Name.StartsWith("Balanced wireless", StringComparison.Ordinal));
+        Assert.False(balanced.Profile.BitratePatch); Assert.Equal(200, balanced.Profile.TargetMbps);
+        Assert.Equal(200, balanced.Profile.Driver["recommendedBandwidthMbit"].GetInt32());
+        Assert.False(balanced.Profile.Driver["automaticBandwidth"].GetBoolean()); Assert.False(balanced.Profile.Driver["allowMultipleLinks"].GetBoolean());
+        Assert.Equal(EncoderRateControl.ValveDefault, balanced.Profile.RateControl); Assert.False(balanced.Profile.QualityEnabled);
         var preset = Assert.Single(presets, p => p.Name == "High quality HEVC");
         StockProfiles.Validate(preset.Profile);
         var preferences = new FramePreferences { SshHost = "paired-device" };

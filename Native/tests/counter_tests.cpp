@@ -63,6 +63,11 @@ int main() {
     hookEncode(valve, &picture); currentEncoder = 0;
     lockResult = NV_ENC_SUCCESS; hookLock(valve, &output);
     if (stats.encodedBytes != 5120 || stats.encodeErrors != 1) return 9; // Failed submission cannot reopen the previous output.
+    if (ReadOnlyTelemetry.version != 1 || ReadOnlyTelemetry.size != 144 ||
+        ReadOnlyTelemetry.sequence <= 0 || (ReadOnlyTelemetry.sequence & 1) ||
+        ReadOnlyTelemetry.frames != 2 || ReadOnlyTelemetry.bytes != 5120 ||
+        ReadOnlyTelemetry.encodeErrors != 1 || ReadOnlyTelemetry.lockErrors != 1 ||
+        !(ReadOnlyTelemetry.flags & 128) || ReadOnlyTelemetry.lastEncodedSeconds != stats.lastEncodedTime) return 22;
     lockResult = NV_ENC_SUCCESS; hookDestroy(valve); output.frameIdx = 3; hookLock(valve, &output);
     if (stats.encodedBytes != 5120 || !sessions.empty()) return 7;
     picture.version = 0;

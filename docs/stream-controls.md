@@ -9,8 +9,9 @@ The editable [High quality HEVC preset](hevc-high-quality.md) loads a complete
 | Control | Setting | Notes |
 | --- | --- | --- |
 | Video target | `targetBandwidth` | 25–500 Mbps. A stock driver caps manual targets at 232 Mbps while wireless is present; the [driver patcher](driver-patcher.md) raises that. |
-| Automatic bandwidth | `automaticBandwidth` | When on, SteamVR picks the target itself. |
-| Display refresh rate | `steamvr/preferredRefreshRate` | 90 or 120 Hz, including HEVC. Sets the SteamVR preference; reconnecting may be needed. |
+| Automatic bandwidth | `automaticBandwidth` | When on, SteamVR picks the target itself, starting from the rate below and adjusting from its own link measurements. The Overview's Wireless link card shows the estimate it arrives at. |
+| Automatic starting bandwidth | `recommendedBandwidthMbit` | 25–500 Mbps, whole numbers. Where the automatic mode starts; Valve's default is 200. Applied with the other stream controls. |
+| Display refresh rate | `steamvr/preferredRefreshRate` on PC and Frame | 90 or 120 Hz, including HEVC. Sets the host preference first, changes the Frame's display through paired SSH, then verifies active display Hz. Reconnects SteamVR if needed. Preserving an already active rate does not require SSH. |
 | Allow AMD AMF encoder | `enableAmfEncoder` | Needs compatible AMD hardware. Takes effect after reconnecting or restarting SteamVR. |
 | Allow additional streaming links | `allowMultipleLinks` | Permits available dedicated wireless, local-network and USB links. The researched transport duplicates datagrams across eligible links rather than striping video; this does not enable additional decoders. Confirm active links in the dashboard. |
 | Stream format width | `streamFormatWidth` | 512–4096 pixels, in multiples of 32. A larger width may improve center detail while increasing encoder/decoder work; reconnecting may be needed. |
@@ -23,6 +24,14 @@ The **Advanced Supersample Filtering** toggle is applied with the other stream
 settings when you click Apply, then shows the value SteamVR accepted. When
 SteamVR is stopped, it saves the override atomically.
 The codec session must finish reconnecting before changing it.
+
+Refresh has a separate **active display** readback. Selecting a rate only edits
+the request; use **Apply** to change it. A real HEVC mode change requires paired
+wireless SSH under Connection. An unreachable headset or mismatched display rate
+is an error, not a successful change. Reconnecting may close a running game.
+The app verifies the OpenVR display-frequency property rather than treating a
+saved preference or measured encoder fps as proof of the display mode. Retune a
+benchmark preset after changing Hz: 120 Hz gives each frame less time than 90 Hz.
 
 The target is a request, not a guaranteed minimum. Variable bitrate can drop well below
 it in simple scenes. CBR aims at the target; it does not guarantee a useful minimum.
@@ -43,8 +52,19 @@ restoration hooks stay installed and the app asks you to reconnect and retry Sto
 Closing the app leaves the selected quality/policy in the current SteamVR session;
 SteamVR exit removes the helper.
 
-**Apply stream controls** leaves `recommendedBandwidthMbit` unchanged. Edit it under
-[Additional settings](settings-editor.md) if you need to.
+## Wireless advisor and presets
+
+The **Wireless advisor** card repeats the Overview recommendation: one manual target with the
+first reason, and **Use N Mbps** to load it (automatic bitrate is switched off in the editor).
+Apply activates it. The advice combines SteamVR's link estimate and capacity histogram, held
+frames, bad-link step-downs, headset loss and latency, the dongle's radio signal and PHY rate,
+its USB speed and the driver ceiling. It is a reading of measurements, not a quality guarantee;
+the [capacity sweep](live-dashboard.md#capacity-sweep) on Overview measures the limit directly
+while you play, and [Auto tune](auto-tune.md) compares complete presets.
+
+**Balanced wireless (stock driver)** is a built-in preset for an unpatched driver: a fixed
+200 Mbps target in place of Valve's automatic mode, 90 Hz, 1536-pixel width, 10-bit, dongle-only
+links and Valve's encoder defaults. It is a starting point the advisor, sweep and Auto tune raise from.
 
 ## How changes are saved
 

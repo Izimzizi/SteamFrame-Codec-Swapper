@@ -19,6 +19,7 @@ public sealed class FramePreferences
     public StreamCodec RequestedCodec { get; set; } = StreamCodec.Hevc;
     public int CodecTargetMbps { get; set; } = 100;
     public int CodecFps { get; set; } = 90;
+    public int BitrateSetupVersion { get; set; }
     private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamLinkVRSettings", "frame.json");
     public static FramePreferences Load(string? path = null)
     {

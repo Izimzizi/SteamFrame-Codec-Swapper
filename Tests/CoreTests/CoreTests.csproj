@@ -28,6 +28,11 @@
     <Compile Include="../../SteamLinkVRSettings/Frame/TemporaryPowerLease.cs" Link="TemporaryPowerLease.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/FrameTransport.cs" Link="FrameTransport.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/UsbDongleConnection.cs" Link="UsbDongleConnection.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/WirelessLinkStatus.cs" Link="WirelessLinkStatus.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/WirelessAdvisor.cs" Link="WirelessAdvisor.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/LinkCapacitySweep.cs" Link="LinkCapacitySweep.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/StreamingHealth.cs" Link="StreamingHealth.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/CaptureFile.cs" Link="CaptureFile.cs" />
     <Compile Include="../../SteamLinkVRSettings/Services/SettingsService.cs" Link="SettingsService.cs" />
   </ItemGroup>
   <ItemGroup>

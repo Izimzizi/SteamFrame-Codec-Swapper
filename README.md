@@ -26,12 +26,17 @@ including the ones SteamVR doesn't show in its own UI.
 | **Foveation bias** | Shift quality between where you look and the periphery on top of Valve's own gaze-tracked map. |
 | **Advanced controls** | Tune CQ, maximum QP, peak bitrate, VBV, chroma, AQ and presets, plus resolution, buffering and sending settings, with accepted/pending/rejected readbacks and restoration. |
 | **Live dashboard** | Graphs actual encoded video Mbps and FPS, the requested target, and adapter traffic over the last 60 seconds. |
+| **Wireless link** | Reads SteamVR's own link estimate, capacity histogram, held frames and bitrate step-downs from the driver log, plus the dongle's radio band, channel, PHY rate and signal from Windows, with no pairing. An advisor turns them into one recommended target. |
+| **Capacity sweep** | Raises the manual target step by step while you play, scores each step on held frames, stalls, loss and recovery, reports the highest clean rate, and restores your target. Auto tune remains the full preset comparison. |
+| **Auto tune** | Explores stream widths, 90/120 Hz, single/quarter/full multipass, independent gaze/periphery offsets (including 0 / 0), measured combinations and adaptive bitrate in an unattended headset scene. Ranks detail and smoothness instead of Mbps alone, then returns explicit presets with measured tradeoffs. Short screens, configurable serious-issue limits and exact headroom confirmations keep the search bounded. See [Auto tune](docs/auto-tune.md). |
 | **Codec selector** | Switch between HEVC, AV1 and H.264, choose H.264 25–500 Mbps or AV1 25–200 Mbps at 90/120 Hz, and restore stock HEVC. AV1/H.264 are exact-build experiments and restart the stream. |
 | **Streaming issue capture** | Timestamps recovery requests, bad-link events, encoder stalls, PC presentation drops and headset receiver faults, and saves them as JSONL. |
 | **Driver patcher** | Raises the driver's 232/350 Mbps ceilings to 500 Mbps and selects HEVC level 6.2, with verified backups and one-click restore. |
+| **Guided first run** | Checks the actual driver and walks through installing the bitrate override. Explains an existing patch instead of implying that opening the app installed it. Reopen under Patches & Recovery. |
+| **Verified refresh rate** | HEVC Hz changes set the Frame display through paired SSH and verify the active display rate on the headset and PC. Reconnects SteamVR if needed. |
 | **Connection tools** | Shows the dongle's negotiated USB 2/USB 3 speed and headset link status. Reconnect Frame restarts SteamVR once and verifies fresh HEVC output; separate recovery handles the Frame USB daemon. |
 | **Additional settings** | Search less common `driver_vrlink` options. Settings already in Stream settings or Advanced are excluded to avoid duplicate controls. |
-| **Complete presets** | Includes Tuned HEVC (our current 400 Mbps / 1664-width setup), Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass) and Full-resolution HEVC — Experimental. All use 90 Hz and 10-bit; the other three use 2048 width. Edit any control or save a personal preset; built-ins remain available. |
+| **Complete presets** | Includes Balanced wireless for a stock driver (fixed 200 Mbps instead of Valve's automatic mode), Tuned HEVC (our current 400 Mbps / 1664-width setup), Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass) and Full-resolution HEVC — Experimental. All use 90 Hz and 10-bit. Edit any control or save a personal preset; built-ins remain available. |
 | **Back to stock** | Save the current tuning, end experimental codecs, restore a verified original driver and remove app tuning overrides. Load previous tuning to return to it. Pairing and unrelated settings stay intact. |
 
 ## Download and run
@@ -65,6 +70,9 @@ in the Frame's streaming menu if needed. See the [reconnection guide](docs/live-
 1. Keep Wi-Fi on the Frame enabled and start a VR stream.
 2. Open **Stream settings**, choose a codec and bitrate target, and click **Apply stream settings** or **Apply and reconnect**.
 3. On **Overview**, click **Start monitoring** to see the real encoded bitrate. **Diagnostics** contains detailed timing and fault reports.
+   The **Wireless link** card shows SteamVR's link estimate, held frames and capacity histogram
+   within 30 seconds of streaming, the dongle's radio signal, and a recommended target.
+   **Find my link's limit** measures the highest clean bitrate while you play.
 4. Optionally enable **Custom foveation bias**. **Quality focus** (gaze −4, periphery +8)
    is a good starting point.
 5. To request more than 232 Mbps on a stock driver, close SteamVR and use

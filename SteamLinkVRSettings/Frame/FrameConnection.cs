@@ -221,8 +221,9 @@ public sealed class FrameConnection : IAsyncDisposable
              if error.value or not p:raise RuntimeError('Frame settings are unavailable')
              table=c.cast(p,c.POINTER(c.c_void_p))
              remove=c.CFUNCTYPE(None,c.c_char_p,c.c_char_p,c.POINTER(c.c_int))(table[10])
-             remove(b'steamvr',b'preferredRefreshRate',c.byref(error))
-             if error.value not in (0,5):raise RuntimeError('Frame display preference could not be reset')
+             for section in (b'steamvr',b'vrlink.client'):
+              error.value=0;remove(section,b'preferredRefreshRate',c.byref(error))
+              if error.value not in (0,5):raise RuntimeError('Frame display preference could not be reset')
              print(json.dumps({'display_preference_reset':True}))
             finally:lib.VR_ShutdownInternal()
             """;

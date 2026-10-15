@@ -8,6 +8,10 @@ namespace SteamLinkVRSettings.Frame;
 public static partial class OpenVrSettings
 {
     private static readonly object Gate = new();
+    private static nint _retainedLibrary;
+    private static string? _retainedPath;
+    private static (int Pid, long Start) _retainedRuntime;
+    private static int _connectionLeases;
     private const string Section = "driver_vrlink";
     internal const int TemporaryPowerTimeout = 3600;
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint Init(ref int error, int appType, nint startupInfo);
@@ -103,7 +107,7 @@ public static partial class OpenVrSettings
         return true;
     });
 
-    public static (double Target, bool Automatic, bool MultipleLinks, int StreamWidth, bool AutomaticWidth) Read(SteamPaths paths) => Session(paths, table =>
+    public static (double Target, bool Automatic, bool MultipleLinks, int StreamWidth, bool AutomaticWidth, int? StartingMbit) Read(SteamPaths paths) => Session(paths, table =>
     {
         int error = 0;
         var target = Function<GetFloat>(table, 7)(Section, "targetBandwidth", ref error); Check(error, "Read target");
@@ -111,7 +115,10 @@ public static partial class OpenVrSettings
         var multiple = Function<GetBool>(table, 5)(Section, "allowMultipleLinks", ref error); Check(error, "Read multiple links");
         var width = Function<GetInt>(table, 6)(Section, "streamFormatWidth", ref error); Check(error, "Read stream width");
         var automaticWidth = Function<GetBool>(table, 5)(Section, "automaticStreamFormatWidth", ref error); Check(error, "Read automatic stream width");
-        return ((double)target, automatic, multiple, width, automaticWidth);
+        // The adaptive algorithm's starting rate; a missing value (error 5) means Valve's default applies.
+        var starting = Function<GetInt>(table, 6)(Section, "recommendedBandwidthMbit", ref error);
+        int? startingMbit = error == 0 ? starting : null;
+        return ((double)target, automatic, multiple, width, automaticWidth, startingMbit);
     });
 
 
@@ -184,14 +191,19 @@ public static partial class OpenVrSettings
         lock (Gate)
         {
             if (!IsRunning) throw new InvalidOperationException("SteamVR is stopped. Settings can be saved for the next session.");
-            var library = NativeLibrary.Load(paths.OpenVrApi);
+            bool retained = _connectionLeases > 0;
+            if (retained) ValidateRetainedConnection(paths);
+            var library = retained ? _retainedLibrary : NativeLibrary.Load(paths.OpenVrApi);
             bool initialized = false;
             try
             {
                 int error = 0;
-                Marshal.GetDelegateForFunctionPointer<Init>(NativeLibrary.GetExport(library, "VR_InitInternal2"))(ref error, 3, 0);
-                if (error != 0) throw new IOException($"Background OpenVR connection failed ({error}).");
-                initialized = true;
+                if (!retained)
+                {
+                    Marshal.GetDelegateForFunctionPointer<Init>(NativeLibrary.GetExport(library, "VR_InitInternal2"))(ref error, 3, 0);
+                    if (error != 0) throw new IOException($"Background OpenVR connection failed ({error}).");
+                    initialized = true;
+                }
                 var table = Marshal.GetDelegateForFunctionPointer<Interface>(NativeLibrary.GetExport(library, "VR_GetGenericInterface"))(version, ref error);
                 if (table == 0 || error != 0) throw new IOException(version == "FnTable:IVRSettings_003"
                     ? $"SteamVR settings interface unavailable ({error})." : $"SteamVR timing interface unavailable ({error}).");
@@ -200,7 +212,71 @@ public static partial class OpenVrSettings
             finally
             {
                 if (initialized) Marshal.GetDelegateForFunctionPointer<Shutdown>(NativeLibrary.GetExport(library, "VR_ShutdownInternal"))();
-                NativeLibrary.Free(library);
+                if (!retained) NativeLibrary.Free(library);
+            }
+        }
+    }
+
+    // A benchmark reads several interfaces repeatedly. Keep one background connection
+    // for that bounded operation instead of registering/disconnecting clients every poll.
+    // All access and final shutdown still use the process-wide gate.
+    internal static IDisposable RetainConnection(SteamPaths paths)
+    {
+        lock (Gate)
+        {
+            if (_connectionLeases > 0) ValidateRetainedConnection(paths);
+            else
+            {
+                var identity = RuntimeIdentity();
+                var library = NativeLibrary.Load(paths.OpenVrApi);
+                bool initialized = false;
+                try
+                {
+                    int error = 0;
+                    Marshal.GetDelegateForFunctionPointer<Init>(NativeLibrary.GetExport(library, "VR_InitInternal2"))(ref error, 3, 0);
+                    if (error != 0) throw new IOException($"Background OpenVR connection failed ({error}).");
+                    initialized = true;
+                    if (RuntimeIdentity() != identity) throw new IOException("SteamVR restarted while connecting.");
+                    _retainedLibrary = library; _retainedPath = Path.GetFullPath(paths.OpenVrApi); _retainedRuntime = identity;
+                }
+                catch
+                {
+                    if (initialized) Marshal.GetDelegateForFunctionPointer<Shutdown>(NativeLibrary.GetExport(library, "VR_ShutdownInternal"))();
+                    NativeLibrary.Free(library); throw;
+                }
+            }
+            ++_connectionLeases;
+            return new ConnectionLease();
+        }
+    }
+
+    private static (int Pid, long Start) RuntimeIdentity()
+    {
+        var processes = Process.GetProcessesByName("vrserver");
+        try
+        {
+            if (processes.Length != 1 || processes[0].HasExited) throw new IOException("SteamVR is not running.");
+            return (processes[0].Id, processes[0].StartTime.ToUniversalTime().Ticks);
+        }
+        finally { foreach (var process in processes) process.Dispose(); }
+    }
+    private static void ValidateRetainedConnection(SteamPaths paths)
+    {
+        if (!Path.GetFullPath(paths.OpenVrApi).Equals(_retainedPath, StringComparison.OrdinalIgnoreCase) || RuntimeIdentity() != _retainedRuntime)
+            throw new IOException("SteamVR changed during the benchmark. Start a new test after reconnecting.");
+    }
+    private sealed class ConnectionLease : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose()
+        {
+            lock (Gate)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                if (--_connectionLeases != 0) return;
+                try { Marshal.GetDelegateForFunctionPointer<Shutdown>(NativeLibrary.GetExport(_retainedLibrary, "VR_ShutdownInternal"))(); }
+                finally { NativeLibrary.Free(_retainedLibrary); _retainedLibrary = 0; _retainedPath = null; _retainedRuntime = default; }
             }
         }
     }

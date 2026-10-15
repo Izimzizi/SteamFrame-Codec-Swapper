@@ -9,13 +9,19 @@ namespace SteamLinkVRSettings.Frame;
 public sealed record CompositorTimingStats(int Samples, double MeanMs, double MedianMs, double P99Ms, double MaximumMs);
 public sealed record CompositorTimingEvent(DateTimeOffset Timestamp, int RuntimePid, int ScenePid,
     long DroppedFrames, long ReprojectedFrames, long TimedOutEvents, long LateRenderFrames,
-    long FrameHistoryGaps, double? AppGpuMaximumMs, double? TotalGpuMaximumMs, string Message);
+    long FrameHistoryGaps, double? AppGpuMaximumMs, double? TotalGpuMaximumMs, string Message)
+{
+    public long TimedOutPresentations { get; init; }
+}
 public sealed record CompositorTimingSnapshot(DateTimeOffset ObservedAt, bool Available, string Message,
     int? RuntimePid, int? ScenePid, long Presents, long DroppedFrames, long ReprojectedFrames,
     long TimedOutEvents, long LateRenderFrames, long FrameHistoryGaps, long SampledFrames,
     double? TargetFrameMs, CompositorTimingStats? AppGpu, CompositorTimingStats? TotalGpu,
     CompositorTimingStats? ClientInterval, CompositorTimingStats? Submit,
-    string CapturePath, string? CaptureError, IReadOnlyList<CompositorTimingEvent> RecentEvents);
+    string CapturePath, string? CaptureError, IReadOnlyList<CompositorTimingEvent> RecentEvents)
+{
+    public long TimedOutPresentations { get; init; }
+}
 
 /// <summary>
 /// Public IVRCompositor_029 observer. Uses a background connection and never renders,
@@ -35,7 +41,7 @@ public sealed class CompositorTiming
     private NativeSample? _previous;
     private double _lastFrameTime;
     private uint _lastFrameIndex;
-    private long _presents, _dropped, _reprojected, _timedOut, _late, _gaps, _sampled;
+    private long _presents, _dropped, _reprojected, _timedOut, _timedOutPresentations, _late, _gaps, _sampled;
     private string? _captureError;
     private CompositorTimingSnapshot _current;
     public string CapturePath { get; }
@@ -87,13 +93,13 @@ public sealed class CompositorTiming
                 return _current = Snapshot(observed, true, "SteamVR is available; no active VR scene is presenting frames.", sample.RuntimePid, null, null, null, null, null, null);
             }
             var frames = sample.Frames.Where(f => double.IsFinite(f.SystemSeconds) && f.SystemSeconds > 0)
-                .OrderBy(f => f.SystemSeconds).ThenBy(f => f.Index).ToArray();
+                .ToArray(); // OpenVR returns oldest first; predicted vsync times can move backwards.
             var baseline = _previous is null || _previous.RuntimePid != sample.RuntimePid ||
                 _previous.RuntimeStartTicks != sample.RuntimeStartTicks || _previous.ScenePid != sample.ScenePid ||
                 CountersRolledBack(_previous.Stats, sample.Stats);
             if (baseline)
             {
-                _presents = _dropped = _reprojected = _timedOut = _late = _gaps = _sampled = 0;
+                _presents = _dropped = _reprojected = _timedOut = _timedOutPresentations = _late = _gaps = _sampled = 0;
                 _lastFrameTime = frames.LastOrDefault().SystemSeconds;
                 _lastFrameIndex = frames.LastOrDefault().Index;
                 _previous = sample;
@@ -105,36 +111,41 @@ public sealed class CompositorTiming
             long dropped = sample.Stats.Dropped - before.Stats.Dropped;
             long reprojected = sample.Stats.Reprojected - before.Stats.Reprojected;
             long timedOut = sample.Stats.TimedOut - before.Stats.TimedOut;
+            long timedOutPresentations = sample.Stats.TimedOutPresentations - before.Stats.TimedOutPresentations;
             long submits = sample.Stats.Submits - before.Stats.Submits;
             double? budget = submits > 0 ? (sample.Stats.SumTargetFrameTimes - before.Stats.SumTargetFrameTimes) * 1000 / submits : null;
             if (budget is not > 0 or > 1000 || !double.IsFinite(budget.Value)) budget = null;
             var added = new List<FrameTiming>(); long gaps = 0, late = 0;
-            foreach (var frame in frames)
+            foreach (var frame in frames.OrderBy(f => unchecked(f.Index - _lastFrameIndex)))
             {
-                if (frame.SystemSeconds <= _lastFrameTime) continue;
                 var distance = unchecked(frame.Index - _lastFrameIndex);
+                // Index is the frame identity. Clock corrections can give consecutive
+                // frames equal/reversed times; time-based sorting invented two gaps.
+                if (distance == 0 || distance >= 0x80000000u) continue;
                 // This is missing sampled history only. Never turn index gaps into drops.
                 if (_lastFrameTime > 0 && distance > 1 && distance < 100_000) gaps += distance - 1;
                 _lastFrameTime = frame.SystemSeconds; _lastFrameIndex = frame.Index;
                 added.Add(frame); if (frame.MisPresented > 0) ++late;
             }
             _presents += presents; _dropped += dropped; _reprojected += reprojected; _timedOut += timedOut;
+            _timedOutPresentations += timedOutPresentations;
             _late += late; _gaps += gaps; _sampled += added.Count;
             var appGpu = Timing(added.Select(f => (double)f.AppPreGpuMs));
             var totalGpu = Timing(added.Select(f => (double)f.TotalRenderGpuMs));
             var client = Timing(added.Select(f => (double)f.ClientIntervalMs));
             var submit = Timing(added.Select(f => (double)f.SubmitMs));
-            if (dropped + reprojected + timedOut + late > 0)
+            if (dropped + reprojected + timedOut + timedOutPresentations + late > 0)
             {
                 var item = new CompositorTimingEvent(observed, sample.RuntimePid, (int)sample.ScenePid,
                     dropped, reprojected, timedOut, late, gaps, appGpu?.MaximumMs, totalGpu?.MaximumMs,
-                    "PC compositor reported a presentation anomaly; receiver/network dropped-frame counts are separate.");
+                    "PC compositor reported a presentation anomaly; receiver/network dropped-frame counts are separate.")
+                    { TimedOutPresentations = timedOutPresentations };
                 _recent.Enqueue(item); while (_recent.Count > MaximumRecentEvents) _recent.Dequeue();
                 Persist(item);
             }
             _previous = sample;
             return _current = Snapshot(observed, true,
-                FormattableString.Invariant($"PC compositor session: {_dropped} dropped presentations, {_reprojected} reprojected presentations, {_timedOut} timeout events and {_late} frames presented on an unpredicted vsync. {_gaps} unobserved history entries are sampling gaps, not drops."),
+                FormattableString.Invariant($"PC compositor session: {_dropped} dropped presentations, {_reprojected} reprojected presentations, {_timedOut} timeout events ({_timedOutPresentations} timeout presentations) and {_late} frames presented on an unpredicted vsync. {_gaps} unobserved history entries are sampling gaps, not drops."),
                 sample.RuntimePid, (int)sample.ScenePid, budget, appGpu, totalGpu, client, submit);
         }
     }
@@ -142,12 +153,13 @@ public sealed class CompositorTiming
     private CompositorTimingSnapshot Snapshot(DateTimeOffset at, bool available, string message, int? runtime, int? scene,
         double? budget, CompositorTimingStats? app, CompositorTimingStats? total, CompositorTimingStats? client, CompositorTimingStats? submit)
         => new(at, available, message, runtime, scene, _presents, _dropped, _reprojected, _timedOut,
-            _late, _gaps, _sampled, budget, app, total, client, submit, CapturePath, _captureError, Array.AsReadOnly(_recent.ToArray()));
+            _late, _gaps, _sampled, budget, app, total, client, submit, CapturePath, _captureError, Array.AsReadOnly(_recent.ToArray()))
+            { TimedOutPresentations = _timedOutPresentations };
 
     private void ResetSession()
     {
         _previous = null; _lastFrameTime = 0; _lastFrameIndex = 0;
-        _presents = _dropped = _reprojected = _timedOut = _late = _gaps = _sampled = 0;
+        _presents = _dropped = _reprojected = _timedOut = _timedOutPresentations = _late = _gaps = _sampled = 0;
     }
 
     private NativeSample ReadNative()
@@ -195,7 +207,8 @@ public sealed class CompositorTiming
 
     private static bool CountersRolledBack(CumulativeStats before, CumulativeStats after)
         => after.Presents < before.Presents || after.Dropped < before.Dropped || after.Reprojected < before.Reprojected ||
-            after.TimedOut < before.TimedOut || after.Submits < before.Submits || after.SumTargetFrameTimes < before.SumTargetFrameTimes;
+            after.TimedOut < before.TimedOut || after.TimedOutPresentations < before.TimedOutPresentations ||
+            after.Submits < before.Submits || after.SumTargetFrameTimes < before.SumTargetFrameTimes;
 
     private static CompositorTimingStats? Timing(IEnumerable<double> values)
     {
@@ -232,6 +245,7 @@ public sealed class CompositorTiming
             Marshal.OffsetOf<FrameTiming>(nameof(FrameTiming.SystemSeconds)).ToInt32() != 24 ||
             Marshal.OffsetOf<FrameTiming>(nameof(FrameTiming.AppPreGpuMs)).ToInt32() != 32 ||
             Marshal.OffsetOf<FrameTiming>(nameof(FrameTiming.TransferLatencyMs)).ToInt32() != 184 ||
+            Marshal.OffsetOf<CumulativeStats>(nameof(CumulativeStats.TimedOutPresentations)).ToInt32() != 48 ||
             Marshal.OffsetOf<CumulativeStats>(nameof(CumulativeStats.SumTargetFrameTimes)).ToInt32() != 80)
             throw new InvalidOperationException("Compositor timing requires the verified Windows x64 layout.");
     }
@@ -265,6 +279,7 @@ public sealed class CompositorTiming
         [FieldOffset(8)] public uint Dropped;
         [FieldOffset(12)] public uint Reprojected;
         [FieldOffset(44)] public uint TimedOut;
+        [FieldOffset(48)] public uint TimedOutPresentations;
         [FieldOffset(60)] public uint Submits;
         [FieldOffset(80)] public double SumTargetFrameTimes;
     }

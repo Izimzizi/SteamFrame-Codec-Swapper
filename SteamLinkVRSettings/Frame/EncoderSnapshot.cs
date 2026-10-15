@@ -5,6 +5,7 @@ public enum StreamCodec { Hevc, Av1, H264 }
 /// <summary>NVENC output metadata only. EncodedBytes excludes transport/FEC/duplicate links.</summary>
 public sealed record EncoderSnapshot
 {
+    public ulong PassiveConfigurationRevision { get; init; }
     public int ProcessId { get; init; }
     public bool Supported { get; init; }
     /// <summary>A loaded helper cannot be replaced safely until this SteamVR process exits.</summary>
@@ -99,7 +100,7 @@ public sealed record EncodingPolicySnapshot
     public string StatusMessage => !Observed ? "Waiting for an accepted encoder configuration."
         : InitializationRejected ? "NVENC rejected initialization with this policy; Valve's configuration remains active. Change the request before retrying."
         : Unsupported ? "This encoder does not advertise the requested rate-control mode. The accepted configuration remains active."
-        : NeedsNewSession ? $"{RateControlName} is still active. This session does not advertise support for changing rate-control mode while running. Reconnect to create a new encoder session; refreshing the bitrate is not sufficient. If it stays pending, restart SteamVR with reapply enabled."
+        : NeedsNewSession ? "The requested rate-control or multipass change needs a new encoder session. The accepted configuration remains active. Restart SteamVR with reapply enabled to activate it."
         : Pending ? $"Requested policy is not active. The encoder is using {RateControlName} / {MultiPassName}. Reconnect and verify the accepted configuration."
         : "Requested policy accepted.";
     public string RateControlName => RateControl switch { 0 => "constant QP", 1 => "VBR", 2 => "CBR", _ => $"mode {RateControl}" };

@@ -76,6 +76,8 @@ public sealed partial class FramePage
         void Set(string key, object value) => driver[key] = JsonSerializer.SerializeToElement(value);
         var paired = SelectedCodec != StreamCodec.Hevc;
         Set("targetBandwidth", BitrateInput.Value); Set("automaticBandwidth", !paired && AutomaticInput.IsOn);
+        if (!double.IsFinite(StartingBandwidthInput.Value) || StartingBandwidthInput.Value % 1 != 0) throw new ArgumentException("Use a whole-number automatic starting bandwidth before saving a preset.");
+        Set("recommendedBandwidthMbit", (int)StartingBandwidthInput.Value);
         Set("streamFormatWidth", paired ? SelectedCodec == StreamCodec.H264 ? 1024 : 1536 : (int)StreamWidthInput.Value);
         Set("automaticStreamFormatWidth", !paired && AutomaticWidthInput.IsOn); Set("enableAmfEncoder", !paired && AmfInput.IsOn); Set("allowMultipleLinks", !paired && MultipleLinksInput.IsOn);
         foreach (var definition in AdvancedDriverSettings.Definitions)
@@ -112,6 +114,7 @@ public sealed partial class FramePage
             bool Bool(string key, bool fallback) => values.TryGetValue(key, out var value) && value is bool b ? b : fallback;
             AutomaticInput.IsOn = Bool("automaticBandwidth", true); MultipleLinksInput.IsOn = Bool("allowMultipleLinks", false); AmfInput.IsOn = Bool("enableAmfEncoder", false);
             StreamWidthInput.Value = values.TryGetValue("streamFormatWidth", out var width) ? Convert.ToDouble(width) : 1536;
+            StartingBandwidthInput.Value = values.TryGetValue("recommendedBandwidthMbit", out var starting) && starting is not null ? Math.Clamp(Convert.ToDouble(starting), 25, 500) : 200;
             AutomaticWidthInput.IsOn = Bool("automaticStreamFormatWidth", true);
             QualityInput.IsOn = profile.QualityEnabled; GazeInput.Value = profile.GazeOffset; PeripheralInput.Value = profile.PeripheralOffset;
             ReapplyInput.IsChecked = profile.Reapply; RateControlInput.SelectedIndex = (int)profile.RateControl; MultiPassInput.SelectedIndex = (int)profile.MultiPass;
@@ -140,8 +143,7 @@ public sealed partial class FramePage
         }
         if (!paired && profile.Video.TryGetValue("preferredRefreshRate", out var refresh))
         {
-            if (await Task.Run(() => OpenVrSettings.IsRunning)) await Task.Run(() => OpenVrSettings.SetPreferredRefreshRate(_paths, refresh.GetDouble()));
-            else await SteamVrVideoSettings().SaveUserOverridesAsync(new() { ["preferredRefreshRate"] = refresh.GetDouble() });
+            await ApplyHevcRefreshAsync(checked((int)refresh.GetDouble()));
         }
         else if (!paired)
         {
@@ -150,7 +152,28 @@ public sealed partial class FramePage
         }
         _preferences.RateControl = (EncoderRateControl)RateControlInput.SelectedIndex; _preferences.MultiPass = (EncoderMultiPass)MultiPassInput.SelectedIndex; _preferences.AdvancedEncoding = ReadAdvancedEncoderInputs();
         _preferences.QualityEnabled = QualityInput.IsOn; _preferences.GazeOffset = (int)GazeInput.Value; _preferences.PeripheralOffset = (int)PeripheralInput.Value; _preferences.ReapplyAfterRestart = ReapplyInput.IsChecked == true;
-        await _preferences.SaveAsync(); _pendingPreset = null; _encoderAdvancedEdited = _policyEdited = false;
+        await _preferences.SaveAsync();
+        // A saved asyncSend value does not switch the connection's existing FEC
+        // worker. On the verified driver, finish that change before calling a
+        // tested preset applied. Other builds retain their existing reconnect guidance.
+        if (!paired && profile.Codec == StreamCodec.Hevc && profile.Driver.TryGetValue("asyncSend", out var sender) &&
+            await Task.Run(() => OpenVrSettings.IsRunning))
+        {
+            var installed = await _patcher.InspectAsync(_paths.Driver);
+            if (installed.Sha256 is BitratePatcher.SupportedCurrentOriginalSha256 or BitratePatcher.SupportedCurrentPatchedSha256)
+            {
+                var current = await _probe.GetSnapshotAsync();
+                if (!current.Installed) current = await _probe.StartAsync();
+                if (await _probe.ReadActiveSendModeAsync() != sender.GetBoolean())
+                {
+                    ShowStatus("Reconnecting SteamVR to activate this preset's sender mode…", false);
+                    await ReconnectFrameAsync();
+                    if (await _probe.ReadActiveSendModeAsync() != sender.GetBoolean())
+                        throw new IOException("The preset's sender mode did not activate after reconnecting. Check the Frame connection before playing.");
+                }
+            }
+        }
+        _pendingPreset = null; _encoderAdvancedEdited = _policyEdited = false;
     }
 
     private async Task PreparePendingPresetAsync()

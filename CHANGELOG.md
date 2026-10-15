@@ -1,5 +1,114 @@
 # Changelog
 
+## 1.7.0 — Wireless auto tune, link visibility and guided setup
+
+- Overview's new **Wireless link** card reads SteamVR's own adaptive-bitrate output from the
+  driver log: the 30-second link estimate with its automatic/manual flag, the per-frame
+  link-capacity histogram (share at or above 350 Mbps, 10th percentile, median, share below
+  100 Mbps, drawn on a log scale) and sender throttle events counted as held frames per minute.
+- Bad-link events that changed the bitrate are described as such ("SteamVR lowered the stream
+  from 200 to 150 Mbps after an 86.7 ms link stall") with holdoff and automatic flags captured.
+  The graph's dashed target line follows the driver's latest stated rate once it is newer than
+  the last target change, so automatic mode and throttled streams show where the bitrate is.
+- Reads the Valve dongle's radio association from the Windows WLAN service with no pairing:
+  band, channel, channel width when reported, PHY type and rate, signal, RSSI and retry
+  counters when the driver advances them. Weak signal, 2.4 GHz, a narrow channel or a slow PHY
+  are highlighted on Overview and Connection.
+- A wireless advisor combines these with headset loss and latency, dongle USB speed and the
+  driver ceiling into one recommended manual target with reasons and a confidence level.
+  **Use N Mbps** loads it into Stream settings with automatic bitrate off; Apply activates it.
+- **Find my link's limit** sweeps the manual target in 50 Mbps steps while you play, scores each
+  step on held frames, step-downs, headset loss, recovery requests, receiver retries and encoded
+  rate, stops after a failure or two marginal steps, reports the highest clean target and restores
+  the original target and automatic setting afterwards, on Stop, or when the app closes. The sweep
+  and Auto tune refuse to run at the same time.
+- **Restart Frame stream** tells the headset's own Steam client to stop its PC VR stream and
+  stream again over the paired SSH link, without restarting SteamVR, and waits for the driver to
+  report the video link active. The sweep runs it before starting and when a step loses the
+  link; Reconnect Frame uses the start half when SteamVR restarts without fresh video. The
+  Overview card shows when the video link last became active or inactive.
+- Auto tune trials now record held frames and bitrate changes from the driver log; a trial in
+  which SteamVR lowered the stream below the candidate's target is a serious issue, and the
+  recommendation notes say so.
+- The automatic starting bandwidth (`recommendedBandwidthMbit`, Valve's default 200) is edited
+  beside the Automatic bitrate toggle, saved in presets and applied with the other stream
+  controls instead of under Additional settings.
+- Added the built-in **Balanced wireless (stock driver)** preset: a fixed 200 Mbps target,
+  90 Hz, 1536-pixel width, 10-bit, dongle-only links and Valve encoder defaults, needing no
+  driver patch.
+- Auto tune now screens at neutral 0 / 0, then independently compares positive,
+  neutral and negative gaze/periphery offsets on shortlisted modes. Starting offsets
+  and measured combinations are included; each saved choice retains its tested map.
+- Ranking prioritizes the serious-issue threshold and balances smoothness, resolution,
+  Hz and regional detail. Higher Mbps alone adds no score. Bitrate probes use available
+  whole-frame QP evidence only at otherwise identical settings. Reports show the
+  measurements and progress reserves the additional quality comparisons.
+- Added mode/test counts, estimated overall progress, current measurement seconds,
+  elapsed time and separate preparation/comparison/tuning/restoration stages.
+  Interrupted runs retain their actual partial progress and diagnostic reason.
+- Waits for headset telemetry to settle after mode changes and retries a transient
+  missing wireless route or receiver once against the same PC. Mid-trial measurement
+  failures remain visible and are never treated as clean performance.
+- Skips unnecessary Hz restarts when the Frame and PC already report the new rate
+  and the encoder accepts the requested width. Required pass and confirmation
+  restarts now explain their purpose in the progress panel.
+- Closing a measurement now waits for fresh test-scene telemetry, preventing a
+  repeated half-second scene sample from falsely invalidating an otherwise live trial.
+- Fixed Frame Hz switching to use the PC-streaming app's refresh preference,
+  which overrides the headset's global setting. Both actual rates are verified.
+- Multipass changes now wait for a fresh encoder session after live testing
+  exposed a GPU fault during an in-place full-pass transition. Screens are grouped
+  by pass to reduce restarts, and receiver failures retain their diagnostic reason.
+- Auto tune now returns multiple explicit presets with stream width, Hz, bitrate,
+  encoder pass and measured tradeoffs. It no longer gates recommendations on beating
+  Valve defaults or substitutes stock settings when the comparison is inconclusive.
+- Screens 1280/1664/2048-pixel widths plus the current width, at 90 and 120 Hz.
+  Single, quarter and full multipass are compared before refining three leading modes.
+- Default screens take 10 seconds and confirmations 35 seconds. Bitrate headroom,
+  durations, mode comparisons and serious-issue thresholds are configurable.
+- Final confirmations start with a fresh encoder. A poor confirmation can try one
+  previously measured alternative; detail and refresh choices prioritize those modes
+  among settings below the user's serious-issue threshold.
+- Saves each choice separately. Partial runs retain completed measurements; an
+  unavailable connection produces an explicit unmeasured starting option.
+- Added a separate durable display journal: tests change and verify actual Frame/PC
+  Hz, then restore the original active rate and refresh preferences, including recovery
+  after interruption. Width changes are verified against the accepted encoder state.
+- Unattended mode renders an animated per-eye SteamVR scene with the headset off
+  the user's head, using bounded temporary activity/power overrides.
+- Scores complete windows, keeping isolated hitches as observations. Strong stalls
+  and sustained delivery problems receive greater penalties. Valid bad results remain
+  visible; options below the configured serious-issue thresholds are preferred.
+- Records actual Hz, affected-frame estimates, burst windows and smoothness scores.
+  PC timeout-state entries and timed-out presentations remain separate counters.
+  Missing telemetry, session changes, reset counters and encoder errors cannot establish an improvement.
+- Restores starting settings using a durable before-write journal that preserves newer
+  external edits. Quality alternatives are optional and retained in the saved preset.
+- Restarts SteamVR when a benchmark rate-control transition needs a new encoder session,
+  resumes the same host, rebuilds observers, and verifies the active settings before scoring.
+  Valve's adaptive target updates no longer prevent restoration of the original manual target.
+- Fixed the encoder helper retaining CBR during Valve-owned rate-control transitions even
+  when the app had never overridden that session's rate control. Default and multipass-only
+  requests now preserve Valve's choices; explicit app overrides still use reconnect guards.
+- Fixed false timing-history gaps from corrected vsync timestamps, and stopped treating
+  uneven scene submission spacing alone as proof of a missed presentation.
+- Uses passive encoder metadata and persistent PC/headset OpenVR, SSH and UI observers.
+  The owned scene uses multimedia scheduling; the remote observer runs at lower priority.
+  Boundary logs retain repair, recovery and encoder warnings separately from frame counters.
+- Compares gentler quality offsets on promising modes and stops increasing bitrate
+  when its measured tradeoff worsens or crosses the serious-issue threshold.
+- Removed invalid live send-mode comparison: `asyncSend` takes effect on reconnect.
+  Auto tune checks the running sender and rejects pending setting mismatches.
+  Applying a preset on the verified driver reconnects and verifies a changed sender mode.
+- HEVC refresh changes now set the Frame's display mode through paired SSH,
+  verify its display-frequency property, and confirm the active PC headset rate.
+  SteamVR reconnects if needed. Stream settings distinguish selected and active Hz.
+- Added a first-run bitrate walkthrough and a way to reopen it in Patches & Recovery.
+  It reports verified original, existing patch, missing or unsupported driver states;
+  explains preset-installed patches; and installs with backup and verification.
+  Patch classification requires an exact original or patched hash.
+
+
 ## 1.6.0 — Frame reconnect and tuned HEVC
 
 - Added **Reconnect Frame** on Overview. It restarts SteamVR once (or starts a

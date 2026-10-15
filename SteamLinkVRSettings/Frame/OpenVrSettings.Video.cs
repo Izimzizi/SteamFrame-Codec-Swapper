@@ -2,12 +2,30 @@ namespace SteamLinkVRSettings.Frame;
 
 public static partial class OpenVrSettings
 {
+    [System.Runtime.InteropServices.UnmanagedFunctionPointer(System.Runtime.InteropServices.CallingConvention.StdCall)]
+    private delegate float GetDeviceFloat(uint device, int property, ref int error);
+
+    // IVRSystem_026: GetFloatTrackedDeviceProperty, Prop_DisplayFrequency_Float.
+    public static double ReadDisplayHz(SteamPaths paths) => WithInterface(paths, "FnTable:IVRSystem_026", table =>
+    {
+        int error = 0;
+        double hz = Function<GetDeviceFloat>(table, 23)(0, 2002, ref error);
+        if (error != 0 || !double.IsFinite(hz) || hz <= 0) throw new IOException("The active headset display rate is unavailable.");
+        return hz;
+    });
     public static void RemovePreferredRefreshRate(SteamPaths paths) => Session(paths, table =>
     {
         int error = 0;
         Function<RemoveKey>(table, 10)(SteamVrVideoSection, "preferredRefreshRate", ref error);
         if (error != 5) Check(error, "Restore display refresh default");
         return true;
+    });
+    public static double ReadPreferredRefreshRate(SteamPaths paths) => Session(paths, table =>
+    {
+        int error=0;double hz=Function<GetFloat>(table,7)(SteamVrVideoSection,"preferredRefreshRate",ref error);
+        Check(error,"Read display refresh preference");
+        if(!double.IsFinite(hz) || hz<0 || hz>240)throw new IOException("Invalid display refresh preference.");
+        return hz;
     });
     public static void SetPreferredRefreshRate(SteamPaths paths, double fps) => Session(paths, table =>
     {

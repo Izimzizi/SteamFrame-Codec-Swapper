@@ -12,8 +12,8 @@ public sealed class EncoderControlsTests
             DynamicRateControlSupported = false, RejectedCalls = 75000
         };
         Assert.True(snapshot.Pending);
-        Assert.Contains("VBR is still active", snapshot.StatusMessage);
-        Assert.Contains("new encoder session", snapshot.StatusMessage);
+        Assert.Contains("needs a new encoder session", snapshot.StatusMessage);
+        Assert.Contains("remains active", snapshot.StatusMessage);
         Assert.False(snapshot.Unsupported);
         var applied = snapshot with { Applied = snapshot.Requested, RateControl = 2, MultiPass = 2, NeedsNewSession = false };
         Assert.False(applied.Pending);

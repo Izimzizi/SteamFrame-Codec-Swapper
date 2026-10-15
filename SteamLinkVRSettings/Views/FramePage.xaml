@@ -45,6 +45,92 @@
             <InfoBar x:Name="ActionStatus" IsOpen="False" IsClosable="True" />
         </StackPanel>
         <Grid Grid.Row="2">
+            <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="BenchmarkView">
+                <StackPanel Spacing="16" Padding="0,0,8,16">
+                    <Border x:Name="BenchmarkProgressCard" Visibility="Collapsed" Background="{StaticResource SteamCardBgBrush}" BorderBrush="{StaticResource SteamBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="18">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnSpacing="18">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock x:Name="BenchmarkPhaseTitle" Text="Preparing" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="BenchmarkPhaseCount" Style="{StaticResource Hint}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                    <TextBlock x:Name="BenchmarkPercent" Text="0%" FontSize="32" FontWeight="SemiBold" Foreground="{StaticResource SteamBlueBrush}" HorizontalAlignment="Right"/>
+                                    <TextBlock x:Name="BenchmarkPercentCaption" Text="estimated" Style="{StaticResource Hint}" HorizontalAlignment="Right"/>
+                                </StackPanel>
+                            </Grid>
+                            <ProgressBar x:Name="BenchmarkProgress" Minimum="0" Maximum="100" Value="0" Height="8" AutomationProperties.Name="Estimated overall benchmark completion"/>
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="BenchmarkPrepareStep" Text="1  Prepare" Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="BenchmarkCompareStep" Grid.Column="1" Text="2  Compare modes" Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="BenchmarkTuneStep" Grid.Column="2" Text="3  Tune choices" Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="BenchmarkRestoreStep" Grid.Column="3" Text="4  Restore" Style="{StaticResource Hint}"/>
+                            </Grid>
+                            <Border Height="1" Background="{StaticResource SteamBorderBrush}" Margin="0,2"/>
+                            <TextBlock x:Name="BenchmarkCurrentCandidate" FontSize="14" TextWrapping="Wrap"/>
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="BenchmarkMeasurementLabel" Text="Preparing current test" Style="{StaticResource Hint}"/>
+                                <TextBlock x:Name="BenchmarkMeasurementTime" Grid.Column="1" FontWeight="SemiBold"/>
+                            </Grid>
+                            <ProgressBar x:Name="BenchmarkTrialProgress" Minimum="0" Maximum="100" Height="4" Foreground="{StaticResource SteamBlueBrush}" AutomationProperties.Name="Current test measurement progress"/>
+                            <TextBlock x:Name="BenchmarkStatus" Text="Checking the headset and current settings…" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="BenchmarkCompletedCount" Style="{StaticResource Hint}"/>
+                            <TextBlock Text="Overall progress is an estimate. Optional tests may be skipped; reconnecting and restoring settings also take time." Style="{StaticResource Hint}"/>
+                            <Button x:Name="BenchmarkCancelButton" Content="Stop and restore" IsEnabled="False" Click="BenchmarkCancel_Click" />
+                            <HyperlinkButton x:Name="BenchmarkResultsLink" Content="View recommendations" Visibility="Collapsed" Click="BenchmarkResults_Click" Padding="0" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="20">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Presets built around your connection" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="Find several setups for your connection: balanced, higher detail or higher refresh. A moving room compares resolution, active Hz, encoder passes and gaze/periphery quality, then adjusts bitrate and checks for serious stuttering." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Close your VR game and connect using HEVC. Leave the Frame on a desk with its tracking cameras unobstructed; the app keeps it awake and moves the test scene for you. Start from the resolution, refresh rate and gaze quality you want to use. NVIDIA NVENC and paired wireless SSH are required." Style="{StaticResource Hint}" />
+                            <HyperlinkButton Content="Set up headset monitoring" Tag="connection" Click="OpenSection_Click" Padding="0" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="The result is a list of explicit presets you can choose from. Brief screens explore the options; longer checks confirm the strongest settings with headroom. Occasional hitches remain scored observations. There is no required Mbps target or Valve-default fallback." Style="{StaticResource Hint}" />
+                    <Expander Header="Test limits and comparisons" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="12" x:Name="BenchmarkOptionsPanel" Padding="0,12,0,0">
+                        <CheckBox x:Name="BenchmarkUnattended" Content="Run without wearing the Frame (temporary keep-awake)" IsChecked="True" />
+                        <controls:NoWheelNumberBox x:Name="BenchmarkMaximum" Header="Maximum target to try (Mbps)" Minimum="100" Maximum="500" Value="450" SmallChange="25" SpinButtonPlacementMode="Compact" />
+                        <TextBlock Text="The installed driver ceiling also applies. The benchmark does not install a driver patch." Style="{StaticResource Hint}" />
+                        <CheckBox x:Name="BenchmarkResolutions" Content="Compare 1280, 1664 and 2048-pixel stream widths, plus my current width" IsChecked="True" />
+                        <CheckBox x:Name="BenchmarkRefreshRates" Content="Compare 90 and 120 Hz (changes headset and PC display mode)" IsChecked="True" />
+                        <controls:NoWheelNumberBox x:Name="BenchmarkTrialSeconds" Header="Seconds per screening trial" Minimum="8" Maximum="60" Value="10" SmallChange="2" SpinButtonPlacementMode="Compact" />
+                        <controls:NoWheelNumberBox x:Name="BenchmarkValidationSeconds" Header="Seconds per final confirmation" Minimum="20" Maximum="300" Value="35" SmallChange="5" SpinButtonPlacementMode="Compact" />
+                        <controls:NoWheelNumberBox x:Name="BenchmarkHeadroom" Header="Bitrate headroom (%)" Minimum="5" Maximum="25" Value="10" SmallChange="5" SpinButtonPlacementMode="Compact" />
+                        <CheckBox x:Name="BenchmarkFullMultipass" Content="Include full-resolution multipass alongside single and quarter pass" IsChecked="True" />
+                        <controls:NoWheelNumberBox x:Name="BenchmarkIssuePercent" Header="Serious-issue threshold: estimated affected frames (%)" Minimum="1" Maximum="15" Value="5" SmallChange="1" SpinButtonPlacementMode="Compact" />
+                        <controls:NoWheelNumberBox x:Name="BenchmarkIssueMilliseconds" Header="Serious-issue threshold: frame-equivalent hitch load (ms)" Minimum="100" Maximum="2000" Value="500" SmallChange="100" SpinButtonPlacementMode="Compact" />
+                        <CheckBox x:Name="BenchmarkReduceQuality" Content="Compare gaze and periphery independently, including 0 / 0" IsChecked="True" />
+                        <TextBlock Text="On shortlisted modes: test gaze +6, 0, −6, −12, −20 with periphery 0; test periphery +8, 0, −4, −8, −12 with gaze 0. Also test your starting offsets and combinations of useful values. Negative offsets request more detail; positive offsets reduce detail. 0 / 0 keeps Valve's foveation. Turning this comparison off keeps your current offsets." Style="{StaticResource Hint}" />
+                        <TextBlock Text="Ranking favors detail below the serious-issue threshold, balanced with smoothness and Hz. Higher Mbps alone earns no extra score. Whole-frame QP helps compare bitrate changes at identical settings; it is not a visual quality measurement. Turning off resolution or Hz comparison keeps your current value." Style="{StaticResource Hint}" />
+                        <TextBlock Text="The active sender mode stays fixed. To compare another mode, change Asynchronous sending in Advanced, reconnect, then run auto tune again." Style="{StaticResource Hint}" />
+                    </StackPanel>
+                    </Expander>
+                    <TextBlock Text="Default: 10-second screens, 35-second confirmations and 10% bitrate headroom. Allow roughly 15–25 minutes with all comparisons enabled, depending on mode switches. SteamVR may restart. Stop at any time to keep partial results. Original settings and Hz are restored afterward. If measurement is unavailable, an explicit unmeasured starting option is offered." Style="{StaticResource Hint}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button x:Name="BenchmarkStartButton" Content="Start auto tune" Style="{StaticResource SteamActionButtonStyle}" Click="BenchmarkStart_Click" />
+                    </StackPanel>
+                    <Border x:Name="BenchmarkResultCard" Visibility="Collapsed" Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="20">
+                        <StackPanel Spacing="12">
+                            <TextBlock x:Name="BenchmarkResultTitle" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="BenchmarkResultDetail" TextWrapping="Wrap" />
+                            <TextBlock Text="Stream width is the encoder's packed-image width, not a per-eye display resolution. Hitch percentages are estimates. Short comparisons identify useful options; test your choice in games. Warnings remain visible even for the best available option." Style="{StaticResource Hint}" />
+                            <StackPanel x:Name="BenchmarkChoiceList" Spacing="12" />
+                        </StackPanel>
+                    </Border>
+                    <Expander x:Name="BenchmarkTrialsExpander" Header="Trial results" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <TextBlock x:Name="BenchmarkTrials" Text="Completed trials will appear here." TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </Expander>
+                    <Button x:Name="BenchmarkReportButton" Content="Open benchmark reports" Click="BenchmarkReports_Click" HorizontalAlignment="Left" />
+                    <Button x:Name="BenchmarkRecoverButton" Content="Restore starting settings from an interrupted test" Click="BenchmarkRecover_Click" HorizontalAlignment="Left" />
+                    <TextBlock Text="Recovery preserves newer settings changed by you or another controller. If the Frame disconnected, reconnect it first. Missing or reset measurements never count as a passing test." Style="{StaticResource Hint}" />
+                </StackPanel>
+            </ScrollViewer>
             <ScrollViewer Visibility="Visible" VerticalScrollBarVisibility="Auto" x:Name="OverviewView">
                 <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
                     <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="16">
@@ -80,6 +166,42 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                         </Grid>
+                    </Border>
+                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Wireless link" FontSize="15" />
+                            <TextBlock x:Name="LinkStateReadback" Text="Video link: no change seen since this app opened" TextWrapping="Wrap" />
+                            <TextBlock x:Name="LinkEstimateReadback" Text="SteamVR link estimate: waiting for a stream" TextWrapping="Wrap" />
+                            <TextBlock x:Name="HeldFramesReadback" Text="Held frames: none recorded yet" TextWrapping="Wrap" />
+                            <TextBlock x:Name="CapacityReadback" Text="Link capacity: waiting for SteamVR's 30-second capacity histogram." Style="{StaticResource Hint}" MaxWidth="900" />
+                            <StackPanel x:Name="CapacityPanel" Spacing="4" Visibility="Collapsed">
+                                <Canvas x:Name="CapacityGraph" Height="44" SizeChanged="CapacityGraph_SizeChanged" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="0 Mbps" Style="{StaticResource Hint}" FontSize="11" />
+                                    <TextBlock x:Name="CapacityAxisRight" Text="" Style="{StaticResource Hint}" FontSize="11" Grid.Column="1" />
+                                </Grid>
+                                <TextBlock Text="Blue: frames by measured link capacity (log scale)   Green: at or above the histogram's top bucket   Dashed: requested target" Style="{StaticResource Hint}" FontSize="11" MaxWidth="900" />
+                            </StackPanel>
+                            <TextBlock x:Name="RadioReadback" Text="Radio: checking…" TextWrapping="Wrap" />
+                            <TextBlock x:Name="RadioDetail" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
+                            <Border Height="1" Background="{StaticResource SteamBorderBrush}" />
+                            <TextBlock x:Name="AdviceHeadline" Text="No recommendation yet." FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="900" />
+                            <TextBlock x:Name="AdviceReasons" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
+                            <StackPanel Spacing="12" Orientation="Horizontal">
+                                <Button x:Name="UseAdviceButton" Content="Use recommended target" Click="UseAdvice_Click" IsEnabled="False" />
+                                <Button x:Name="SweepButton" Content="Find my link's limit" Click="Sweep_Click" IsEnabled="False" />
+                                <Button x:Name="SweepStopButton" Content="Stop sweep" Click="StopSweep_Click" Visibility="Collapsed" />
+                                <Button x:Name="RestartStreamButton" Content="Restart Frame stream" Click="RestartFrameStream_Click" />
+                            </StackPanel>
+                            <TextBlock x:Name="SweepStatus" Text="The sweep raises the manual target step by step during a real stream, scores each step, and restores your target afterwards. Auto tune compares complete presets with its own test scene. Restart Frame stream tells the headset to stop and start PC streaming again, without restarting SteamVR; the sweep and Reconnect Frame use it automatically when the video link stays down." Style="{StaticResource Hint}" MaxWidth="900" />
+                            <Border x:Name="SweepResultsCard" Background="{StaticResource SteamDarkBgBrush}" CornerRadius="4" Padding="12" Visibility="Collapsed">
+                                <TextBlock x:Name="SweepResults" Text="" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
                     </Border>
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -151,7 +273,21 @@
                             </ComboBox>
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" x:Name="CodecModeHint" />
+                        <TextBlock Style="{StaticResource Hint}" x:Name="RefreshReadback" Text="Active display Hz has not been verified." />
+                        <TextBlock Style="{StaticResource Hint}" Text="Changing Hz also changes the Frame's display mode and requires paired headset SSH. SteamVR reconnects if needed, which may close the running game." />
                         <ToggleSwitch x:Name="AutomaticInput" Header="Automatic bitrate" OnContent="SteamVR adjusts the bitrate" OffContent="Use the target above" Toggled="Bandwidth_Toggled" />
+                        <StackPanel Spacing="12" x:Name="AutomaticOptions">
+                            <controls:NoWheelNumberBox x:Name="StartingBandwidthInput" Header="Automatic starting bandwidth (Mbps)" Minimum="25" Maximum="500" SmallChange="5" LargeChange="25" Value="200" SpinButtonPlacementMode="Compact" ValueChanged="Bandwidth_ValueChanged" />
+                            <TextBlock Text="With automatic bitrate on, SteamVR starts from this rate and adjusts it from its own link measurements. Valve's default is 200 Mbps. The Overview shows the estimate SteamVR arrives at." Style="{StaticResource Hint}" />
+                        </StackPanel>
+                        <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Wireless advisor" Style="{StaticResource Hint}" />
+                                <TextBlock x:Name="StreamAdviceHeadline" Text="No recommendation yet." FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock x:Name="StreamAdviceDetail" Text="The Overview card explains the advice once a stream is running." Style="{StaticResource Hint}" />
+                                <Button x:Name="StreamUseAdviceButton" Content="Use recommended target" Click="UseAdvice_Click" IsEnabled="False" />
+                            </StackPanel>
+                        </Border>
                         <TextBlock x:Name="CodecSessionStatus" Text="Checking codec service…" Style="{StaticResource Hint}" />
                         <PasswordBox x:Name="CodecPasswordInput" Header="Frame user password" PlaceholderText="Enter privately to start a codec session" PasswordRevealMode="Hidden" Visibility="Collapsed" />
                         <TextBlock x:Name="CodecAuthenticationHint" Text="The password authenticates this codec session and is not saved. An existing live session needs no password to switch." Style="{StaticResource Hint}" Visibility="Collapsed" />
@@ -302,6 +438,7 @@
                 <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
                     <TextBlock Text="Pair once. Use the dongle for streaming." FontSize="18" FontWeight="SemiBold" />
                     <TextBlock x:Name="ConnectionUsbStatus" Text="Checking the dongle's USB connection…" TextWrapping="Wrap" />
+                    <TextBlock x:Name="ConnectionRadioStatus" Text="Checking the dongle's radio association…" TextWrapping="Wrap" />
                     <TextBlock Text="Enable Developer Mode and pair this PC with SteamOS Devkit. Keep the Frame awake and its Wi-Fi enabled." Style="{StaticResource Hint}" />
                     <HyperlinkButton Content="Open the pairing guide" NavigateUri="https://github.com/elliotttate/SteamFrame-Advanced-Options/blob/main/docs/connection-setup.md" HorizontalAlignment="Left" Padding="0" />
                     <TextBox x:Name="SshHostInput" Header="Frame address" PlaceholderText="10.35.78.1 for the dedicated dongle" />
@@ -325,6 +462,8 @@
             <ScrollViewer Visibility="Collapsed" VerticalScrollBarVisibility="Auto" x:Name="ToolsView">
                 <StackPanel Spacing="12" Padding="0,0,8,16" HorizontalAlignment="Stretch">
                     <TextBlock Text="HEVC bitrate override" FontSize="18" FontWeight="SemiBold" />
+                    <Button Content="Walk me through bitrate setup" Click="BitrateSetup_Click" HorizontalAlignment="Left" />
+                    <TextBlock Text="Status below is verified from the selected driver file, not a preset. Applying a preset can install its required override. SteamVR updates may replace it." Style="{StaticResource Hint}" />
                     <TextBlock Text="AV1 and H.264 apply their codec patches automatically from Stream settings. The override below raises HEVC's bitrate ceiling." Style="{StaticResource Hint}" />
                     <TextBlock Text="Allows compatible drivers to accept targets up to 500 Mbps. Actual bitrate depends on the scene and connection. Close SteamVR before changing the patch." Style="{StaticResource Hint}" />
                     <TextBlock x:Name="PatchStatus" Text="Checking installed driver…" FontSize="18" TextWrapping="Wrap" />

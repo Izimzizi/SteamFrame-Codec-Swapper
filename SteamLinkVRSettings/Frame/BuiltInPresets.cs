@@ -31,6 +31,32 @@ public static class BuiltInPresets
         {
             IsBuiltIn = true,
             Description = "400 Mbps target · 90 Hz · 2048-pixel width · 10-bit HEVC. High quality HEVC with full-resolution multipass analysis. Extra encoding work can worsen frame timing; a quality or bitrate improvement has not been verified. Compare against High quality HEVC."
+        },
+        // Listed last: tests and the first-run flow expect Tuned HEVC first.
+        new("3d1f0c2e-6b7a-4a3e-9d58-2f0c8e4b7a11", "Balanced wireless (stock driver)", new()
+        {
+            Codec = StreamCodec.Hevc, TargetMbps = 200, Fps = 90, BitratePatch = false,
+            RateControl = EncoderRateControl.ValveDefault, MultiPass = EncoderMultiPass.ValveDefault,
+            QualityEnabled = false, GazeOffset = 0, PeripheralOffset = 0, Reapply = false,
+            Advanced = new(),
+            Driver = new()
+            {
+                // A fixed 200 Mbps target instead of Valve's automatic mode, which starts at 200 and
+                // then drifts with its own link estimate. Dongle-only links: combining paths added
+                // traffic without useful video in testing. The Overview advisor, sweep and Auto tune raise it from here.
+                ["targetBandwidth"] = Value(200d), ["recommendedBandwidthMbit"] = Value(200),
+                ["automaticBandwidth"] = Value(false), ["streamFormatWidth"] = Value(1536),
+                ["automaticStreamFormatWidth"] = Value(false), ["allowMultipleLinks"] = Value(false),
+                ["enableAmfEncoder"] = Value(false), ["10bit"] = Value(true), ["enableQoS"] = Value(true)
+            },
+            Video = new()
+            {
+                ["preferredRefreshRate"] = Value(90d)
+            }
+        })
+        {
+            IsBuiltIn = true,
+            Description = "200 Mbps fixed target · 90 Hz · 1536-pixel width · 10-bit HEVC · dongle only · Valve encoder defaults. No driver patch needed. A starting point for an unpatched driver; use the Overview advisor, the capacity sweep or Auto tune to find how much higher your link can go."
         }
     ];
 

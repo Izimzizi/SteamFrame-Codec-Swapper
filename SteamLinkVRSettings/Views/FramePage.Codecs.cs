@@ -38,6 +38,7 @@ public sealed partial class FramePage
     {
         if (_syncingCodec || ApplyButton is null) return;
         _codecEdited = _refreshEdited = true; _basicEditRevision++; UpdateStreamEditStatus();
+        RefreshCodecButtons();
     }
     private void RenderCodecService(CodecServiceStatus status)
     {
@@ -60,7 +61,7 @@ public sealed partial class FramePage
     private void RefreshCodecButtons()
     {
         if (ApplyButton is null) return;
-        var idle = !_actionPending && !_codecSwitching && !CodecHooksPaused(_codecService);
+        var idle = !_actionPending && !_codecSwitching && !_sweepRunning && !CodecHooksPaused(_codecService);
         var paired = SelectedCodec != StreamCodec.Hevc;
         var patchChange = _pendingPreset != null && _pendingPreset.BitratePatch != (_patch?.IsPatched == true);
         var authenticationNeeded = paired && (_codecService.CanStart && !_codecService.Live || patchChange && _codecService.Live);
@@ -71,13 +72,14 @@ public sealed partial class FramePage
         {
             StreamCodec.Av1 => "AV1: 25–200 Mbps, 8-bit hardware encoding and decoding. Changes to codec, bitrate or refresh reconnect SteamVR. Start with 100 Mbps at 90 Hz.",
             StreamCodec.H264 => "H.264: 25–500 Mbps. The packed image is smaller than AV1 (1024 × 4096). 225 Mbps was the highest clean trial; above 232 Mbps needs the bitrate patch. SteamVR can lower the rate after link problems. Changes reconnect SteamVR.",
-            _ => "HEVC: 25–500 Mbps. Targets above the stock ceiling need the bitrate patch. Refresh sets SteamVR's display preference; a change may require reconnecting."
+            _ => "HEVC: 25–500 Mbps. Targets above the stock ceiling need the bitrate patch. Refresh changes are sent to the Frame and verified against the active PC display rate."
         };
-        ApplyButton.Content = paired || _codecService.Live || patchChange ? "Apply and reconnect" : "Apply stream settings";
+        ApplyButton.Content = paired || _codecService.Live || patchChange || _refreshEdited ? "Apply and reconnect if needed" : "Apply stream settings";
         ApplyButton.IsEnabled = idle;
         CodecSelectionInput.IsEnabled = CodecPasswordInput.IsEnabled = BitrateInput.IsEnabled = idle;
         CodecRefreshInput.IsEnabled = idle;
-        AutomaticInput.IsEnabled = idle && !paired;
+        AutomaticInput.IsEnabled = StartingBandwidthInput.IsEnabled = idle && !paired;
+        AutomaticOptions.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
         HevcPictureOptions.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
         AmfInput.IsEnabled = MultipleLinksInput.IsEnabled = idle && !paired;
         SupersampleFilteringInput.IsEnabled = idle;

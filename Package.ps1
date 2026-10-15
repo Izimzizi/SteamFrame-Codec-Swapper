@@ -74,6 +74,9 @@ try {
     foreach ($requiredXaml in @('App.xbf', 'MainWindow.xbf', 'Views\FramePage.xbf')) {
         if (-not (Test-Path -LiteralPath (Join-Path $stageRoot $requiredXaml))) { throw "Missing compiled UI resource: $requiredXaml" }
     }
+    if (-not (Test-Path -LiteralPath (Join-Path $stageRoot 'Native\SteamFrameBenchmark.exe') -PathType Leaf)) {
+        throw 'The wireless benchmark scene is missing. Build the native targets before packaging.'
+    }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $stageRoot
     # Ship only the supervised codec runtime and exact guarded trial assets.
     # Development fixtures, local configs and backend build products are excluded.
@@ -104,7 +107,7 @@ try {
     # Ship the release guides, keeping development investigations out of the package.
     $guideRoot = Join-Path $stageRoot 'docs'
     New-Item -ItemType Directory -Path $guideRoot -Force | Out-Null
-    foreach ($guide in @('advanced-controls.md', 'building.md', 'codec-modes.md', 'connection-setup.md', 'driver-patcher.md', 'hevc-high-quality.md', 'live-dashboard.md', 'settings-editor.md', 'stream-controls.md')) {
+    foreach ($guide in @('auto-tune.md', 'advanced-controls.md', 'building.md', 'codec-modes.md', 'connection-setup.md', 'driver-patcher.md', 'hevc-high-quality.md', 'live-dashboard.md', 'settings-editor.md', 'stream-controls.md')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "docs\$guide") -Destination $guideRoot
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs\images') -Destination (Join-Path $guideRoot 'images') -Recurse
@@ -114,6 +117,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\minhook\LICENSE.txt') -Destination (Join-Path $licenseRoot 'MinHook-HDE.txt')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\NVIDIA-LICENSE.txt') -Destination $licenseRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\NVIDIA-LICENSE12.txt') -Destination $licenseRoot
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\vendor\OpenVR-LICENSE.txt') -Destination $licenseRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Destination (Join-Path $licenseRoot 'SteamLinkVRSettings-MIT.txt')
     if (Test-Path -LiteralPath $portableRoot) {
         $previousRoot = Join-Path $artifactRoot ('.previous-' + [guid]::NewGuid().ToString('N'))

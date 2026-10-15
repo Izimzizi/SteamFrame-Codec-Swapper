@@ -8,6 +8,7 @@ public sealed partial class FramePage
 {
     private Task<UsbDongleSnapshot>? _usbDongleRead;
     private UsbDongleSnapshot _usbDongle = UsbDongleSnapshot.Unknown;
+    private UsbDongleSnapshot _usbCurrent = UsbDongleSnapshot.Unknown;
     private double _nextUsbDongleRead;
 
     private void PollUsbDongle(double at)
@@ -26,6 +27,7 @@ public sealed partial class FramePage
         // A stalled hub query must neither block the graph nor leave an old USB 3 result visible.
         var current = DateTimeOffset.Now - _usbDongle.ObservedAt <= TimeSpan.FromSeconds(15)
             ? _usbDongle : UsbDongleSnapshot.Unknown;
+        _usbCurrent = current;
         DongleUsbReadback.Text = current.Summary;
         DongleUsbReadback.Foreground = new SolidColorBrush(current.HasSlowConnection
             ? Color.FromArgb(255, 255, 185, 83) : Color.FromArgb(255, 200, 200, 208));

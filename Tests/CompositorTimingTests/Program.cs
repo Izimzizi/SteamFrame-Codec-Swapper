@@ -73,6 +73,29 @@ try
     Check(state.SampledFrames == 5 && state.FrameHistoryGaps == 6,
         "Duplicate and overlapping frame entries must be deduplicated by their system time.");
 
+    var correctedSample = Sample(1, frames: [Frame(100, 10)]);
+    var corrected = new CompositorTiming(paths, Path.Combine(root, "clock-correction"), () => correctedSample); corrected.Poll();
+    correctedSample = Sample(4, frames: [Frame(100, 10), Frame(101, 10.011111), Frame(102, 10.0111104), Frame(103, 10.033333)]);
+    var correctedState = corrected.Poll();
+    Check(correctedState.FrameHistoryGaps == 0 && correctedState.SampledFrames == 3,
+        "Reversed predicted vsync timestamps must not invent missing history or discard a real frame.");
+    corrected.Poll();
+    Check(corrected.Current.SampledFrames == 3, "Overlapping corrected timestamps must not replay frame identities.");
+
+    var timeoutSample=Sample(1,frames:[Frame(1,1)]);
+    var timeoutObserver=new CompositorTiming(paths,Path.Combine(root,"timeout-presentations"),()=>timeoutSample);timeoutObserver.Poll();
+    timeoutSample=Sample(2,timeout:1,frames:[Frame(2,1.011)]);
+    var timeoutState=timeoutObserver.Poll();
+    Check(timeoutState.TimedOutEvents==1 && timeoutState.TimedOutPresentations==0,
+        "Entering timeout state must not invent a presentation in that state.");
+    var timeoutStats=timeoutSample.Stats;timeoutStats.Presents=5;timeoutStats.TimedOutPresentations=3;
+    timeoutSample=timeoutSample with {Stats=timeoutStats,Frames=[Frame(3,1.022),Frame(4,1.033),Frame(5,1.044)]};
+    timeoutState=timeoutObserver.Poll();
+    Check(timeoutState.TimedOutEvents==1 && timeoutState.TimedOutPresentations==3 && timeoutState.RecentEvents.Last().TimedOutPresentations==3,
+        "Timeout presentations can advance without entering a new timeout state.");
+    timeoutStats.TimedOutPresentations=0;timeoutSample=timeoutSample with {Stats=timeoutStats};
+    Check(timeoutObserver.Poll().TimedOutPresentations==0,"Timeout presentation counter rollback resets its baseline.");
+
     current = Sample(20, scene: 300, frames: [Frame(20, 11)]);
     state = collector.Poll();
     Check(state.ScenePid == 300 && state.DroppedFrames == 0 && state.SampledFrames == 0,

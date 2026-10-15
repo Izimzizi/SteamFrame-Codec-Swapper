@@ -8,6 +8,20 @@ It does not add filler data or guarantee that every scene reaches that bitrate.
 
 ## Using it
 
+On first launch, **Set up higher bitrate streaming** inspects the installed driver
+and walks through installation. Choosing **Install 500 Mbps override** saves and
+verifies the backup, closes SteamVR, applies and verifies the patch, then restarts
+SteamVR if it was running. A running game may close. **Set up later** makes no
+driver changes. Reopen the walkthrough under **Patches & Recovery**.
+
+An **Already installed** result means the file hash and patch bytes match an
+existing override. Opening the app or selecting a preset does not patch it, but
+applying a preset can install its required override, including in earlier app
+versions. The app does not infer installation from a preset's requested settings.
+Unsupported, unreadable or missing files are never shown as a verified patch.
+
+For manual installation or restore:
+
 1. **Close SteamVR.** Install and restore refuse to run while `vrserver.exe` is running,
    and the check is repeated immediately before the file is replaced.
 2. Click **Driver file and verification → Check driver** to see whether the installed driver is compatible, already

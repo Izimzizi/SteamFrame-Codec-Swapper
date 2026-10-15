@@ -49,7 +49,8 @@ Reset them to the default if streaming misbehaves.
 
 SteamVR reads some numbers as floats and others as integers. The editor keeps them consistent
 with SteamVR; for example `targetBandwidth` is always written as a float, and
-`recommendedBandwidthMbit` as an integer.
+`recommendedBandwidthMbit` as an integer. Both now have their home in Stream settings
+(the automatic starting bandwidth), so they are excluded from this page.
 
 ## Complete presets and recovery
 

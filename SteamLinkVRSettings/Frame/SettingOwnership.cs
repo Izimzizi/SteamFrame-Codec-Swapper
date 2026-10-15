@@ -7,7 +7,7 @@ namespace SteamLinkVRSettings.Frame;
 public static class SettingOwnership
 {
     private static readonly Dictionary<string, SettingItem> ValueDefinitions = SettingDefinitions.BuildCategories().SelectMany(x => x.Settings).ToDictionary(x => x.Key, StringComparer.Ordinal);
-    public static readonly string[] StreamKeys = ["targetBandwidth", "automaticBandwidth", "allowMultipleLinks", "enableAmfEncoder", "streamFormatWidth", "automaticStreamFormatWidth"];
+    public static readonly string[] StreamKeys = ["targetBandwidth", "automaticBandwidth", "recommendedBandwidthMbit", "allowMultipleLinks", "enableAmfEncoder", "streamFormatWidth", "automaticStreamFormatWidth"];
     public static readonly HashSet<string> GuidedKeys = StreamKeys.Concat(AdvancedDriverSettings.Definitions.Select(x => x.Key)).ToHashSet(StringComparer.Ordinal);
     /// <summary>
     /// Integration, privacy, connectivity and power preferences in Additional settings. They are not

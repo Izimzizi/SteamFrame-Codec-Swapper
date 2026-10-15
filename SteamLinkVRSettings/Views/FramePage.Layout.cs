@@ -8,10 +8,11 @@ public sealed partial class FramePage
     public event Action<string>? SectionRequested;
     public void ShowSection(string section)
     {
-        foreach (var panel in new FrameworkElement[] { OverviewView, StreamView, DiagnosticsView, AdvancedView, ConnectionView, ToolsView, StockView }) panel.Visibility = Visibility.Collapsed;
+        foreach (var panel in new FrameworkElement[] { OverviewView, StreamView, BenchmarkView, DiagnosticsView, AdvancedView, ConnectionView, ToolsView, StockView }) panel.Visibility = Visibility.Collapsed;
         var (view, heading, description) = section switch
         {
             "stream" => ((FrameworkElement)StreamView, "Stream settings", "One setup for codec, bitrate and picture quality."),
+            "benchmark" => (BenchmarkView, "Auto tune", "Find a wireless HEVC preset for this PC and your Frame."),
             "diagnostics" => (DiagnosticsView, "Diagnostics", "Find when and where the stream runs into trouble."),
             "advanced" => (AdvancedView, "Advanced", "Change individual encoder and driver behaviors."),
             "connection" => (ConnectionView, "Connection", "Pair developer tools and check the headset connection."),

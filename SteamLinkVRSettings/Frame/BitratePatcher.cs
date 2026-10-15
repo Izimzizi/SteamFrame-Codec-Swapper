@@ -97,7 +97,7 @@ public sealed class BitratePatcher
                 if (plan != null)
                 {
                     backup = GetBackupPath(path, plan.OriginalSha256);
-                    state = hash == plan.OriginalSha256 ? BitratePatchState.Original : BitratePatchState.Patched;
+                    state = ClassifyHash(hash, plan);
                     ValidateSegments(data, plan, state == BitratePatchState.Patched);
                     if (File.Exists(backup + ".patch.json")) RequireReceipt(await ReadReceiptAsync(backup + ".patch.json", ct), plan);
                 }
@@ -132,6 +132,10 @@ public sealed class BitratePatcher
         if (hash == SupportedCurrentOriginalSha256) return manifest.ForCurrentBuild();
         return AdaptivePatchScanner.Discover(bytes);
     }
+    internal static BitratePatchState ClassifyHash(string hash, PatchManifest plan) =>
+        hash == plan.OriginalSha256 ? BitratePatchState.Original :
+        hash == plan.PatchedSha256 ? BitratePatchState.Patched :
+        throw new InvalidDataException("Driver hash matches neither the original nor the patched build.");
     private async Task<PatchManifest> ResolvePlanAsync(string path, byte[] data, CancellationToken ct)
     {
         var hash = Hash(data);

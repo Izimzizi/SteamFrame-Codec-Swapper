@@ -19,6 +19,7 @@
 #include "driver_patterns.h"
 #include "encoding_policy.h"
 #include "advanced_encoding.h"
+#include "probe_telemetry.h"
 
 // Public NVENC ABI for telemetry; strict discovered private layout for optional quality.
 // No hooks, file access or NVENC calls in DllMain.
@@ -65,8 +66,8 @@ struct BufferStamp { uint64_t submitted{}, counted{}; double submittedAt{}; };
 struct Session {
     std::unordered_map<void*, BufferStamp> buffers;
     bool customPolicy{}, capsQueried{}, dynamicBitrate{}, dynamicRc{}, customVbv{}, temporalAq{};
-    uint32_t supportedRc{}, acceptedRc{};
-    bool acceptedRcKnown{};
+    uint32_t supportedRc{}, acceptedRc{}, acceptedMultiPass{};
+    bool acceptedRcKnown{}, rateControlOverridden{}, acceptedMultiPassKnown{}, multiPassOverridden{};
     AdvancedEncoding initializedAdvanced{};
     uint32_t queriedPreset{};
     NV_ENC_CONFIG baselinePreset{}, desiredPreset{};
@@ -106,6 +107,31 @@ struct Stats {
     uint64_t completionCalls{}, completionTotalUs{}, completionMaxUs{}, completionOver2Ms{};
 } stats;
 
+extern "C" __declspec(dllexport) ProbeTelemetry ReadOnlyTelemetry;
+ProbeTelemetry ReadOnlyTelemetry;
+static std::atomic<uint64_t> configurationRevision{0};
+// Called only with statsMutex held, after a completion has updated the counters.
+// No allocation, file I/O, extra thread or encoder API call in the frame path.
+static void publishTelemetry() {
+    auto& p=ReadOnlyTelemetry;
+    InterlockedIncrement64(&p.sequence);
+    p.generation=stats.generation; p.configurationRevision=configurationRevision.load();
+    p.frames=stats.encodedFrames; p.bytes=stats.encodedBytes;
+    p.encodeErrors=stats.encodeErrors; p.lockErrors=stats.lockErrors;
+    p.rejectedCalls=stats.rejectedApiCalls; p.policyErrors=stats.policyErrors;
+    p.lastEncodedSeconds=stats.lastEncodedTime;
+    p.width=stats.encodeWidth; p.height=stats.encodeHeight; p.bitDepth=stats.bitDepth;
+    p.rateControl=stats.rateControl; p.multiPass=stats.multiPass;
+    p.qualityMode=mode.load(); p.requestedPolicy=encodingPolicy.load(); p.appliedPolicy=stats.appliedPolicy;
+    p.flags=(installed.load()?1u:0u)|(qualitySupported.load()?2u:0u)|(stats.policyObserved?4u:0u)|
+        (stats.filler?8u:0u)|(stats.policyNeedsSession?16u:0u)|(stats.policyUnsupported?32u:0u)|
+        (policyRejected.load()?64u:0u)|(!strcmp(stats.codec,"HEVC")?128u:0u)|(!strcmp(stats.codec,"H.264")?256u:0u);
+    p.pendingAdvanced=stats.pendingAdvancedFlags; p.rejectedAdvanced=stats.rejectedAdvancedFlags;
+    p.appliedAdvanced=stats.appliedAdvancedFlags; p.policyCalls=stats.policyCalls;
+    InterlockedIncrement64(&p.sequence);
+}
+struct PublishTelemetryOnExit { ~PublishTelemetryOnExit(){publishTelemetry();} };
+
 double qpcSeconds() {
     LARGE_INTEGER value{}, frequency{};
     QueryPerformanceCounter(&value); QueryPerformanceFrequency(&frequency);
@@ -141,6 +167,15 @@ void recordPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t
         found->second.codecSource = "NVENC accepted codec GUID and encoded output";
         found->second.acceptedRc = params.encodeConfig->rcParams.rateControlMode;
         found->second.acceptedRcKnown = true;
+        found->second.acceptedMultiPass = params.encodeConfig->rcParams.multiPass;
+        found->second.acceptedMultiPassKnown = true;
+        found->second.multiPassOverridden = (policy & 12u) != 0 ||
+            (!initialization && found->second.multiPassOverridden);
+        // Only an explicit app RC override makes us responsible for retaining
+        // that mode on GPUs which cannot change it dynamically. Valve's own
+        // initialize/reconfigure choices must continue through unchanged.
+        found->second.rateControlOverridden = (policy & 3u) != 0 ||
+            (!initialization && found->second.rateControlOverridden);
         if (initialization) {
             found->second.initializedAdvanced = advanced; found->second.initializedAdvanced.flags &= AdvancedInitialization;
             found->second.initializedCodec = params.encodeGUID;
@@ -206,6 +241,10 @@ uint32_t validatedPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, u
     const uint32_t desired = (policy & 3u) == 1 ? NV_ENC_PARAMS_RC_VBR : (policy & 3u) == 2 ? NV_ENC_PARAMS_RC_CBR
         : params.encodeConfig->rcParams.rateControlMode;
     { std::lock_guard<std::mutex> lock(statsMutex); const auto& session = sessions[handle];
+        if (!(policy & 3u) && !session.rateControlOverridden) {
+            stats.policyUnsupported = false; stats.policyNeedsSession = false;
+            return policy;
+        }
         // Valve continues submitting its original VBR config even when the
         // session was initialized in CBR. Compare against the last accepted
         // mode, not that unmodified caller-owned config. On hardware without
@@ -223,6 +262,21 @@ uint32_t validatedPolicy(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, u
         }
     }
     return 0;
+}
+uint32_t validatedMultiPass(void* handle, const NV_ENC_INITIALIZE_PARAMS& params, uint32_t policy, bool initialization) {
+    std::lock_guard<std::mutex> lock(statsMutex);
+    const auto& session = sessions[handle];
+    const auto requested = (policy >> 2) & 3u;
+    if (initialization || (!requested && !session.multiPassOverridden)) return policy;
+    const auto desired = requested ? requested - 1u : static_cast<uint32_t>(params.encodeConfig->rcParams.multiPass);
+    // A successful reconfigure return did not make a full-pass transition safe:
+    // live testing hit a GPU fault/device loss. Change app-owned multipass only
+    // at initialization, retaining the accepted allocation until then.
+    if (!session.acceptedMultiPassKnown || desired != session.acceptedMultiPass) {
+        stats.policyNeedsSession = true;
+        return (policy & ~12u) | (session.acceptedMultiPassKnown ? (session.acceptedMultiPass + 1u) << 2 : 0u);
+    }
+    return policy;
 }
 AdvancedEncoding prepareAdvanced(void* handle, bool initialization, NV_ENC_INITIALIZE_PARAMS& params, NV_ENC_CONFIG& config) {
     auto value = advancedRequest; value.flags &= ~advancedRejected;
@@ -293,6 +347,7 @@ NVENCSTATUS NVENCAPI hookInitialize(void* handle, NV_ENC_INITIALIZE_PARAMS* para
     auto policy = policyRejected.load() ? 0u : encodingPolicy.load();
     if ((policy || advancedRequest.flags) && !canTrackPolicy(handle)) return originalInitialize(handle, params);
     policy = validatedPolicy(handle, *params, policy, true);
+    policy = validatedMultiPass(handle, *params, policy, true);
     auto copied = *params; auto config = *params->encodeConfig;
     ApplyEncodingPolicy(policy, copied, config); copied.encodeConfig = &config;
     auto advanced = prepareAdvanced(handle, true, copied, config);
@@ -325,6 +380,7 @@ NVENCSTATUS NVENCAPI hookReconfigure(void* handle, NV_ENC_RECONFIGURE_PARAMS* pa
     auto policy = policyRejected.load() ? 0u : encodingPolicy.load();
     if ((policy || advancedRequest.flags) && !canTrackPolicy(handle)) return originalReconfigure(handle, params);
     policy = validatedPolicy(handle, params->reInitEncodeParams, policy, false);
+    policy = validatedMultiPass(handle, params->reInitEncodeParams, policy, false);
     auto copied = *params; auto config = *params->reInitEncodeParams.encodeConfig;
     ApplyEncodingPolicy(policy, copied.reInitEncodeParams, config); copied.reInitEncodeParams.encodeConfig = &config;
     auto advanced = prepareAdvanced(handle, false, copied.reInitEncodeParams, config);
@@ -434,6 +490,7 @@ NVENCSTATUS NVENCAPI hookLock(void* handle, NV_ENC_LOCK_BITSTREAM* output) {
     const auto result = originalLock(handle, output);
     if (!installed.load() || !output) return result;
     std::lock_guard<std::mutex> lock(statsMutex);
+    PublishTelemetryOnExit publication;
     const auto session = sessions.find(handle);
     if (session == sessions.end()) return result;
     if (output->version != NV_ENC_LOCK_BITSTREAM_VER) { ++stats.rejectedApiCalls; mode.store(0); return result; }
@@ -523,6 +580,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartProbe(void*) {
         const auto generation = stats.generation + 1;
         stats = {}; stats.generation = generation; sessions.clear();
     }
+    ++configurationRevision;
     mode.store(0); encodingPolicy.store(0); policyRejected.store(false); advancedRequest = {}; advancedRejected = 0; installed.store(true);
     for (auto target : targets) if (target) MH_QueueEnableHook(target);
     if (MH_ApplyQueued() != MH_OK) {
@@ -538,13 +596,13 @@ extern "C" __declspec(dllexport) DWORD WINAPI SetQuality(void* parameter) {
     const int center = static_cast<int8_t>(settings & 255), periphery = static_cast<int8_t>((settings >> 8) & 255);
     if ((settings & ~0x1ffffu) || !QualityOffsetsValid(center, periphery) || !installed.load()) return 1008;
     if ((settings & 0x10000) && !qualitySupported.load()) return 1012;
-    mode.store(settings, std::memory_order_release); return 0;
+    mode.store(settings, std::memory_order_release); ++configurationRevision; return 0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SetEncodingPolicy(void* parameter) {
     std::lock_guard<std::mutex> control(controlMutex);
     const auto policy = reinterpret_cast<uintptr_t>(parameter);
     if (policy > 15 || !EncodingPolicyValid(static_cast<uint32_t>(policy)) || !installed.load()) return 1013;
-    encodingPolicy.store(static_cast<uint32_t>(policy)); policyRejected.store(false);
+    encodingPolicy.store(static_cast<uint32_t>(policy)); policyRejected.store(false); ++configurationRevision;
     return 0; // Acceptance is reported only after the driver's next successful NVENC call.
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SetAdvancedEncoding(void* parameter) {
@@ -552,7 +610,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SetAdvancedEncoding(void* paramete
     if (!parameter || !installed.load()) return 1015;
     const auto request = *static_cast<const AdvancedEncoding*>(parameter);
     if (!AdvancedEncodingValid(request)) return 1015;
-    advancedRequest = request; advancedRejected = 0;
+    advancedRequest = request; advancedRejected = 0; ++configurationRevision;
     std::lock_guard<std::mutex> lock(statsMutex);
     stats.rejectedAdvancedFlags = 0; stats.lastAdvancedError = 0;
     stats.pendingAdvancedFlags = 0;
