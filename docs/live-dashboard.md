@@ -189,7 +189,12 @@ as much for automatic mode as for manual targets. And on a link that varies, let
 from a measured start can deliver more than any fixed target the sweep will certify, because the
 sweep must hold a rate for a full window while automatic mode only has to back off from it. The
 driver logs no "Link BW: Est" lines in automatic mode; the rate it is running at shows in the
-step-down lines and on the card's dashed target line.
+step-down lines and on the card's dashed target line. A second attempt eight minutes later was
+less tidy: automatic mode again climbed within 30 seconds, to 340 to 367 Mbps, but the headset
+dropped the stream as the test scene started and again 40 seconds after the restart, and that
+window ended with no link at all. Starting the scene cost the stream once in four of the day's
+runs, so the first drop is the scene switch; the second is the link itself. Treat the climb as
+real and the hold as something to confirm with a longer session on your own game.
 **Apply N Mbps now** appears for 20 minutes after a sweep whose winning step the encoder
 filled (at least 85% of the target) and sets that target on the running stream with automatic
 bitrate off, in one click and without touching any other control; **Use N Mbps** still loads it
