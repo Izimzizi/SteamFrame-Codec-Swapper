@@ -95,18 +95,80 @@ retries, PC presentation drops and encoded video rate when the monitor is runnin
 clean, marginal or failed: held frames under 0.5% of the refresh rate's frames per minute are
 clean, under 2% marginal, more is failed, with the same split for held time (0.5% and 2% of the
 minute), plus headset loss (0.2% / 1%), worst-case link latency above 50 ms, stream recovery
-requests, and any SteamVR step-down below the step's target. The sweep stops after a failure or
-two marginal steps in a row and reports the highest clean target. Your original target and automatic setting are restored when
-the sweep ends, is stopped, or the app closes. Keep playing during the sweep so the encoder has
-real work; an idle headset produces little video and tells you nothing about the limit. The sweep
-and Auto tune refuse to run at the same time.
+requests, and any SteamVR step-down below the step's target. Receiver retry requests are listed
+with each step but only count against it at 60 or more per minute: they are how lost packets are
+recovered, the loss ratio and held frames are the outcome, and a moving scene at full rate logs a
+few per step on a healthy link.
 
-On the tested setup (6 GHz dongle at −65 dBm, 120 Hz, Auto tune's moving test scene, 500 Mbps
-override installed) the sweep scored 150, 200, 250 and 300 Mbps clean with 132 to 229 Mbps of
-actual video and about 2.5 held frames per minute, then failed 350 Mbps: a one-second link stall,
-SteamVR lowering the stream to 270 Mbps and 39 recovery requests. It reported 300 Mbps as the
-highest clean target and restored the original 270 Mbps manual target. That is a property of that
-link and scene on that day, not a general Frame limit.
+A step that comes out marginal or failed on its first pass is measured a second time at the same
+target (twice per sweep at most): a clean second pass clears a marginal step, since one bad window
+is more often a burst of interference than the limit, and softens a failed step to marginal so the
+sweep continues without recommending that rate by itself; a second marginal or failed pass keeps
+the worse verdict. The sweep stops after a failure or two marginal steps in a row. The highest
+clean step is then confirmed with one more pass at its target before it is reported and saved; a
+marginal or failed confirmation downgrades it and moves the ceiling down a step. The results list
+marks steps measured twice with x2 and keeps both passes' reasons. Your original target and
+automatic setting are restored when the sweep ends, is stopped, or the app closes; with **Apply
+the measured ceiling when the sweep finishes** ticked in the start dialog (the default, remembered
+between runs) the app then puts the highest clean target on the stream with automatic bitrate off,
+so one click measures and applies. Keep playing during the sweep so the encoder has real work: the
+target is only a budget, and the summary states how much video the winning step actually averaged.
+When that is under 85% of the target the result is called lightly tested, because the link was
+never asked for the full rate. An idle headset produces little video and tells you nothing about
+the limit, so the start dialog also offers **Show the moving test scene in the headset during the
+sweep**: it runs Auto tune's scene (the same `SteamFrameBenchmark.exe`, unattended, with its own
+camera motion) for the length of the sweep and stops it afterwards. It is ticked by default when
+the sweep had to bring the stream back itself (an idle headset), the video link is down, or under
+20 Mbps of video is being encoded, that is when nothing is really playing; a still headset view
+still encodes most of any target on a padded CBR stream, so the encoded rate alone cannot tell.
+The scene takes over the headset view from any running VR app, so leave it off while you play. Switching SteamVR to the scene can make the Frame reset its stream once; the sweep waits
+five seconds and restarts the stream before the first step if that happens. With the scene the
+tested setup encoded 145 Mbps of video at a 150 Mbps target and 182 at 200, against 115 and 157
+from a still headset. The sweep and Auto tune refuse to run at the same time.
+
+On the tested setup (6 GHz dongle at −62 to −65 dBm, 120 Hz, 500 Mbps override installed) three
+sweeps in one afternoon gave three answers. With Auto tune's moving test scene the first scored
+150, 200, 250 and 300 Mbps clean with 132 to 229 Mbps of actual video and about 2.5 held frames
+per minute, then failed 350 Mbps on a one-second link stall, SteamVR lowering the stream to
+270 Mbps and 39 recovery requests: 300 Mbps reported. A headless run an hour later (headset on the
+desk, static scene, the sweep's own keep-awake lease) scored 150 and 200 clean, 250 marginal on
+five receiver retry requests with 0.04% loss and 300 marginal on 25 held frames per minute:
+200 Mbps reported. Fifteen minutes after that, 200 Mbps failed outright on 0.45% headset packet
+loss with two stream recovery requests, and 150 Mbps was confirmed clean on a second pass:
+150 Mbps reported, with SteamVR's own capacity histogram still showing 97% of frames at or above
+350 Mbps. The radio looked the same each time; the 24-second windows did not. The second-pass
+rules and the sweep history line came out of those runs. A measured ceiling is a property of that
+link and scene at that hour, not a general Frame limit.
+
+### Keep Frame awake
+
+With the Frame off your head, its proximity sensor lets streaming idle about a minute after the
+last activity, which the driver logs as reset requests, 300 ms sender stalls and then "Connection
+inactive". **Keep Frame awake** renews the headset's own 60-second activity extension every
+20 seconds over the paired SSH connection, exactly as Auto tune's unattended mode does. Nothing
+else changes on the headset; the extension ends when the switch is turned off or the app closes,
+so a crashed PC leaves at most one more minute of activity. The sweep and Restart Frame stream
+hold the same extension while they run.
+
+After a sweep, the highest clean target is kept across restarts (the card reports it as the
+last measured ceiling with its date and the frame rate the PC delivered during that step) and saved as a personal preset named
+"Measured ceiling N Mbps …", built from the current setup with only the target changed and
+automatic bitrate off. The headline compares it with Valve's 200 Mbps automatic starting rate.
+Each sweep replaces the measured-ceiling preset the app saved before, so the list holds one;
+rename a preset to keep it. The last 20 sweep results are kept too: once two fall within a week
+the card says whether they agreed within a step or ranged (for example "from 150 to 300 Mbps"),
+and for a link that varies it suggests settling on the lower value for a quiet stream or using
+automatic bitrate starting at the higher one so SteamVR backs off when the link dips. A sweep that
+finds no clean step retires the saved ceiling (no Apply button, no preset) and is recorded as
+such; the headline then says nothing above its best marginal rate is worth trying now. Once the
+week's clean ceilings disagree by a step or more, **Automatic from N Mbps** appears beside Apply:
+one click turns automatic bitrate on with SteamVR starting at the highest ceiling measured (the
+`recommendedBandwidthMbit` Valve leaves at 200) and raises the manual target to at least that so
+it does not cap the start. SteamVR then steps down on link trouble and the card shows the rate it
+settles at. A link whose sweeps agree keeps the fixed measured ceiling instead.
+**Apply N Mbps now** sets that target on the running stream (or saves it for the next session)
+with automatic bitrate off, in one click and without touching any other control; **Use N Mbps**
+still loads it into Stream settings for review instead.
 
 ### Restart Frame stream
 

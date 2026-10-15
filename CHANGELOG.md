@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased — Headless sweeps and the measured ceiling
+
+- **Keep Frame awake** on the Overview card renews the headset's own 60-second activity
+  extension every 20 seconds over the paired SSH link, like Auto tune's unattended mode, so a
+  Frame on a desk keeps streaming. The capacity sweep and Restart Frame stream hold the same
+  extension while they run; it ends when switched off or when the app closes.
+- The sweep's highest clean target is kept across restarts and saved as a personal preset
+  ("Measured ceiling N Mbps …") built from the current setup with only the target changed. The
+  card compares it with Valve's 200 Mbps automatic starting rate, and **Apply N Mbps now** puts
+  the measured ceiling on the running stream in one click with automatic bitrate off.
+- The sweep measures a marginal or failed step a second time before it counts (twice per sweep
+  at most) and confirms the winning step with another pass before saving it as the measured
+  ceiling, so one burst of interference neither ends the sweep early nor becomes the recommended
+  rate. A failure that does not repeat counts as marginal: the sweep goes on, but that rate is
+  not recommended on its own.
+  Two-pass steps are marked in the results and the summary names every marginal target. Each
+  sweep replaces the measured-ceiling preset the app saved before instead of adding another.
+- The card keeps the last 20 sweep results and, once two fall within a week, says whether they
+  agreed within a step or ranged, with advice for a link that varies: settle on the lower value,
+  or use automatic bitrate starting at the higher one so SteamVR backs off when the link dips.
+  For the first 90 seconds after a sweep the card says the live counters still include the
+  sweep's highest steps instead of arguing with the result.
+- The sweep's start dialog offers **Apply the measured ceiling when the sweep finishes** (on by
+  default, remembered), so one click measures the link and puts the result on the stream. The
+  summary now states how much video the winning step actually averaged and calls the result
+  lightly tested when that was under 85% of the target, since a static scene never asks the link
+  for the full rate.
+- Reading steamvr.vrsettings right after a change no longer fails with "being used by another
+  process": SteamVR holds the file exclusively for a moment while it saves, and the read now waits
+  it out. The sweep's measured-ceiling preset was the first victim.
+- The sweep can show Auto tune's moving test scene in the headset while it measures (ticked by
+  default when nothing is playing), so a headset on the desk tests the link at the full rate
+  instead of a still scene's third of it. Receiver retry requests are now listed per step and
+  count against a step only at 60 or more per minute; held frames and the headset loss ratio
+  remain the judges, since a full-rate scene logs a few retries per step on a healthy link.
+- A sweep that finds no clean step now leads the card (nothing above its best marginal rate is
+  worth trying now), retires the saved ceiling instead of leaving an "Apply N Mbps" button for a
+  rate the link just refused, and is kept in the history as such.
+- **Automatic from N Mbps** appears once the week's clean ceilings disagree by a step or more:
+  one click turns automatic bitrate on with SteamVR starting at the highest ceiling measured
+  instead of Valve's 200, with the manual target raised so it does not cap the start.
+
 ## 1.7.0 — Wireless auto tune, link visibility and guided setup
 
 - Overview's new **Wireless link** card reads SteamVR's own adaptive-bitrate output from the

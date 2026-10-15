@@ -171,6 +171,8 @@
                         <StackPanel Spacing="8">
                             <TextBlock Text="Wireless link" FontSize="15" />
                             <TextBlock x:Name="LinkStateReadback" Text="Video link: no change seen since this app opened" TextWrapping="Wrap" />
+                            <ToggleSwitch x:Name="KeepFrameAwakeInput" Header="Keep Frame awake" OnContent="Renewing the headset's activity extension" OffContent="Headset idles normally when it is off your head" Toggled="KeepFrameAwake_Toggled" IsEnabled="False" />
+                            <TextBlock x:Name="KeepFrameAwakeHint" Text="For tests with the Frame on a desk: extends the headset's own activity timeout by 60 s every 20 s over the paired SSH connection, like Auto tune's unattended mode. Nothing else changes; the extension ends when this is switched off or the app closes. The sweep and Restart Frame stream hold it automatically." Style="{StaticResource Hint}" MaxWidth="900" />
                             <TextBlock x:Name="LinkEstimateReadback" Text="SteamVR link estimate: waiting for a stream" TextWrapping="Wrap" />
                             <TextBlock x:Name="HeldFramesReadback" Text="Held frames: none recorded yet" TextWrapping="Wrap" />
                             <TextBlock x:Name="CapacityReadback" Text="Link capacity: waiting for SteamVR's 30-second capacity histogram." Style="{StaticResource Hint}" MaxWidth="900" />
@@ -192,7 +194,11 @@
                             <TextBlock x:Name="AdviceHeadline" Text="No recommendation yet." FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="900" />
                             <TextBlock x:Name="AdviceReasons" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
                             <StackPanel Spacing="12" Orientation="Horizontal">
+                                <Button x:Name="ApplyCeilingButton" Content="Apply measured ceiling" Style="{StaticResource SteamActionButtonStyle}" Click="ApplyCeiling_Click" Visibility="Collapsed" />
+                                <Button x:Name="AutoStartButton" Content="Automatic from measured" Click="AutomaticStart_Click" Visibility="Collapsed" ToolTipService.ToolTip="Turns automatic bitrate on with SteamVR starting at the highest clean ceiling the last week's sweeps measured, so it starts high and backs off when the link dips." />
                                 <Button x:Name="UseAdviceButton" Content="Use recommended target" Click="UseAdvice_Click" IsEnabled="False" />
+                            </StackPanel>
+                            <StackPanel Spacing="12" Orientation="Horizontal">
                                 <Button x:Name="SweepButton" Content="Find my link's limit" Click="Sweep_Click" IsEnabled="False" />
                                 <Button x:Name="SweepStopButton" Content="Stop sweep" Click="StopSweep_Click" Visibility="Collapsed" />
                                 <Button x:Name="RestartStreamButton" Content="Restart Frame stream" Click="RestartFrameStream_Click" />

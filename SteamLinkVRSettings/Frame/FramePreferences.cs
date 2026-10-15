@@ -2,6 +2,9 @@ using System.Text.Json;
 
 namespace SteamLinkVRSettings.Frame;
 
+/// <summary>One finished sweep, kept in preferences so the card can show how the link varies between runs.</summary>
+public sealed record SweepRecord(DateTimeOffset At, int CeilingMbps, int RefreshHz, string Summary, bool NoCleanStep = false);
+
 public sealed class FramePreferences
 {
     public string AdbPath { get; set; } = DiscoverAdb();
@@ -20,10 +23,31 @@ public sealed class FramePreferences
     public int CodecTargetMbps { get; set; } = 100;
     public int CodecFps { get; set; } = 90;
     public int BitrateSetupVersion { get; set; }
+    /// <summary>Whether a finished sweep puts its measured ceiling on the stream straight away.</summary>
+    public bool SweepApplyWhenDone { get; set; } = true;
+    /// <summary>The last capacity sweep's highest clean target, kept so the measured ceiling survives restarts.</summary>
+    public int? LastSweepCeilingMbps { get; set; }
+    public DateTimeOffset? LastSweepAt { get; set; }
+    public string LastSweepSummary { get; set; } = "";
+    public int LastSweepRefreshHz { get; set; }
+    /// <summary>Finished sweeps, newest last, so the card can show how much the link varies between runs.</summary>
+    public List<SweepRecord> SweepHistory { get; set; } = [];
+    /// <summary>Preferences written before the history existed carry one result; it becomes the first record.</summary>
+    public void SeedSweepHistory()
+    {
+        if (SweepHistory.Count == 0 && LastSweepCeilingMbps is int ceiling && LastSweepAt is { } at)
+            SweepHistory.Add(new SweepRecord(at, ceiling, LastSweepRefreshHz, LastSweepSummary));
+    }
     private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamLinkVRSettings", "frame.json");
     public static FramePreferences Load(string? path = null)
     {
-        try { return JsonSerializer.Deserialize<FramePreferences>(File.ReadAllText(path ?? FilePath)) ?? new(); }
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<FramePreferences>(File.ReadAllText(path ?? FilePath)) ?? new();
+            loaded.SweepHistory ??= [];
+            loaded.SeedSweepHistory();
+            return loaded;
+        }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return new(); }
     }
     public async Task SaveAsync(string? path = null)

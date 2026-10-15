@@ -28,6 +28,18 @@ public sealed class PresetStore(string? path = null)
         var preset = new NamedPreset(existing >= 0 ? values[existing].Id : Guid.NewGuid().ToString("D"), name, profile);
         if (existing >= 0) values[existing] = preset; else values.Add(preset);
         if (values.Count > 200) throw new IOException("The catalog already contains 200 presets.");
+        await WriteAsync(values);
+    }
+    /// <summary>Removes every preset the predicate selects and returns how many went.</summary>
+    public async Task<int> RemoveAsync(Func<NamedPreset, bool> predicate)
+    {
+        var values = (await ReadAsync()).ToList();
+        var removed = values.RemoveAll(value => predicate(value));
+        if (removed > 0) await WriteAsync(values);
+        return removed;
+    }
+    private async Task WriteAsync(List<NamedPreset> values)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_path))!);
         var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try { await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = true })); File.Move(temporary, _path, true); }

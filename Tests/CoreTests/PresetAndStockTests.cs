@@ -40,6 +40,20 @@ public sealed class PresetAndStockTests : IDisposable
         Assert.Equal(false, driver["enableHandTracking"]); Assert.Equal(false, driver["enableNAT"]); Assert.Equal(false, driver["allowVolumeSync"]); Assert.Equal(600, driver["wirelessShutdownTimeout"]);
     }
     [Fact]
+    public async Task ReadingOverridesWaitsOutSteamVrRewritingItsSettingsFile()
+    {
+        await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"targetBandwidth":270.0}}""");
+        // Hold the file exclusively, as SteamVR does while saving, and let go after a few retry intervals.
+        using (var exclusive = new FileStream(Driver.UserConfigPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var release = Task.Run(async () => { await Task.Delay(450); exclusive.Dispose(); });
+            var overrides = await Driver.LoadUserOverridesAsync();
+            Assert.Equal(270.0, overrides["targetBandwidth"]);
+            await release;
+        }
+        Assert.Throws<FileNotFoundException>(() => File.OpenRead(Path.Combine(_root, "absent.json")));
+    }
+    [Fact]
     public async Task OlderPresetsWithNonTuningSettingsStillLoadWithoutThem()
     {
         var path = Path.Combine(_root, "legacy-presets.json");
@@ -67,6 +81,19 @@ public sealed class PresetAndStockTests : IDisposable
         Assert.Equal(original.Advanced, first.Profile.Advanced); Assert.Equal(original.GazeOffset, first.Profile.GazeOffset); Assert.True(first.Profile.BitratePatch);
         Assert.Equal(EncoderMultiPass.FullResolution, first.Profile.MultiPass);
         await reopened.SaveAsync("BALANCED", original with { Fps = 120 }); var updated = Assert.Single(await store.ReadAsync()); Assert.Equal(first.Id, updated.Id); Assert.Equal(120, updated.Profile.Fps);
+    }
+    [Fact]
+    public async Task RemovingPresetsByPredicateKeepsTheOthers()
+    {
+        var path = Path.Combine(_root, "presets-remove.json"); var store = new PresetStore(path);
+        var profile = new TuningProfile { TargetMbps = 200, Fps = 90, Driver = new() { ["targetBandwidth"] = JsonSerializer.SerializeToElement(200d) } };
+        await store.SaveAsync("Measured ceiling 200 Mbps 10-15 15-08", profile);
+        await store.SaveAsync("Measured ceiling 300 Mbps 10-15 14-52", profile with { TargetMbps = 300 });
+        await store.SaveAsync("Living room 300", profile with { TargetMbps = 300 });
+        Assert.Equal(2, await store.RemoveAsync(preset => LinkCapacitySweep.IsMeasuredPresetName(preset.Name)));
+        Assert.Equal(["Living room 300"], (await store.ReadAsync()).Select(x => x.Name).ToArray());
+        Assert.Equal(0, await store.RemoveAsync(preset => LinkCapacitySweep.IsMeasuredPresetName(preset.Name)));
+        Assert.Equal(0, await new PresetStore(Path.Combine(_root, "missing.json")).RemoveAsync(_ => true));
     }
     [Fact]
     public async Task BuiltInHighQualityRestoresCompleteSetupAndKeepsPairing()

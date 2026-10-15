@@ -144,12 +144,30 @@ public class SettingsService
         _ => JsonValue.Create(value.ToString())
     };
 
+    /// <summary>SteamVR rewrites its settings file exclusively for a moment after every change, so a read that lands then is retried briefly.</summary>
+    private const int ReadAttempts = 8;
+    private static readonly TimeSpan ReadRetryDelay = TimeSpan.FromMilliseconds(150);
+
     private static async Task<string> ReadFileAsync(string path)
     {
-        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(fs);
-        return await reader.ReadToEndAsync();
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(fs);
+                return await reader.ReadToEndAsync();
+            }
+            catch (IOException error) when (attempt < ReadAttempts && IsSharingViolation(error))
+            {
+                await Task.Delay(ReadRetryDelay);
+            }
+        }
     }
+
+    private static bool IsSharingViolation(IOException error)
+        => error is not FileNotFoundException and not DirectoryNotFoundException
+           && (error.HResult & 0xFFFF) is 32 or 33; // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
 
     private static async Task WriteFileAsync(string path, string content)
     {

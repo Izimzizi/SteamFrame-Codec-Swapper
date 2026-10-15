@@ -27,7 +27,7 @@ including the ones SteamVR doesn't show in its own UI.
 | **Advanced controls** | Tune CQ, maximum QP, peak bitrate, VBV, chroma, AQ and presets, plus resolution, buffering and sending settings, with accepted/pending/rejected readbacks and restoration. |
 | **Live dashboard** | Graphs actual encoded video Mbps and FPS, the requested target, and adapter traffic over the last 60 seconds. |
 | **Wireless link** | Reads SteamVR's own link estimate, capacity histogram, held frames and bitrate step-downs from the driver log, plus the dongle's radio band, channel, PHY rate and signal from Windows, with no pairing. An advisor turns them into one recommended target. |
-| **Capacity sweep** | Raises the manual target step by step while you play, scores each step on held frames, stalls, loss and recovery, reports the highest clean rate, and restores your target. Auto tune remains the full preset comparison. |
+| **Capacity sweep** | Raises the manual target step by step while you play, scores each step on held frames, stalls, loss and recovery, re-checks marginal steps and confirms the winner with a second pass, then reports the highest clean rate, saves it as a preset and restores your target. **Apply N Mbps now** puts the measured ceiling on the stream in one click. Auto tune remains the full preset comparison. |
 | **Auto tune** | Explores stream widths, 90/120 Hz, single/quarter/full multipass, independent gaze/periphery offsets (including 0 / 0), measured combinations and adaptive bitrate in an unattended headset scene. Ranks detail and smoothness instead of Mbps alone, then returns explicit presets with measured tradeoffs. Short screens, configurable serious-issue limits and exact headroom confirmations keep the search bounded. See [Auto tune](docs/auto-tune.md). |
 | **Codec selector** | Switch between HEVC, AV1 and H.264, choose H.264 25–500 Mbps or AV1 25–200 Mbps at 90/120 Hz, and restore stock HEVC. AV1/H.264 are exact-build experiments and restart the stream. |
 | **Streaming issue capture** | Timestamps recovery requests, bad-link events, encoder stalls, PC presentation drops and headset receiver faults, and saves them as JSONL. |
@@ -72,11 +72,33 @@ in the Frame's streaming menu if needed. See the [reconnection guide](docs/live-
 3. On **Overview**, click **Start monitoring** to see the real encoded bitrate. **Diagnostics** contains detailed timing and fault reports.
    The **Wireless link** card shows SteamVR's link estimate, held frames and capacity histogram
    within 30 seconds of streaming, the dongle's radio signal, and a recommended target.
-   **Find my link's limit** measures the highest clean bitrate while you play.
+   **Find my link's limit** measures the highest clean bitrate while you play (a headset on the
+   desk is kept awake, restarted for you and shown a moving test scene) and, by default, applies
+   it when it finishes;
+   **Apply N Mbps now** puts a saved result back on the stream later.
 4. Optionally enable **Custom foveation bias**. **Quality focus** (gaze −4, periphery +8)
    is a good starting point.
 5. To request more than 232 Mbps on a stock driver, close SteamVR and use
    **Patches & Recovery → Install 500 Mbps override** first.
+
+### More bitrate than Valve's default, in three clicks
+
+Valve's automatic mode starts every stream at 200 Mbps and feels its way from there. To find
+what your link really carries and use it:
+
+1. Put the Frame on the desk with SteamVR running and click **Find my link's limit** on
+   Overview. The app wakes the headset, restarts the stream if it has idled, shows a moving test
+   scene so the encoder works at the full rate, raises the target in 50 Mbps steps, re-checks
+   any marginal or failed step, confirms the winner with a second pass, and applies the highest
+   clean target when it finishes (about 5 to 8 minutes).
+2. Play. The Wireless link card shows held frames, headset loss and SteamVR's own link estimate
+   at that rate; **Apply N Mbps now** brings a saved result back any time.
+3. Sweep again on another day. Once the week's results disagree by a step or more, the card
+   says so and offers **Automatic from N Mbps**: automatic bitrate with SteamVR starting at the
+   highest ceiling you measured instead of 200, backing off only when the link dips.
+
+A sweep is a measurement of that link at that hour, not a promise; the card keeps the last
+20 results so you can see how steady your setup is.
 
 Use **Save preset…** in Stream settings to keep one complete tuning setup. Selecting
 a preset fills the editor without modifying the stream; Apply activates it. Presets

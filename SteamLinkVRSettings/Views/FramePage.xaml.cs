@@ -130,8 +130,10 @@ public sealed partial class FramePage : Page
     public async Task CloseAsync()
     {
         _benchmarkStop?.Cancel();
-        // A running capacity sweep restores the user's target before anything else is released.
+        // A running capacity sweep restores the user's target before anything else is released,
+        // and the headset's activity extension is ended rather than left to its last minute.
         await StopSweepAsync();
+        try { await ReleaseFrameAwakeAsync(); } catch (Exception) { }
         // Release only the ephemeral port created by this page, never the ADB server.
         await _actions.WaitAsync();
         try

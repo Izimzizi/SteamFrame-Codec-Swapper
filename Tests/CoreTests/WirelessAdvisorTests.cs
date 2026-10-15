@@ -191,6 +191,11 @@ public class LinkCapacitySweepTests
         Assert.Equal(SweepVerdict.Failed, LinkCapacitySweep.Evaluate(400, Sample(seconds: 3)).Verdict);
         var drops = LinkCapacitySweep.Evaluate(200, Sample(drops: 4));
         Assert.Equal(SweepVerdict.Clean, drops.Verdict); Assert.Contains("not counted against the link", drops.Reason);
+        // Retry requests are listed but only a flood counts: a moving scene logs a few per step on a healthy link.
+        var recovered = LinkCapacitySweep.Evaluate(150, Sample(retries: 8, video: 145));
+        Assert.Equal(SweepVerdict.Clean, recovered.Verdict); Assert.Equal("Clean; encoded video averaged 145 Mbps. 8 receiver retry requests, recovered.", recovered.Reason);
+        var flood = LinkCapacitySweep.Evaluate(150, Sample(retries: 30)); // 75 per minute
+        Assert.Equal(SweepVerdict.Marginal, flood.Verdict); Assert.Contains("30 receiver retry requests (75 per minute)", flood.Reason);
     }
 
     [Fact]
@@ -207,7 +212,7 @@ public class LinkCapacitySweepTests
         Assert.True(LinkCapacitySweep.ShouldStop(results));
         var conclusion = LinkCapacitySweep.Conclude(results);
         Assert.Equal(250, conclusion.BestCleanMbps); Assert.Equal(350, conclusion.HighestMarginalMbps);
-        Assert.Contains("Highest clean target: 250 Mbps; 350 Mbps was marginal", conclusion.Summary);
+        Assert.Contains("Highest clean target: 250 Mbps; 300 and 350 Mbps were marginal", conclusion.Summary);
         var failedFirst = new List<SweepStepResult> { LinkCapacitySweep.Evaluate(200, Sample(throttles: 44)) };
         Assert.True(LinkCapacitySweep.ShouldStop(failedFirst));
         Assert.Null(LinkCapacitySweep.Conclude(failedFirst).BestCleanMbps);
@@ -215,5 +220,138 @@ public class LinkCapacitySweepTests
         // A clean step above an earlier failure is not trusted.
         var odd = new List<SweepStepResult> { LinkCapacitySweep.Evaluate(200, Sample()), LinkCapacitySweep.Evaluate(250, Sample(throttles: 44)), LinkCapacitySweep.Evaluate(300, Sample()) };
         Assert.Equal(200, LinkCapacitySweep.Conclude(odd).BestCleanMbps);
+    }
+
+    [Fact]
+    public void A_marginal_step_is_rechecked_and_the_winner_is_confirmed_with_a_second_pass()
+    {
+        var first = LinkCapacitySweep.Evaluate(250, Sample(throttles: 12)); // 30 per minute: marginal at 90 Hz
+        Assert.True(LinkCapacitySweep.NeedsRecheck(first, 0));
+        Assert.False(LinkCapacitySweep.NeedsRecheck(first, LinkCapacitySweep.MaxRechecks));
+        Assert.False(LinkCapacitySweep.NeedsRecheck(LinkCapacitySweep.Evaluate(250, Sample()), 0));
+        Assert.True(LinkCapacitySweep.NeedsRecheck(LinkCapacitySweep.Evaluate(250, Sample(throttles: 44)), 0));
+        // A failed first pass that does not repeat is softened to marginal: the sweep goes on, but the rate is not recommended by itself.
+        var failedOnce = LinkCapacitySweep.Recheck(LinkCapacitySweep.Evaluate(200, Sample(loss: 0.02, resets: 2)), LinkCapacitySweep.Evaluate(200, Sample(video: 160)));
+        Assert.Equal(SweepVerdict.Marginal, failedOnce.Verdict); Assert.Contains("first pass failed", failedOnce.Reason); Assert.Equal(2, failedOnce.Passes);
+        Assert.False(LinkCapacitySweep.ShouldStop([LinkCapacitySweep.Evaluate(150, Sample()), failedOnce]));
+        // The sweep went on and found clean steps above it; the summary still records the step that failed once.
+        Assert.Equal("Highest clean target: 250 Mbps; 200 Mbps was marginal.", LinkCapacitySweep.Conclude([LinkCapacitySweep.Evaluate(150, Sample()), failedOnce, LinkCapacitySweep.Evaluate(250, Sample())]).Summary);
+        Assert.Equal(SweepVerdict.Failed, LinkCapacitySweep.Recheck(LinkCapacitySweep.Evaluate(200, Sample(resets: 2)), LinkCapacitySweep.Evaluate(200, Sample(throttles: 12))).Verdict);
+        Assert.Equal(SweepVerdict.Failed, LinkCapacitySweep.Recheck(LinkCapacitySweep.Evaluate(200, Sample(resets: 2)), LinkCapacitySweep.Evaluate(200, Sample(resets: 1))).Verdict);
+
+        var cleared = LinkCapacitySweep.Recheck(first, LinkCapacitySweep.Evaluate(250, Sample(video: 190)));
+        Assert.Equal(SweepVerdict.Clean, cleared.Verdict); Assert.Equal(2, cleared.Passes);
+        Assert.Contains("Clean on the re-check", cleared.Reason); Assert.Contains("first pass saw: 30 held frames", cleared.Reason);
+        Assert.False(LinkCapacitySweep.NeedsRecheck(cleared, 0));
+        var still = LinkCapacitySweep.Recheck(first, LinkCapacitySweep.Evaluate(250, Sample(throttles: 13)));
+        Assert.Equal(SweepVerdict.Marginal, still.Verdict); Assert.Equal(2, still.Passes); Assert.Contains("on the re-check", still.Reason);
+        Assert.False(LinkCapacitySweep.NeedsRecheck(still, 0)); // never a third pass
+        var worse = LinkCapacitySweep.Recheck(first, LinkCapacitySweep.Evaluate(250, Sample(throttles: 44)));
+        Assert.Equal(SweepVerdict.Failed, worse.Verdict); Assert.Equal(44, worse.Sample.ThrottleEvents);
+        Assert.Throws<ArgumentException>(() => LinkCapacitySweep.Recheck(first, LinkCapacitySweep.Evaluate(300, Sample())));
+
+        var best = LinkCapacitySweep.Evaluate(300, Sample(video: 220));
+        var confirmed = LinkCapacitySweep.Confirm(best, LinkCapacitySweep.Evaluate(300, Sample(video: 225)));
+        Assert.Equal(SweepVerdict.Clean, confirmed.Verdict); Assert.Equal(2, confirmed.Passes); Assert.Contains("Confirmed clean on a second pass", confirmed.Reason);
+        var downgraded = LinkCapacitySweep.Confirm(best, LinkCapacitySweep.Evaluate(300, Sample(throttles: 12)));
+        Assert.Equal(SweepVerdict.Marginal, downgraded.Verdict); Assert.Contains("confirmation pass after a clean first pass", downgraded.Reason);
+        Assert.Throws<ArgumentException>(() => LinkCapacitySweep.Confirm(best, LinkCapacitySweep.Evaluate(350, Sample())));
+
+        // A downgraded winner moves the ceiling down a step, and the summary names every marginal target above it.
+        var results = new List<SweepStepResult> { LinkCapacitySweep.Evaluate(200, Sample()), LinkCapacitySweep.Evaluate(250, Sample()), downgraded, LinkCapacitySweep.Evaluate(350, Sample(throttles: 12)) };
+        var conclusion = LinkCapacitySweep.Conclude(results);
+        Assert.Equal(250, conclusion.BestCleanMbps);
+        Assert.Equal("Highest clean target: 250 Mbps; 300 and 350 Mbps were marginal.", conclusion.Summary);
+        Assert.Null(conclusion.CarriedVideoMbps); Assert.False(conclusion.LightlyTested);
+        Assert.Equal("Highest clean target: 200 Mbps; 250 Mbps was marginal; 300 Mbps failed.", LinkCapacitySweep.Conclude(
+        [
+            LinkCapacitySweep.Evaluate(200, Sample()), LinkCapacitySweep.Evaluate(250, Sample(throttles: 12)), LinkCapacitySweep.Evaluate(300, Sample(throttles: 44))
+        ]).Summary);
+    }
+
+    [Fact]
+    public void The_conclusion_says_how_much_video_the_clean_step_really_carried()
+    {
+        // A static scene fills a third of the budget: the summary says so and flags the result as lightly tested.
+        var light = LinkCapacitySweep.Conclude([LinkCapacitySweep.Evaluate(300, Sample(video: 233)), LinkCapacitySweep.Evaluate(350, Sample(throttles: 20))]);
+        Assert.Equal(300, light.BestCleanMbps); Assert.Equal(233, light.CarriedVideoMbps); Assert.True(light.LightlyTested);
+        Assert.Equal("Highest clean target: 300 Mbps; 350 Mbps was marginal. Encoded video averaged 233 Mbps at that step, so higher rates were only lightly tested; play something heavier for a fuller test.", light.Summary);
+        // A busy scene that nearly fills the target is a full test.
+        var full = LinkCapacitySweep.Conclude([LinkCapacitySweep.Evaluate(300, Sample(video: 262))]);
+        Assert.False(full.LightlyTested);
+        Assert.Equal("Highest clean target: 300 Mbps. Encoded video averaged 262 Mbps at that step.", full.Summary);
+        // The carried rate belongs to the clean step that won, not to a higher marginal one.
+        var mixed = LinkCapacitySweep.Conclude([LinkCapacitySweep.Evaluate(200, Sample(video: 190)), LinkCapacitySweep.Evaluate(250, Sample(throttles: 12, video: 240))]);
+        Assert.Equal(190, mixed.CarriedVideoMbps);
+    }
+
+    [Fact]
+    public void Sweep_history_describes_how_much_the_link_varies()
+    {
+        var now = new DateTimeOffset(2026, 10, 15, 15, 30, 0, TimeSpan.FromHours(-7));
+        var history = new List<SweepRecord>();
+        Assert.Null(LinkCapacitySweep.DescribeHistory(history, now));
+        LinkCapacitySweep.Record(history, new(now.AddMinutes(-40), 300, 120, "Highest clean target: 300 Mbps; 350 Mbps failed."));
+        Assert.Null(LinkCapacitySweep.DescribeHistory(history, now));
+        LinkCapacitySweep.Record(history, new(now.AddMinutes(-22), 200, 120, "Highest clean target: 200 Mbps; 250 and 300 Mbps were marginal."));
+        LinkCapacitySweep.Record(history, new(now.AddMinutes(-7), 150, 120, "Highest clean target: 150 Mbps; 200 Mbps failed."));
+        var spread = LinkCapacitySweep.DescribeHistory(history, now)!;
+        Assert.StartsWith("The last 3 sweeps ranged from 150 to 300 Mbps (300 Mbps at ", spread);
+        Assert.Contains("settle on 150 Mbps for a quiet stream, or use automatic bitrate starting at 300 Mbps", spread);
+        // Old runs fall out of the week-long window; close agreement is reported as such.
+        var steady = new List<SweepRecord> { new(now.AddDays(-9), 100, 90, ""), new(now.AddHours(-3), 250, 90, ""), new(now.AddHours(-1), 250, 90, "") };
+        Assert.StartsWith("The last two sweeps agreed within a step: 250 Mbps at ", LinkCapacitySweep.DescribeHistory(steady, now));
+        Assert.Null(LinkCapacitySweep.DescribeHistory(steady, now.AddDays(8)));
+        // A spread of a step or more argues for automatic mode starting at the highest clean ceiling.
+        Assert.Equal(300, LinkCapacitySweep.AutomaticStart(history, now));
+        Assert.Null(LinkCapacitySweep.AutomaticStart([history[0]], now));
+        Assert.Null(LinkCapacitySweep.AutomaticStart(history, now.AddDays(8)));
+        Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 250, 90, ""), new(now.AddHours(-1), 250, 90, "")], now));
+        Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 150, 90, ""), new(now.AddHours(-1), 500, 90, "", NoCleanStep: true)], now));
+        // A sweep that found no clean step is left out of the range but mentioned.
+        LinkCapacitySweep.Record(history, new(now.AddMinutes(-2), 200, 120, "No step was fully clean; 200 Mbps was the best marginal result.", NoCleanStep: true));
+        var withGap = LinkCapacitySweep.DescribeHistory(history, now)!;
+        Assert.StartsWith("The last 3 sweeps ranged from 150 to 300 Mbps (", withGap); Assert.Contains(" One sweep found no clean step at all. This link changes", withGap);
+        var onlyGaps = new List<SweepRecord> { new(now.AddHours(-2), 250, 90, "", NoCleanStep: true), new(now.AddHours(-1), 300, 90, "") };
+        Assert.Equal("The last 2 sweeps disagreed. One sweep found no clean step at all. Sweep again before trusting any single result.", LinkCapacitySweep.DescribeHistory(onlyGaps, now));
+        // The list is capped.
+        var many = new List<SweepRecord>();
+        for (var i = 0; i < LinkCapacitySweep.HistoryLimit + 5; i++) LinkCapacitySweep.Record(many, new(now.AddMinutes(-i), 200 + i, 90, ""));
+        Assert.Equal(LinkCapacitySweep.HistoryLimit, many.Count); Assert.Equal(205, many[0].CeilingMbps);
+    }
+
+    [Fact]
+    public async Task Sweep_history_survives_a_restart_and_is_seeded_from_an_older_single_result()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "slvr-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var path = Path.Combine(folder, "frame.json");
+            var preferences = new FramePreferences { LastSweepCeilingMbps = 300, LastSweepAt = new DateTimeOffset(2026, 10, 15, 14, 52, 0, TimeSpan.FromHours(-7)), LastSweepRefreshHz = 120, LastSweepSummary = "Highest clean target: 300 Mbps." };
+            await preferences.SaveAsync(path);
+            var reloaded = FramePreferences.Load(path);
+            var seeded = Assert.Single(reloaded.SweepHistory);
+            Assert.Equal(300, seeded.CeilingMbps); Assert.Equal(120, seeded.RefreshHz);
+            LinkCapacitySweep.Record(reloaded.SweepHistory, new(seeded.At.AddMinutes(16), 200, 120, "Highest clean target: 200 Mbps."));
+            await reloaded.SaveAsync(path);
+            var again = FramePreferences.Load(path);
+            Assert.Equal([300, 200], again.SweepHistory.Select(r => r.CeilingMbps).ToArray());
+            Assert.Equal(seeded.At, again.SweepHistory[0].At);
+            Assert.All(again.SweepHistory, r => Assert.False(r.NoCleanStep)); // records written before the flag read as clean sweeps
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Fact]
+    public void Only_presets_the_sweep_named_itself_are_replaced()
+    {
+        var name = LinkCapacitySweep.MeasuredPresetName(300, new DateTime(2026, 10, 15, 14, 52, 0));
+        Assert.Equal("Measured ceiling 300 Mbps 10-15 14-52", name);
+        Assert.True(LinkCapacitySweep.IsMeasuredPresetName(name));
+        Assert.True(LinkCapacitySweep.IsMeasuredPresetName("Measured ceiling 75 Mbps 01-02 03-04"));
+        Assert.False(LinkCapacitySweep.IsMeasuredPresetName("Measured ceiling 300 Mbps 10-15 14-52 (living room)"));
+        Assert.False(LinkCapacitySweep.IsMeasuredPresetName("My 300 Mbps"));
+        Assert.False(LinkCapacitySweep.IsMeasuredPresetName("measured ceiling 300 Mbps 10-15 14-52"));
     }
 }
