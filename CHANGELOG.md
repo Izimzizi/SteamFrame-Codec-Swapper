@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Headless sweeps and the measured ceiling
+## 1.8.0 — Headless sweeps and the measured ceiling
 
 - **Keep Frame awake** on the Overview card renews the headset's own 60-second activity
   extension every 20 seconds over the paired SSH link, like Auto tune's unattended mode, so a
