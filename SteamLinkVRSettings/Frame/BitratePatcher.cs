@@ -246,8 +246,7 @@ public sealed class BitratePatcher
     private void EnsureVrServerStopped() { if (vrServerRunning()) throw new InvalidOperationException("Close SteamVR (vrserver.exe) before replacing the driver."); }
     private static bool IsVrServerRunning()
     {
-        var processes = Process.GetProcessesByName("vrserver"); try { return processes.Length != 0; }
-        finally { foreach (var process in processes) process.Dispose(); }
+        return RuntimeProcessState.IsRunning("vrserver");
     }
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static void RequireHash(byte[] bytes, string expected)

@@ -15,14 +15,19 @@
   receives its own confirmation instead of being assumed safe.
 - Pending gaze-quality edits survive background polling and navigation. Irrelevant controls
   are disabled, and scrolling no longer accidentally changes dropdown selections.
+- Back to stock no longer mistakes an exited SteamVR process for a running driver during
+  shutdown. After saving the recovery profile, it disables automatic reapply so a later
+  restoration error cannot re-arm the old encoder override on the next restart.
 - Compact windows have wrapping action buttons, readable Overview metrics, a more accessible
   live graph and Auto tune start button, and grouped radio/capacity details.
 - Live verification completed 64 valid Auto tune trials in 25:05, produced three labeled
   recommendations and restored the starting settings. A separate deliberate stream-drop test
   verified automatic recovery and continued measurement. Short screens retain limited-confidence
   labels, and observed streaming hitches remain visible.
-- Validation: 329 managed tests, seven native tests and 30 compositor assertions passed.
-  Two patcher tests were skipped because external driver fixtures were not provided.
+- Live Back to stock verification restored the exact original driver, removed saved tuning
+  overrides, and resumed Valve-controlled VBR/single-pass encoding with no pending-policy warning.
+- Validation: 334 managed tests, seven native tests and 30 compositor assertions passed.
+  One legacy patcher test was skipped because its external driver fixture was not provided.
 
 ## 1.8.0 — Headless sweeps and the measured ceiling
 

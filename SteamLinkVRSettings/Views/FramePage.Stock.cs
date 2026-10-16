@@ -28,6 +28,13 @@ public sealed partial class FramePage
         var previous = await Profiles.ReadAsync();
         if (!snapshot.IsStock || previous == null) { await Profiles.SaveAsync(snapshot); _previousProfile = snapshot; }
         else _previousProfile = previous;
+        // The recovery snapshot is durable. Do not re-arm the old encoder policy
+        // on the next restart if a later driver/file operation cannot complete.
+        _preferences.ReapplyAfterRestart = false;
+        await _preferences.SaveAsync();
+        _syncingBandwidth = true;
+        try { ReapplyInput.IsChecked = false; }
+        finally { _syncingBandwidth = false; }
         var wasRunning = await Task.Run(() => OpenVrSettings.IsRunning);
         _codecSwitching = true; MarkCodecReconnect();
         try

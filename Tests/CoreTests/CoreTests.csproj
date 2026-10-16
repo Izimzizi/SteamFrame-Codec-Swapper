@@ -37,6 +37,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.cs" Link="OpenVrSettings.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/RuntimeProcessState.cs" Link="RuntimeProcessState.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.Video.cs" Link="OpenVrSettings.Video.cs" />
     <Compile Include="../../SteamLinkVRSettings/Models/SettingItem.cs" Link="SettingItem.cs" />
     <Compile Include="../../SteamLinkVRSettings/Helpers/SettingDefinitions.cs" Link="SettingDefinitions.cs" />

@@ -31,9 +31,7 @@ public static partial class OpenVrSettings
     {
         get
         {
-            var processes = Process.GetProcessesByName("vrserver");
-            try { return processes.Length != 0; }
-            finally { foreach (var process in processes) process.Dispose(); }
+            return RuntimeProcessState.IsRunning("vrserver");
         }
     }
     public static async Task WaitUntilAvailableAsync(SteamPaths paths)
