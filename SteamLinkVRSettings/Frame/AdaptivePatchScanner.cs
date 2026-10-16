@@ -9,18 +9,24 @@ namespace SteamLinkVRSettings.Frame;
 public static class AdaptivePatchScanner
 {
     private const string Caps = "F3 44 0F 10 15 ?? ?? ?? ?? F3 0F 11 8F 40 01 00 00 49 8B 8E 88 01 00 00 48 8B 01 FF 90 88 00 00 00 84 C0 74 09 F3 44 0F 10 15 ?? ?? ?? ??";
+    private const string StableCaps = "F3 44 0F 10 0D ?? ?? ?? ?? F3 0F 11 8F 3C 01 00 00 49 8B 8E 88 01 00 00 48 8B 01 FF 90 88 00 00 00 84 C0 74 09 F3 44 0F 10 0D ?? ?? ?? ??";
     private const string Preset = "FF 96 A0 9B 00 00 48 8B 8E 70 02 00 00 48 8D 95 18 03 00 00 41 B8 00 0E 00 00 E8 ?? ?? ?? ?? 66 0F 6F 05 ?? ?? ?? ?? F3 0F 7F 44 24 30 C7 44 24 40 1B 00 00 00";
+    private const string StablePreset = "FF 96 38 9B 00 00 48 8B 8E 08 02 00 00 48 8D 95 18 03 00 00 41 B8 00 0E 00 00 E8 ?? ?? ?? ?? 66 0F 6F 05 ?? ?? ?? ?? F3 0F 7F 44 24 30 C7 44 24 40 1B 00 00 00";
     private const string Level = "B8 BA 00 00 00 C6 45 90 00 F3 0F 10 81 B8 00 00 00 B9 B7 00 00 00 F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C D0 66 0F 6F 05 ?? ?? ?? ?? 49 0F AF D0 F3 0F 7F 45 A0 41 B8 09 00 00 00 49 0F AF D1 48 81 FA 00 00 80 7F 48 8D 15 ?? ?? ?? ?? 0F 4F C8 48 8B 86 70 02 00 00 89 88 A8 00 00 00 48 8B 86 70 02 00 00 C7 80 AC 00 00 00 01 00 00 00";
+    private const string StableLevel = "B8 BA 00 00 00 C6 45 90 00 F3 0F 10 81 B8 00 00 00 B9 B7 00 00 00 F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C D0 66 0F 6F 05 ?? ?? ?? ?? 49 0F AF D0 F3 0F 7F 45 A0 41 B8 09 00 00 00 49 0F AF D1 48 81 FA 00 00 80 7F 48 8D 15 ?? ?? ?? ?? 0F 4F C8 48 8B 86 08 02 00 00 89 88 A8 00 00 00 48 8B 86 08 02 00 00 C7 80 AC 00 00 00 01 00 00 00";
     private const string Api = "C7 85 ?? ?? ?? ?? 0B 00 02 71 41 B8 F4 09 00 00";
     private const string PresetVersions = "C7 85 10 03 00 00 0B 00 04 F1 C7 85 18 03 00 00 0B 00 07 F1";
 
     public static PatchManifest Discover(byte[] source)
     {
         var pe = new Image(source);
-        var cap = pe.Unique(Caps);
-        var preset = pe.Unique(Preset);
-        var level = pe.Unique(Level);
-        var api = pe.Unique(Api);
+        // Stable and beta use different private encoder layouts. Select a complete
+        // verified family; do not wildcard member offsets or mix their contexts.
+        var cap = pe.Unique("Bitrate cap selector", Caps, StableCaps);
+        var stable = cap.Variant == 1;
+        var preset = pe.Unique("HEVC preset copy", stable ? StablePreset : Preset);
+        var level = pe.Unique("HEVC level configuration", stable ? StableLevel : Level);
+        var api = pe.Unique("NVENC API initialization", Api);
         pe.FunctionContaining(api.Offset, api.Length);
         var presetFunction = pe.FunctionContaining(preset.Offset, preset.Length);
         pe.FunctionContaining(cap.Offset, cap.Length);
@@ -143,16 +149,21 @@ public static class AdaptivePatchScanner
                 Offset(unwind, 4); Functions.Add(new(begin, end)); previousEnd = end;
             }
         }
-        public (int Offset, int Length) Unique(string signature)
+        public (int Offset, int Length, int Variant) Unique(string context, params string[] signatures)
         {
-            var pattern = Pattern(signature); int found = -1;
-            for (int p = Text.Raw; p <= Text.Raw + Math.Min(Text.RawSize, checked((int)Text.VirtualSize)) - pattern.Length; p++)
-                if (Matches(data, p, pattern))
-                {
-                    Require(found < 0, "Instruction signature is ambiguous."); found = p;
-                }
-            Require(found >= 0, "A required instruction signature/layout was not found.");
-            return (found, pattern.Length);
+            int found = -1, length = 0, variant = -1;
+            for (int i = 0; i < signatures.Length; i++)
+            {
+                var pattern = Pattern(signatures[i]);
+                for (int p = Text.Raw; p <= Text.Raw + Math.Min(Text.RawSize, checked((int)Text.VirtualSize)) - pattern.Length; p++)
+                    if (Matches(data, p, pattern))
+                    {
+                        Require(found < 0, $"{context}: more than one matching instruction signature was found.");
+                        found = p; length = pattern.Length; variant = i;
+                    }
+            }
+            Require(found >= 0, $"{context}: no supported instruction signature was found.");
+            return (found, length, variant);
         }
         public Function FunctionContaining(int offset, int length)
         {

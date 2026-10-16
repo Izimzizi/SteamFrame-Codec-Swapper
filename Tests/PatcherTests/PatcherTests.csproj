@@ -8,10 +8,12 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../SteamLinkVRSettings/Frame/BitratePatcher.cs" Link="BitratePatcher.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/DriverCompatibility.cs" Link="DriverCompatibility.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/RuntimeProcessState.cs" Link="RuntimeProcessState.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/PatchManifest.cs" Link="PatchManifest.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/AdaptivePatchScanner.cs" Link="AdaptivePatchScanner.cs" />
     <EmbeddedResource Include="../../SteamLinkVRSettings/Assets/bitrate-patch.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch.json" />
+    <EmbeddedResource Include="../../SteamLinkVRSettings/Assets/bitrate-patch-stable.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch-stable.json" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

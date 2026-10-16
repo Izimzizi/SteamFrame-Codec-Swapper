@@ -12,19 +12,25 @@ public static class BuiltInPresets
                 width: 1664, gazeOffset: -20, peripheralOffset: -12))
         {
             IsBuiltIn = true,
-            Description = "Our current tuned setup: 400 Mbps target · 90 Hz · 1664-pixel width · 10-bit HEVC. CBR without padding, quarter-resolution multipass and synchronous sending. Center −20 / outside gaze −12 favor compression quality at a lower stream width. Actual bitrate varies; sustained 350–400 Mbps has not been verified."
+            Description = "400 Mbps target · 90 Hz · 1664-pixel width · 10-bit HEVC. CBR without padding, quarter-resolution multipass and synchronous sending. Center −20 / outside gaze −12 favor compression quality at a lower stream width. This exact setup was not part of the latency comparison; sustained 350–400 Mbps has not been verified."
         },
         new("72f74544-cdc3-4ff0-a03d-9421219a972e", "High quality HEVC",
             Hevc(400, EncoderRateControl.Cbr, EncoderMultiPass.QuarterResolution, qualityBias: true, asyncSend: true))
         {
             IsBuiltIn = true,
-            Description = "400 Mbps target · 90 Hz · 2048-pixel width · 10-bit HEVC. CBR without padding, quarter-resolution multipass and asynchronous sending. Center −2 / outside gaze −6. Actual bitrate depends on the scene and connection."
+            Description = "400 Mbps target · 90 Hz · 2048-pixel width · 10-bit HEVC. CBR without padding, quarter-resolution multipass and asynchronous sending. Center −2 / outside gaze −6. Higher width and bitrate can add latency even at steady FPS. Compare Lower-latency HEVC to keep this width with a smaller data budget."
+        },
+        new("ca034b35-faf3-4baf-b25e-8e43716c69eb", "Lower-latency HEVC",
+            Hevc(200, EncoderRateControl.Cbr, EncoderMultiPass.SinglePass, qualityBias: true, asyncSend: false))
+        {
+            IsBuiltIn = true,
+            Description = "200 Mbps target · 90 Hz · 2048-pixel width · 10-bit HEVC. Single-pass CBR and synchronous sending; keeps High quality HEVC's center −2 / outside gaze −6. Measured 25.1 ms versus HQ's 29.6 ms from PC submit to headset decode completion on one setup. More compression; equal image quality is unverified."
         },
         new("85a33a87-ace1-4a72-9c0e-baaa03287e5a", "Smooth HEVC",
             Hevc(300, EncoderRateControl.Vbr, EncoderMultiPass.SinglePass, qualityBias: false, asyncSend: false))
         {
             IsBuiltIn = true,
-            Description = "300 Mbps target · 90 Hz · 2048-pixel width · 10-bit HEVC. Single-pass VBR, synchronous sending and Valve's original gaze quality. Based on our smooth baseline, with less encoding work than multipass. Actual bitrate and smoothness depend on the game and connection."
+            Description = "300 Mbps target · 90 Hz · 2048-pixel width · 10-bit HEVC. Single-pass VBR, synchronous sending and Valve's original gaze quality. Less encoding work than multipass; a large stream can still add latency. Actual bitrate and smoothness depend on the game and connection."
         },
         new("437377a1-52fd-45e8-89c4-4537572c3a50", "Full-resolution HEVC — Experimental",
             Hevc(400, EncoderRateControl.Cbr, EncoderMultiPass.FullResolution, qualityBias: true, asyncSend: true))

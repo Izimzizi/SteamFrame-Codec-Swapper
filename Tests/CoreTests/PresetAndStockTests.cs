@@ -100,7 +100,7 @@ public sealed class PresetAndStockTests : IDisposable
     {
         await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":false,"unrelatedPairingValue":"keep"},"steamvr":{"preferredRefreshRate":120,"showMirrorView":true}}""");
         var presets = BuiltInPresets.Create();
-        Assert.Equal(5, presets.Select(p => p.Id).Distinct().Count());
+        Assert.Equal(6, presets.Select(p => p.Id).Distinct().Count());
         foreach (var entry in presets) { StockProfiles.Validate(entry.Profile); Assert.True(entry.IsBuiltIn); }
         var balanced = Assert.Single(presets, p => p.Name.StartsWith("Balanced wireless", StringComparison.Ordinal));
         Assert.False(balanced.Profile.BitratePatch); Assert.Equal(200, balanced.Profile.TargetMbps);
@@ -123,6 +123,33 @@ public sealed class PresetAndStockTests : IDisposable
         Assert.True(preferences.QualityEnabled); Assert.Equal(-2, preferences.GazeOffset); Assert.Equal(-6, preferences.PeripheralOffset);
         Assert.True(preferences.ReapplyAfterRestart); Assert.True(preferences.AdvancedEncoding.IsDefault); Assert.True(preset.Profile.BitratePatch);
         Assert.Equal("paired-device", preferences.SshHost); Assert.Equal("keep", driver["unrelatedPairingValue"]); Assert.Equal(true, video["showMirrorView"]);
+    }
+    [Fact]
+    public async Task LowerLatencyHevcRestoresTheConfirmedCandidateWithoutChangingHqOrPairing()
+    {
+        await File.WriteAllTextAsync(Driver.UserConfigPath, """{"driver_vrlink":{"asyncSend":true,"unrelatedPairingValue":"keep"},"steamvr":{"showMirrorView":true}}""");
+        var presets = BuiltInPresets.Create();
+        var candidate = Assert.Single(presets, p => p.Name == "Lower-latency HEVC");
+        var high = Assert.Single(presets, p => p.Name == "High quality HEVC");
+        var store = new PresetStore(Path.Combine(_root, "latency-presets.json"));
+        await store.SaveAsync("My lower-latency setup", candidate.Profile);
+        var saved = Assert.Single(await store.ReadAsync());
+        var preferences = new FramePreferences { SshHost = "paired-device", AdvancedEncoding = new() { Preset = 1, VbvMbit = 2 } };
+        await Profiles.RestoreAsync(saved.Profile, preferences);
+        var driver = await Driver.LoadUserOverridesAsync(); var video = await Video.LoadUserOverridesAsync();
+        Assert.Equal(200, preferences.CodecTargetMbps); Assert.Equal(200d, Convert.ToDouble(driver["targetBandwidth"]));
+        Assert.Equal(200d, Convert.ToDouble(driver["recommendedBandwidthMbit"]));
+        Assert.Equal(2048, Convert.ToInt32(driver["streamFormatWidth"])); Assert.Equal(true, driver["10bit"]);
+        Assert.Equal(false, driver["automaticBandwidth"]); Assert.Equal(false, driver["automaticStreamFormatWidth"]);
+        Assert.Equal(false, driver["asyncSend"]); Assert.Equal(false, driver["allowMultipleLinks"]);
+        Assert.Equal(90, preferences.CodecFps); Assert.Equal(90d, Convert.ToDouble(video["preferredRefreshRate"]));
+        Assert.Equal(StreamCodec.Hevc, preferences.RequestedCodec); Assert.Equal(EncoderRateControl.Cbr, preferences.RateControl);
+        Assert.Equal(EncoderMultiPass.SinglePass, preferences.MultiPass); Assert.True(preferences.QualityEnabled);
+        Assert.Equal(-2, preferences.GazeOffset); Assert.Equal(-6, preferences.PeripheralOffset);
+        Assert.True(preferences.ReapplyAfterRestart); Assert.True(preferences.AdvancedEncoding.IsDefault); Assert.True(saved.Profile.BitratePatch);
+        Assert.Equal("paired-device", preferences.SshHost); Assert.Equal("keep", driver["unrelatedPairingValue"]); Assert.Equal(true, video["showMirrorView"]);
+        Assert.Equal(400, high.Profile.TargetMbps); Assert.Equal(EncoderMultiPass.QuarterResolution, high.Profile.MultiPass);
+        Assert.True(high.Profile.Driver["asyncSend"].GetBoolean());
     }
     [Fact]
     public async Task TunedHevcRestoresMeasuredSetupAndCanBeSavedWithoutChangingBuiltIns()

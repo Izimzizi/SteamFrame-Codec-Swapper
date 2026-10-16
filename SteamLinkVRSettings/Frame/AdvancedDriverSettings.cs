@@ -50,7 +50,7 @@ public static class AdvancedDriverSettings
         new("enableTimedRetry", "Timed video retry", DriverValueKind.Integer, 0, 1, 1, "0 disabled, 1 enabled. Watch receiver retry and decoder recovery events; disabling retry can worsen loss."),
         new("forceBaselineVideoFEC", "Force baseline video FEC", DriverValueKind.Boolean, 0, 1, 1, "Sends Valve's baseline FEC request. Its effect is unverified in this driver/client build; this is not a confirmed parity or overhead control.", true),
         new("enableQoS", "Network QoS marking", DriverValueKind.Boolean, 0, 1, 1, "Requests packet priority marking. Benefits depend on the network's handling."),
-        new("asyncSend", "Asynchronous sending", DriverValueKind.Boolean, 0, 1, 1, "Changes the sender scheduling path. Enabled in High quality HEVC; compare actual delays and recovery counts.", true),
+        new("asyncSend", "Asynchronous sending", DriverValueKind.Boolean, 0, 1, 1, "Changes sender scheduling after reconnecting. Switching it alone did not explain HQ's latency in testing. Keep other settings fixed when comparing delays and recovery counts.", true),
         new("backoffRecoveryCoefficient", "Bandwidth backoff recovery coefficient", DriverValueKind.Float, 0.5, 10, 0.1, "Controls adaptive recovery after bandwidth backoff; monitor stability when changing it.")
     ];
 }

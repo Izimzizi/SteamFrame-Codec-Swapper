@@ -38,6 +38,15 @@ The progress panel shows the current mode test (for example, **3 / 18**), an est
 
 ## Ranking and serious issues
 
+**Smoothness is not end-to-end latency.** These tests score delivery hitches and
+cadence; they do not capture PC-submit-to-headset-decode delay or motion-to-photon.
+The [separate latency comparison](hevc-high-quality.md#latency-comparison--october-15-2026)
+found larger streams could maintain steady FPS while arriving substantially later.
+A high score is not a lowest-latency claim. The optional Lower-latency HEVC preset
+keeps HQ's geometry at a lower bitrate with single-pass encoding; its visual
+equivalence remains unverified. Ranking weights are not fitted to one machine's
+latency measurements.
+
 Valid performance observations remain in the report, including poor ones. Ranking first prefers settings below the configured serious-issue threshold, then balances smoothness, stream width, refresh rate and requested regional detail. **Neither actual Mbps nor the requested bitrate earns quality points.** The regional preference weights gaze 60% and periphery 40%; neutral scores 50, with stronger negative offsets increasing the preference. Balanced weighting is 55% smoothness, 25% resolution, 5% Hz and 15% regional detail. Detail and refresh alternatives change these preferences. These weights describe the search's intent, not measured optical or perceptual image quality.
 
 A higher bitrate probe must show either materially better smoothness or at least a one-point reduction in mean whole-frame QP without a significant smoothness penalty, at the **same width, Hz, pass and regional offsets**. Missing QP does not count as evidence of better compression. QP is not compared between different maps to declare one visually superior: region offsets redistribute quality and whole-frame metadata cannot reveal each region's absolute quality. The runner obtains QP counter deltas from full status reads immediately before and after timed sampling; passive samples do not supply QP. Reports label it as bracketed whole-frame compression metadata, with its frame count and duration. Counter resets, changed configuration, insufficient coverage or encoder errors suppress this optional diagnostic. The exact headroom-adjusted choice still needs its final measured confirmation.

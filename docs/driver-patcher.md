@@ -65,7 +65,33 @@ Reference builds:
 | Build | Original SHA-256 | Patched SHA-256 |
 | --- | --- | --- |
 | First analyzed driver | `5f6f063f1ece088491f572db8feb2f2433a5621d0adf7013de77b91604d146b5` | `82fd637f1d4b844ca349d2a98867cd0ba8f969a14de47c2a3192b875fb62425d` |
-| Later Valve-signed driver | `d415ba30fab129b4737ae19a3c71d7628c27e450dd8bf0002a1d4dd98ed58a05` | `34265101d56235e2f87e5b0e2f3fc2340ed1513a9b6d26f03c4fe12bafcbbc03` |
+| Beta build 25839986 | `d415ba30fab129b4737ae19a3c71d7628c27e450dd8bf0002a1d4dd98ed58a05` | `34265101d56235e2f87e5b0e2f3fc2340ed1513a9b6d26f03c4fe12bafcbbc03` |
+| Public stable build 25330290 | `1e846be041039798580a91452371f6288c614fb4c152126b137e2c693fb77eef` | `d0aeec1b80d31da146365b4b65fa4adadd7230d288ebf0d65e040b3991f28c5e` |
+
+The stable and beta drivers use different private member offsets and register selections.
+The scanner recognizes each complete instruction family separately, retaining the same
+NVENC version, function-boundary, import, cap-constant and executable-padding checks.
+Patch compatibility does not establish support for every private encoder or codec hook.
+
+A missing original backup is normal before the first installation. If an unmodified driver
+is reported as unsupported, collect **Driver file and verification** details and the SteamVR
+build/branch. File verification repairs modified files; it cannot add a layout to the app's
+compatibility scanner.
+
+**Patches & Recovery** shows the installed build and branch, the recognized driver,
+and the verified bitrate-patch versions. Build information comes from the selected
+installation's Steam manifest; it never authorizes a patch. A pending branch switch
+reports the installed branch, not the branch still being downloaded. A standalone
+DLL copy may have no installation metadata and can still be checked by its bytes.
+
+If a driver is unsupported, update this app and check again. Use **Driver file and
+verification → Copy driver details** when reporting it. The report includes the
+build/branch when available, full driver and backup hashes, receipt path, and the
+specific compatibility check that failed. Missing or damaged recovery files have
+separate messages. Restarting SteamVR cannot make an unsupported layout compatible.
+
+Stable and beta support are retained together. The app selects the patch from the
+installed file, so changing branches does not require changing app versions.
 
 More detail is in [Compatibility evidence](../Native/VERIFICATION.md).
 
@@ -78,8 +104,10 @@ More detail is in [Compatibility evidence](../Native/VERIFICATION.md).
   original and checked, never trusted blindly.
 - Restore needs the matching, hash-verified original backup.
 
-A patch applied outside this app is recognized. If its backup is missing, restore stays disabled
-until a verified original is available under the backup name.
+Known reference patches can be recognized even without their receipt or backup.
+For other compatible builds, recognition requires the receipt and matching original.
+Restore always requires the verified original. If it is missing, restore stays
+disabled; Steam's file verification can recover Valve's driver instead.
 
 ## Bandwidth reality check
 

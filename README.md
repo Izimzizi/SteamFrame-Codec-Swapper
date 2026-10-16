@@ -36,7 +36,7 @@ including the ones SteamVR doesn't show in its own UI.
 | **Verified refresh rate** | HEVC Hz changes set the Frame display through paired SSH and verify the active display rate on the headset and PC. Reconnects SteamVR if needed. |
 | **Connection tools** | Shows the dongle's negotiated USB 2/USB 3 speed and headset link status. Reconnect Frame restarts SteamVR once and verifies fresh HEVC output; separate recovery handles the Frame USB daemon. |
 | **Additional settings** | Search less common `driver_vrlink` options. Settings already in Stream settings or Advanced are excluded to avoid duplicate controls. |
-| **Complete presets** | Includes Balanced wireless for a stock driver (fixed 200 Mbps instead of Valve's automatic mode), Tuned HEVC (our current 400 Mbps / 1664-width setup), Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass) and Full-resolution HEVC — Experimental. All use 90 Hz and 10-bit. Edit any control or save a personal preset; built-ins remain available. |
+| **Complete presets** | Includes Balanced wireless for a stock driver, Tuned HEVC (400 Mbps / 1664 width), Smooth HEVC (300 Mbps, single pass), High quality HEVC (400 Mbps, quarter-resolution multipass), Lower-latency HEVC (200 Mbps, single pass, HQ's 2048 width) and Full-resolution HEVC — Experimental. All use 90 Hz and 10-bit. Edit any control or save a personal preset; built-ins remain available. |
 | **Back to stock** | Save the current tuning, end experimental codecs, restore a verified original driver and remove app tuning overrides. Load previous tuning to return to it. Pairing and unrelated settings stay intact. |
 
 ## Download and run
@@ -115,6 +115,14 @@ Choose **Tuned HEVC (built-in)** for our current playable setup: a 400 Mbps targ
 261 Mbps at 89.7 encoded fps; sustained 350–400 Mbps and better results in every
 game are not established. The lower width trades spatial detail for stronger
 compression quality. Every setting remains editable.
+
+Choose **Lower-latency HEVC (built-in)** to retain HQ's 2048-pixel width, 10-bit
+and gaze offsets with a 200 Mbps target, single pass and synchronous sending.
+Repeated tests measured 25.1 ms versus HQ's 29.6 ms from PC submit to headset
+decode completion. This is not motion-to-photon; equal image quality is
+unverified. See the [latency comparison](docs/hevc-high-quality.md#latency-comparison--october-15-2026)
+for controls, limitations and the larger cost of stream geometry. Auto tune's
+smoothness score measures delivery hitches, not end-to-end latency.
 
 Choose **Smooth HEVC (built-in)** for the 300 Mbps single-pass baseline, or
 **High quality HEVC (built-in)** to load the tested high-quality setup.

@@ -1,5 +1,52 @@
 # Driver and NVENC compatibility evidence
 
+## Public stable bitrate patch (October 16, 2026)
+
+Switching SteamVR from beta build 25839986 to public build 25330290 reproduced the
+reported unsupported-driver error with SHA-256
+`1e846be041039798580a91452371f6288c614fb4c152126b137e2c693fb77eef`
+(13,908,632 bytes). Read-only PE inspection and instruction-boundary disassembly
+showed the same patch operations with a distinct instruction family:
+
+- The cap selector uses XMM9 and member `0x13C`, instead of XMM10 and `0x140`.
+  Its two RIP-relative loads resolve to adjacent 350/232 Mbps constants.
+- The preset query uses table member `0x9B38`, instead of `0x9BA0`; both preset
+  and reconfiguration use encoder config pointer `0x208`, instead of `0x270`.
+- The preset structures still carry `0xF104000B`/`0xF107000B` versions, the
+  config copy is still exactly `0xE00` bytes through imported CRT `memcpy`, and
+  the HEVC level/tier fields remain at config offsets `0xA8`/`0xAC`.
+
+The scanner now selects a complete stable or beta family without wildcarding
+those private members. All existing PE/function/import/cap/padding validation
+still applies. The resulting stable patch SHA-256 is
+`d0aeec1b80d31da146365b4b65fa4adadd7230d288ebf0d65e040b3991f28c5e`.
+The updated app installed, restored and reinstalled the patch through Patches &
+Recovery on the public SteamVR installation. Independent SHA-256 checks confirmed
+exact restoration to the original above and the expected patched result afterward.
+Isolated stable and beta regression tests also cover missing backups, retained
+backups from another build, receipt recognition, idempotence, running-runtime
+refusal, damaged backups, mixed layouts, changed cap constants and partial patches.
+This evidence covers the disk bitrate/level patch; the private quality-hook
+fingerprints described below remain a separate compatibility boundary.
+
+## Earlier beta driver and encoder analysis
+
+On October 16, 2026, switching back through Steam's beta selector downloaded build
+25839986 (branch last updated October 9). Its original driver hash remained
+`d415ba30fab129b4737ae19a3c71d7628c27e450dd8bf0002a1d4dd98ed58a05`.
+No newer beta was offered by Steam during this check. Stable build 25330290 and
+beta build 25839986 are both retained; the installed bytes select the patch.
+The stable byte-delta manifest is now embedded alongside the earlier beta manifest,
+so a known patched stable file with a missing backup is recognized as patched and
+given recovery guidance, rather than being mistaken for an unsupported layout.
+The version-aware app also completed an install/restore/reinstall cycle on the
+installed beta driver; independent hashes matched the original and patched beta
+references. Its UI rejected an isolated copy with an altered cap constant,
+disabled both write buttons, exposed that exact failure in the report, and
+successfully copied the report. SteamVR settings and app preferences retained
+their pre-test hashes. The full build passed 343 managed tests, seven native
+tests and 30 compositor assertions; the optional legacy fixture test was skipped.
+
 The driver was decompiled with IDA Professional headless on local copies. The layout
 and ABI verification used read-only files; the later live acceptance check is
 described below. Detailed decompilation,

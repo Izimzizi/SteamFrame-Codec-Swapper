@@ -846,8 +846,21 @@ public sealed partial class FramePage : Page
     {
         if (_patch == null) return;
         PatchStatus.Text = _patch.Message;
-        PatchDetails.Text = $"File: {_patch.FilePath}\nSHA-256: {_patch.Sha256 ?? "unavailable"}\nBackup: {_patch.BackupPath}\nBackup status: {_patch.BackupState}\nPatch receipt: {_patch.ReceiptPath}";
+        PatchVersion.Text = _patch.InstalledVersion;
+        PatchCompatibility.Text = _patch.Compatibility + " " + DriverCompatibility.VerifiedVersions;
+        PatchDetails.Text = _patch.Details;
         UpdatePatchButtons();
+    }
+    private void CopyPatchDetails_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            data.SetText($"SteamFrame Advanced Options {typeof(FramePage).Assembly.GetName().Version}\n{PatchDetails.Text}");
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+            ShowStatus("Driver details copied. Paste them into your support report.", false);
+        }
+        catch (Exception error) { ShowStatus("Could not copy driver details: " + error.Message, true); }
     }
     private void UpdatePatchButtons()
     {

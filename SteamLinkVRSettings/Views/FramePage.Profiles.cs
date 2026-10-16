@@ -185,7 +185,7 @@ public sealed partial class FramePage
         if (selected.BitratePatch != patch.IsPatched)
         {
             if (!patch.IsSupported || patch.BackupState == BitrateBackupState.Mismatch || patch.IsPatched && patch.BackupState != BitrateBackupState.VerifiedOriginal)
-                throw new InvalidOperationException("This preset needs a different driver patch, but the compatible driver/backup could not be verified. Check Patches & Recovery.");
+                throw new InvalidOperationException(patch.PresetFailureMessage);
             _presetRestartNeeded = await Task.Run(() => OpenVrSettings.IsRunning);
             var owner = await _codecController.ReadStatusAsync();
             if (owner.Live) await EndCodecSessionAsync();

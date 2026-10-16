@@ -14,6 +14,16 @@ public sealed record BitratePatchStatus(string FilePath, string BackupPath, Bitr
     public bool CanApply => State == BitratePatchState.Original && BackupState != BitrateBackupState.Mismatch && !VrServerRunning;
     public bool CanRestore => State == BitratePatchState.Patched && BackupState == BitrateBackupState.VerifiedOriginal && !VrServerRunning;
     public string ReceiptPath => BackupPath + ".patch.json";
+    public string InstalledVersion { get; init; } = "SteamVR build unavailable for this file";
+    public string VerificationError { get; init; } = "";
+    public string Compatibility => IsSupported
+        ? DriverCompatibility.ReferenceDriver(Sha256) is var reference && reference != "No reference hash match"
+            ? $"Verified bitrate patch: {reference}." : "Compatible driver layout verified."
+        : "Bitrate patch compatibility has not been verified.";
+    public string Details => $"{InstalledVersion}\nReference driver: {DriverCompatibility.ReferenceDriver(Sha256)}\n{DriverCompatibility.VerifiedVersions}\n" +
+        $"File: {FilePath}\nSHA-256: {Sha256 ?? "unavailable"}\nState: {State}\nBackup: {BackupPath}\nBackup status: {(BackupState == BitrateBackupState.Missing && State == BitratePatchState.Original ? "Not created yet; saved automatically when installing the override" : BackupState.ToString())}\nBackup SHA-256: {BackupSha256 ?? "unavailable"}\nPatch receipt: {ReceiptPath}\n" +
+        $"Verification: {(VerificationError.Length == 0 ? Message : VerificationError)}";
+    public string PresetFailureMessage => $"This preset's bitrate override could not be prepared. {Message} See Patches & Recovery for version and driver details.";
 }
 
 /// <summary>Exact-hash fast paths plus strict discovery of compatible layouts at moved addresses.</summary>
@@ -93,7 +103,7 @@ public sealed class BitratePatcher
                 var data = await ReadBoundedAsync(path, ct); hash = Hash(data);
                 try { plan = await ResolvePlanAsync(path, data, ct); }
                 catch (Exception ex) when (ex is InvalidDataException or OverflowException or InvalidOperationException)
-                { state = BitratePatchState.Unsupported; error = "Unsupported or ambiguous driver layout: " + ex.Message; }
+                { state = BitratePatchState.Unsupported; error = ex.Message; }
                 if (plan != null)
                 {
                     backup = GetBackupPath(path, plan.OriginalSha256);
@@ -114,22 +124,27 @@ public sealed class BitratePatcher
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or OverflowException or InvalidOperationException)
         { state = BitratePatchState.Unavailable; error = ex.Message; }
         var running = vrServerRunning();
-        var message = error ?? (backupState == BitrateBackupState.Mismatch ? "The backup does not match this exact source build; no changes are allowed." : state switch
+        var message = state switch
         {
+            BitratePatchState.Unsupported => "This driver does not match a supported bitrate-patch layout. It may be a newer SteamVR version or a modified file. Update this app and check again; if it still fails, copy driver details below when reporting it. Patching is blocked.",
+            BitratePatchState.Unavailable => "The driver or its recovery files could not be verified. Check the verification reason in Driver file and verification below, or copy driver details for help. Patching and restore are blocked.",
+            _ when backupState == BitrateBackupState.Mismatch => "The backup does not match this driver version or has been modified. Patching and restore are blocked. Keep the backup and copy driver details for recovery help.",
             BitratePatchState.Missing => "Select the SteamVR driver_vrlink.dll file.",
             BitratePatchState.Original => "Validated compatible driver: 500 Mbps and HEVC 6.2 patch available.",
-            BitratePatchState.Patched when backupState == BitrateBackupState.Missing => "The 500 Mbps and HEVC 6.2 patch is installed, but this build's backup is missing; restore is unavailable.",
+            BitratePatchState.Patched when backupState == BitrateBackupState.Missing => "The 500 Mbps patch is verified, but this version's original backup is missing. Restore is unavailable. Restore the matching backup, or use SteamVR's Verify files to recover Valve's driver.",
             BitratePatchState.Patched => "The 500 Mbps and HEVC 6.2 patch is installed with a verified matching original backup.",
             _ => "Unrecognized driver layout; no changes are allowed."
-        });
+        };
         if (running && state is BitratePatchState.Original or BitratePatchState.Patched) message += " Close SteamVR before replacing the driver.";
-        return new(path, backup, state, backupState, hash, backupHash, running, message);
+        return new(path, backup, state, backupState, hash, backupHash, running, message)
+        { InstalledVersion = DriverCompatibility.InstalledVersion(path), VerificationError = error ?? "" };
     }
     private PatchManifest PlanForOriginal(byte[] bytes)
     {
         var hash = Hash(bytes);
         if (hash == SupportedOriginalSha256) return manifest;
         if (hash == SupportedCurrentOriginalSha256) return manifest.ForCurrentBuild();
+        if (hash == PatchManifest.SupportedStableOriginalSha256) return PatchManifest.LoadStable();
         return AdaptivePatchScanner.Discover(bytes);
     }
     internal static BitratePatchState ClassifyHash(string hash, PatchManifest plan) =>
@@ -141,6 +156,7 @@ public sealed class BitratePatcher
         var hash = Hash(data);
         if (hash is SupportedOriginalSha256 or SupportedPatchedSha256) return manifest;
         if (hash is SupportedCurrentOriginalSha256 or SupportedCurrentPatchedSha256) return manifest.ForCurrentBuild();
+        if (hash is PatchManifest.SupportedStableOriginalSha256 or PatchManifest.SupportedStablePatchedSha256) return PatchManifest.LoadStable();
         try { return AdaptivePatchScanner.Discover(data); }
         catch (Exception ex) when (ex is InvalidDataException or OverflowException or InvalidOperationException)
         {
@@ -155,11 +171,17 @@ public sealed class BitratePatcher
                 if (receipt.PatchedSha256 != hash) continue;
                 var backup = GetBackupPath(path, receipt.OriginalSha256);
                 if (receiptPath != backup + ".patch.json") continue;
-                var original = await ReadVerifiedAsync(backup, receipt, false, ct);
-                RequireReceipt(receipt, PlanForOriginal(original)); ValidateSegments(data, receipt, true);
+                try
+                {
+                    var original = await ReadVerifiedAsync(backup, receipt, false, ct);
+                    RequireReceipt(receipt, PlanForOriginal(original)); ValidateSegments(data, receipt, true);
+                }
+                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OverflowException or InvalidOperationException)
+                { throw new IOException("The patch receipt matches this file, but its original backup or patch could not be verified: " + error.Message, error); }
                 candidates.Add(receipt);
             }
-            if (candidates.Count != 1) throw new InvalidDataException("Required unique code signatures or a verified matching patch receipt are unavailable.", ex);
+            if (candidates.Count != 1) throw new InvalidDataException($"Driver layout check: {ex.Message} " +
+                (candidates.Count == 0 ? "No verified patch receipt and matching original backup were found for this file." : "More than one patch receipt matches this file."), ex);
             return candidates[0];
         }
     }
@@ -227,7 +249,7 @@ public sealed class BitratePatcher
         {
             await WriteDurableAsync(temp, replacement, ct); await ReadVerifiedAsync(temp, plan, !restoring, ct);
             await ReadVerifiedAsync(path, plan, restoring, ct); await ReadVerifiedAsync(backup, plan, false, ct);
-            var receiptRequired = !restoring || plan.OriginalSha256 is not (SupportedOriginalSha256 or SupportedCurrentOriginalSha256);
+            var receiptRequired = !restoring || plan.OriginalSha256 is not (SupportedOriginalSha256 or SupportedCurrentOriginalSha256 or PatchManifest.SupportedStableOriginalSha256);
             if (receiptRequired || File.Exists(backup + ".patch.json")) RequireReceipt(await ReadReceiptAsync(backup + ".patch.json", ct), plan);
             ct.ThrowIfCancellationRequested(); EnsureVrServerStopped();
             File.Replace(temp, path, displaced, ignoreMetadataErrors: false); committed = true;

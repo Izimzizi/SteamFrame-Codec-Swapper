@@ -3,6 +3,10 @@
 The **Stream settings** page sets how SteamVR encodes and sends video to the Frame.
 The editable [High quality HEVC preset](hevc-high-quality.md) loads a complete
 400 Mbps target / 90 Hz setup, with encoder and network controls under Advanced.
+**Lower-latency HEVC** keeps its 2048-pixel width, 10-bit and gaze offsets, with a
+200 Mbps target, single pass and synchronous sending. It reduced measured delay
+on the test setup, with more compression; equal image quality is unverified.
+Larger widths and higher bitrate can add latency even when FPS stays steady.
 
 ## Bitrate and encoders
 
@@ -17,7 +21,7 @@ The editable [High quality HEVC preset](hevc-high-quality.md) loads a complete
 | Stream format width | `streamFormatWidth` | 512–4096 pixels, in multiples of 32. A larger width may improve center detail while increasing encoder/decoder work; reconnecting may be needed. |
 | Automatic stream width | `automaticStreamFormatWidth` | Allows Valve to choose the width. |
 | NVENC rate control | Public NVENC parameter hook | Experimental Valve default, VBR or CBR without filler/padding. Requires the updated live monitor. |
-| NVENC encoding passes | Public NVENC parameter hook | Experimental Valve default, single pass or quarter-resolution multipass. Extra work may add latency or stutter. |
+| NVENC encoding passes | Public NVENC parameter hook | Valve default, single pass, quarter-resolution multipass or experimental full-resolution multipass. Extra analysis adds work without changing final image resolution. |
 | Advanced Supersample Filtering | `steamvr/allowSupersampleFiltering` | Toggle Valve's filtering setting with live readback, or save it for the next SteamVR session. |
 
 The **Advanced Supersample Filtering** toggle is applied with the other stream

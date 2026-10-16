@@ -97,7 +97,7 @@ internal static class BenchmarkExplorer
         }
         return new(recommendations[0].Trial,trials,
             (interruption is null?"Comparison complete.":"Comparison stopped: "+interruption)+
-            " Choose a recommended option below. Starting settings are restored unless recovery is pending. Short tests do not guarantee every game.")
+            " Choose a recommended option below. Starting settings are restored unless recovery is pending. Smoothness measures delivery hitches, not end-to-end latency or visual quality. Short tests do not guarantee every game.")
             {Recommendations=recommendations};
     }
     public static async Task<BenchmarkResult> RunAsync(BenchmarkOptions options,int ceiling,bool sending,

@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.8.2 — Driver compatibility and a lower-latency HEVC option
+
+- Added an optional Lower-latency HEVC preset: 200 Mbps, single pass and synchronous
+  sending, retaining HQ's 2048-pixel width, 90 Hz, 10-bit and gaze offsets. Repeated
+  tests measured 25.1 ms versus HQ's 29.6 ms from PC submit to headset decode
+  completion on one setup. This is not motion-to-photon; equal image quality is
+  unverified. Existing presets and saved settings keep their values.
+- Stream and encoder guidance explains the measured width, bitrate and multipass
+  costs. Auto tune now explicitly distinguishes its hitch-based smoothness score
+  from end-to-end latency and visual quality. The HEVC guide records the 35-run
+  investigation, matched controls and measurement limits.
+- The HEVC bitrate override now supports public SteamVR build 25330290 alongside
+  beta build 25839986 and the earlier verified beta driver. The app selects the
+  patch from the installed driver and retains separate original backups when
+  switching versions. Compatible unlisted builds still require all layout checks.
+- Patches & Recovery shows the installed build and branch, the recognized driver,
+  and verified bitrate-patch versions. A pending branch download cannot label the
+  installed driver as the requested version, and version numbers never authorize a patch.
+- Unsupported drivers, missing originals, and damaged recovery files have distinct
+  explanations. Preset errors include the underlying reason. Copy driver details
+  collects the build, file hashes, backup status and precise verification failure
+  for support reports; a missing backup before first installation is explained.
+- Known patched stable drivers remain recognizable even without a receipt or backup;
+  restoration still requires the matching verified original.
+- Validation: exact install/restore/reinstall through the app on stable and beta;
+  regression tests cover switching versions at one path, preserved backups, unknown
+  compatible hashes, unsupported layouts, recovery failures and the new preset's
+  saved/apply behavior. All 344 managed tests,
+  seven native tests and 30 compositor assertions passed. One optional legacy fixture
+  test was skipped.
+- This release expands the disk bitrate/HEVC-level patch. Codec and custom quality
+  compatibility remain separate checks; this is not a new live streaming validation
+  of those features on stable SteamVR.
+
 ## 1.8.1 — Auto tune recovery and clearer streaming controls
 
 - Auto tune detects stopped video between trials, reconnects the same captured PC with
