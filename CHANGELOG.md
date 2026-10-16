@@ -11,6 +11,8 @@
   costs. Auto tune now explicitly distinguishes its hitch-based smoothness score
   from end-to-end latency and visual quality. The HEVC guide records the 35-run
   investigation, matched controls and measurement limits.
+- The preset menu stays bounded and visible with a large saved catalog, including
+  collections accumulated through repeated Auto tune comparisons.
 - The HEVC bitrate override now supports public SteamVR build 25330290 alongside
   beta build 25839986 and the earlier verified beta driver. The app selects the
   patch from the installed driver and retains separate original backups when

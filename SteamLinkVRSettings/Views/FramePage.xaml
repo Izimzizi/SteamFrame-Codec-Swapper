@@ -255,7 +255,13 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <controls:NoWheelComboBox PlaceholderText="Choose a complete preset" SelectionChanged="PresetSelection_Changed" HorizontalAlignment="Stretch" x:Name="PresetSelection" />
+                            <controls:NoWheelComboBox PlaceholderText="Choose a complete preset" SelectionChanged="PresetSelection_Changed" HorizontalAlignment="Stretch" MaxDropDownHeight="360" x:Name="PresetSelection">
+                                <!-- The catalog is capped at 200 saved entries. Realize its labels so
+                                     a dynamically filled list inside this ScrollViewer stays visible. -->
+                                <controls:NoWheelComboBox.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
+                                </controls:NoWheelComboBox.ItemsPanel>
+                            </controls:NoWheelComboBox>
                             <Button Content="Save preset…" Click="SavePreset_Click" Grid.Column="1" />
                         </Grid>
                         <TextBlock Text="Presets load into the editor. Apply when you are ready." Style="{StaticResource Hint}" x:Name="PresetSummary" />
