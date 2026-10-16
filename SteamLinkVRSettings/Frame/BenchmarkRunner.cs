@@ -170,6 +170,23 @@ internal sealed class BenchmarkRunner(SteamPaths paths, FramePreferences prefere
             var expectedGeneration = before.Generation;
             ulong expectedRevision = 0;
             var expectedPath = headset.Path;
+            var videoReadiness = new BenchmarkVideoReadiness();
+            async Task EnsureVideo(CancellationToken ct)
+            {
+                await videoReadiness.EnsureAsync(async () =>
+                {
+                    var current = await probe.GetSnapshotAsync();
+                    if (current.Generation != expectedGeneration || current.PairedCodecTrialPresent || current.RequiresSteamVrRestart)
+                        throw new IOException("The encoder session changed outside auto tune. Starting settings will be restored.");
+                    return current;
+                }, async restartToken =>
+                {
+                    await RestartRuntime(restartToken, true);
+                    expectedGeneration = (await probe.GetSnapshotAsync()).Generation;
+                    if (await probe.ReadActiveSendModeAsync() != activeAsync)
+                        throw new IOException("The sender mode changed after recovery.");
+                }, Report, ct);
+            }
             async Task<BenchmarkSample> Sample(BenchmarkCandidate candidate, bool forceHeadset, CancellationToken ct)
             {
                 ct.ThrowIfCancellationRequested();
@@ -215,6 +232,9 @@ internal sealed class BenchmarkRunner(SteamPaths paths, FramePreferences prefere
             {
                 stage = "Testing " + candidate.Label;
                 expectedRevision = 0;
+                // Do not spend the rest of the search testing an inactive encoder after
+                // a previous high-load candidate dropped the wireless video link.
+                await EnsureVideo(ct);
                 int requestedWidth=candidate.Width>0?candidate.Width:initialWidth;
                 int requestedFps=candidate.Fps>0?candidate.Fps:initialFps;
                 bool rateChanged=requestedFps!=fps, modeChanged=rateChanged || requestedWidth!=width;
@@ -266,6 +286,7 @@ internal sealed class BenchmarkRunner(SteamPaths paths, FramePreferences prefere
                 // Exclude reconfiguration, queue drain and scene startup from scoring.
                 Report("Warming up the new settings before measurement…");
                 await Task.Delay(modeChanged?5000:3000, ct);
+                await EnsureVideo(ct);
                 var receiverLogStart = await receiverHealth.PollAsync(ct);
                 var logStart = await health.PollAsync(ct);
                 // Passive telemetry deliberately lacks QP. Full reads bracket the
@@ -297,7 +318,7 @@ internal sealed class BenchmarkRunner(SteamPaths paths, FramePreferences prefere
                     progress($"{fps} Hz · {candidate.Label}\nMeasuring {Math.Min(seconds, (int)began.Elapsed.TotalSeconds)} / {seconds} seconds");
                     if (samples.Count >= 4)
                     {
-                        var interim = WirelessBenchmark.Evaluate(candidate, samples, fps, (int)(samples[^1].Seconds - samples[0].Seconds));
+                        var interim = WirelessBenchmark.Evaluate(candidate, samples, fps, (int)(samples[^1].Seconds - samples[0].Seconds), completeWindow: false);
                         // Finish comparable windows despite hitches. Only invalid
                         // measurements stop early; performance is scored at the end.
                         if (!interim.MeasurementValid) return await Finish(interim);
@@ -343,7 +364,11 @@ internal sealed class BenchmarkRunner(SteamPaths paths, FramePreferences prefere
             Report("Restoring starting settings…");
             try
             {
-                if(lease.Pending)await OpenVrSettings.WaitUntilAvailableAsync(paths);
+                if(lease.Pending)
+                {
+                    if(options.Unattended)await BenchmarkHeadsetReader.SetActivityAsync(preferences,60,CancellationToken.None);
+                    await BenchmarkRuntimeRestart.EnsureConnectionAsync(paths,preferences,probe,lease,Report,CancellationToken.None,runtimeHost);
+                }
                 // Restore Hz while the encoder journal still owns the runtime.
                 await display.RestoreAsync(()=>RestartRuntime(CancellationToken.None,false),CancellationToken.None);
                 await lease.RestoreAsync(()=>RestartRuntime(CancellationToken.None,false));
@@ -356,7 +381,7 @@ internal sealed class BenchmarkRunner(SteamPaths paths, FramePreferences prefere
             }
             if (ownsPower)
                 try { await power.RestoreAsync(); }
-                catch (Exception powerError) { outcome = "Power recovery required"; error = powerError.Message; Recommended = null; RecoveryRequired = true; }
+                catch (Exception powerError) { outcome = "Power recovery required"; error = (error is null ? "" : error + " ") + "Power restore: " + powerError.Message; Recommended = null; RecoveryRequired = true; }
             // Saving the recommended preset never overwrites or applies the user's starting setup.
             if (result is not null && !RecoveryRequired)
             {

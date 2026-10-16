@@ -199,8 +199,8 @@ public sealed partial class FramePage
         var active = _links.ActiveLinks;
         // An active headset link alone carries no video; only encoder output or the driver's own
         // periodic link statistics prove a stream is running.
-        var streamActive = _vrRunning && (snapshot.Active || estimate is not null && now - estimate.ObservedAt <= FreshLimit
-            || histogram is not null && now - histogram.ObservedAt <= FreshLimit || perMinute > 0);
+        var streamActive = _vrRunning && (measured.Fps is > 0 || health.LinkActive != false &&
+            (estimate is not null && now - estimate.ObservedAt <= FreshLimit || histogram is not null && now - histogram.ObservedAt <= FreshLimit));
         var input = new WirelessAdvisorInput
         {
             CurrentTargetMbps = _target, AutomaticBitrate = _liveAutomatic == true,
@@ -217,24 +217,28 @@ public sealed partial class FramePage
         };
         _advice = WirelessAdvisor.Advise(input);
         var sweep = RecentSweep();
-        // A measured sweep outranks the moment-to-moment reading; the live advice stays in the reasons.
-        var headline = sweep is { Check: true }
+        var sweepSettling = sweep is not null && now - _sweepConcludedAt < TimeSpan.FromSeconds(90);
+        var preferredCeiling = WirelessAdvisor.PreferredSweepCeiling(_advice, sweep, sweepSettling);
+        var headline = sweep is { Check: true } && sweepSettling
             ? $"{sweep.Summary} " + (sweep.BestCleanMbps is int ? "Keep this rate." : sweep.HighestMarginalMbps is int ? "Step down a notch if you see held frames, or sweep again later." : "Step down now, or run Find my link's limit.")
-            : sweep is { BestCleanMbps: int best }
-            ? $"Sweep result ({Age(_sweepConcludedAt)}): {sweep.Summary} Use {best} Mbps as the measured ceiling for this setup ({ValveComparison(best)})."
-            : sweep is not null
+            : preferredCeiling is int best
+            ? $"Sweep result ({Age(_sweepConcludedAt)}): {sweep!.Summary} Use {best} Mbps as the measured ceiling for this setup ({ValveComparison(best)})."
+            : sweep is { BestCleanMbps: null } && sweepSettling
                 // No clean step: the sweep still outranks the live reading, and the advice is to hold back, not to try harder.
                 ? $"Sweep result ({Age(_sweepConcludedAt)}): {sweep.Summary}" + (sweep.HighestMarginalMbps is int m
                     ? $" Nothing above {m} Mbps is worth trying now; if the current rate shows held frames, step down to {m} Mbps or lower and sweep again later."
                     : " Check the dongle position and the radio signal, then sweep again.")
                 : _advice.Headline;
         AdviceHeadline.Text = headline;
-        AdviceHeadline.Foreground = new SolidColorBrush(sweep is { BestCleanMbps: not null } ? Good : sweep is { Check: true, HighestMarginalMbps: not null } ? Amber : sweep is { Check: true } ? Bad : _advice.LinkLimited ? Amber : _advice.Headroom ? Good : Neutral);
+        AdviceHeadline.Foreground = new SolidColorBrush(preferredCeiling is not null ? Good : sweepSettling && sweep is { Check: true, HighestMarginalMbps: not null } ? Amber : sweepSettling && sweep is { Check: true, BestCleanMbps: null } ? Bad : _advice.LinkLimited ? Amber : _advice.Headroom ? Good : Neutral);
         // For a minute after a sweep the live counters still hold its top steps, so the moment-to-moment advice would argue with the result.
-        var sweepSettling = sweep is not null && now - _sweepConcludedAt < TimeSpan.FromSeconds(90);
         var reasons = sweepSettling ? new List<string> { sweep is { Check: true } ? "Right now: the last minute still includes the check; live advice resumes in a moment." : "Right now: the last minute still includes the sweep's highest steps; live advice resumes in a moment." }
             : sweep is not null ? _advice.Reasons.Prepend("Right now: " + _advice.Headline).ToList() : _advice.Reasons.ToList();
         var context = new List<string>();
+        if (sweep is not null && preferredCeiling is null)
+            context.Add($"Recent {(sweep.Check ? "check" : "sweep")} ({Age(_sweepConcludedAt)}): {sweep.Summary}" +
+                (sweep.LightlyTested ? " The target was not fully tested; it is not offered as a measured ceiling." :
+                 !sweep.Check && !sweep.Confirmed ? " This result has no completed clean confirmation; sweep again before applying it." : " Current live advice takes priority."));
         if (sweep is null && _preferences.LastSweepCeilingMbps is int earlier && _preferences.LastSweepAt is { } at)
             context.Add($"Last measured ceiling: {earlier} Mbps on {at.ToLocalTime():MMM d HH:mm} with {_preferences.LastSweepRefreshHz} fps delivered ({ValveComparison(earlier)}); it is saved as the Measured ceiling preset in Stream settings. Sweep again before relying on it, and after changing the dongle position, headset refresh rate or game.");
         else if (sweep is null && _preferences.LastSweepCeilingMbps is null && _preferences.LastSweepAt is { } last && _preferences.LastSweepSummary.Length > 0)
@@ -292,9 +296,9 @@ public sealed partial class FramePage
     private SweepConclusion? RecentSweep() => _sweepConclusion is not null && DateTimeOffset.Now - _sweepConcludedAt <= TimeSpan.FromMinutes(20) ? _sweepConclusion : null;
     /// <summary>
     /// The ceiling worth a one-click Apply: a sweep that finished in the last 20 minutes with the encoder near the
-    /// target. An older or lightly tested result stays in the text and the saved preset, not on a permanent button.
+    /// target and a completed clean confirmation. Current live trouble takes precedence after settling.
     /// </summary>
-    private int? MeasuredCeiling() => RecentSweep() is { Check: false, LightlyTested: false, BestCleanMbps: int best } ? best : null;
+    private int? MeasuredCeiling() => WirelessAdvisor.PreferredSweepCeiling(_advice, RecentSweep(), DateTimeOffset.Now - _sweepConcludedAt < TimeSpan.FromSeconds(90));
 
     private async void ApplyCeiling_Click(object sender, RoutedEventArgs e) => await ActionAsync(async () =>
     {
@@ -345,7 +349,7 @@ public sealed partial class FramePage
     private static string ValveComparison(int mbps) => mbps == WirelessAdvisor.ValveDefaultStartMbps ? "the same as Valve's 200 Mbps automatic start"
         : mbps > WirelessAdvisor.ValveDefaultStartMbps ? $"{(mbps - WirelessAdvisor.ValveDefaultStartMbps) * 100 / WirelessAdvisor.ValveDefaultStartMbps}% above Valve's 200 Mbps automatic start"
         : $"{(WirelessAdvisor.ValveDefaultStartMbps - mbps) * 100 / WirelessAdvisor.ValveDefaultStartMbps}% below Valve's 200 Mbps automatic start";
-    private int? EffectiveRecommendation() => RecentSweep() is { Check: false, BestCleanMbps: int best } ? best : _advice.RecommendedMbps;
+    private int? EffectiveRecommendation() => MeasuredCeiling() ?? _advice.RecommendedMbps;
 
     private void DrawCapacityGraph(LinkCapacityHistogram? histogram)
     {
@@ -559,18 +563,18 @@ public sealed partial class FramePage
                 if (LinkCapacitySweep.ShouldStop(run.Results)) break;
             }
             // The step about to become the measured ceiling gets a second pass before it is saved and recommended.
-            if (!run.QuickCheck && outcome == "Sweep ended." && LinkCapacitySweep.Conclude(run.Results).BestCleanMbps is int best)
+            while (!run.QuickCheck && outcome == "Sweep ended." && LinkCapacitySweep.Conclude(run.Results).BestCleanMbps is int best)
             {
                 var index = run.Results.FindLastIndex(r => r.TargetMbps == best && r.Verdict == SweepVerdict.Clean);
-                if (index >= 0 && run.Results[index].Passes == 1)
+                if (index < 0 || run.Results[index].Passes >= 2) break;
+                var confirmation = await MeasureStepAsync(run, best, $"Confirming {best} Mbps with a second pass", token);
+                if (confirmation is null)
                 {
-                    var confirmation = await MeasureStepAsync(run, best, $"Confirming {best} Mbps with a second pass", token);
-                    if (confirmation is not null)
-                    {
-                        run.Results[index] = LinkCapacitySweep.Confirm(run.Results[index], confirmation);
-                        RenderSweepResults(run);
-                    }
+                    outcome = "Sweep ended early: the video link dropped during confirmation.";
+                    break;
                 }
+                run.Results[index] = LinkCapacitySweep.Confirm(run.Results[index], confirmation);
+                RenderSweepResults(run);
             }
             if (outcome == "Sweep ended.") outcome = run.QuickCheck ? "Check finished." : "Sweep finished.";
         }
@@ -602,11 +606,13 @@ public sealed partial class FramePage
                 RenderSweepResults(run);
                 restore += await RecordSweepCeilingAsync(run, _sweepConclusion);
                 // The user asked for the result to go live: one sweep, no second click.
-                if (run.ApplyWhenDone && outcome == "Sweep finished." && _sweepConclusion.BestCleanMbps is int ceiling)
+                if (run.ApplyWhenDone && outcome == "Sweep finished." && _sweepConclusion.ApplicableCeilingMbps is int ceiling)
                 {
                     try { restore += " " + await ApplyMeasuredCeilingAsync(ceiling); }
                     catch (Exception error) { restore += " The measured ceiling could not be applied: " + error.Message; }
                 }
+                else if (run.ApplyWhenDone && _sweepConclusion.BestCleanMbps is not null)
+                    restore += " No new target was applied: the sweep needs measured video near the target and a completed clean confirmation.";
                 SweepStatus.Text = _sweepConclusion.Summary + restore;
             }
             else SweepStatus.Text = outcome + restore;
@@ -707,13 +713,13 @@ public sealed partial class FramePage
         {
             _preferences.SeedSweepHistory();
             // A sweep with no clean step retires the saved ceiling: the card must not offer a rate the link just refused.
-            _preferences.LastSweepCeilingMbps = conclusion.BestCleanMbps; _preferences.LastSweepAt = DateTimeOffset.Now;
+            _preferences.LastSweepCeilingMbps = conclusion.ApplicableCeilingMbps; _preferences.LastSweepAt = DateTimeOffset.Now;
             _preferences.LastSweepSummary = conclusion.Summary; _preferences.LastSweepRefreshHz = hz;
-            LinkCapacitySweep.Record(_preferences.SweepHistory, new SweepRecord(DateTimeOffset.Now, conclusion.BestCleanMbps ?? conclusion.HighestMarginalMbps ?? 0, hz, conclusion.Summary, conclusion.BestCleanMbps is null, conclusion.LightlyTested));
+            LinkCapacitySweep.Record(_preferences.SweepHistory, new SweepRecord(DateTimeOffset.Now, conclusion.BestCleanMbps ?? conclusion.HighestMarginalMbps ?? 0, hz, conclusion.Summary, conclusion.BestCleanMbps is null, conclusion.LightlyTested, conclusion.Confirmed));
             await _preferences.SaveAsync();
         }
         catch (Exception error) { return " The measured ceiling could not be saved: " + error.Message; }
-        if (conclusion.BestCleanMbps is not int best) return "";
+        if (conclusion.ApplicableCeilingMbps is not int best) return " No measured-ceiling preset saved; the target was not fully measured and confirmed.";
         try
         {
             var profile = await CaptureEditorProfileAsync();

@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PatcherTests", "Tests\Patch
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CompositorTimingTests", "Tests\CompositorTimingTests\CompositorTimingTests.csproj", "{E4F9DF87-91DF-476A-8C4F-D19FF4947660}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BenchmarkTests", "Tests\BenchmarkTests\BenchmarkTests.csproj", "{4551EF08-E627-4A0A-BC46-C53D32189AE6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -53,6 +55,10 @@ Global
 		{E4F9DF87-91DF-476A-8C4F-D19FF4947660}.Debug|x64.Build.0 = Debug|Any CPU
 		{E4F9DF87-91DF-476A-8C4F-D19FF4947660}.Release|x64.ActiveCfg = Release|Any CPU
 		{E4F9DF87-91DF-476A-8C4F-D19FF4947660}.Release|x64.Build.0 = Release|Any CPU
+		{4551EF08-E627-4A0A-BC46-C53D32189AE6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4551EF08-E627-4A0A-BC46-C53D32189AE6}.Debug|x64.Build.0 = Debug|Any CPU
+		{4551EF08-E627-4A0A-BC46-C53D32189AE6}.Release|x64.ActiveCfg = Release|Any CPU
+		{4551EF08-E627-4A0A-BC46-C53D32189AE6}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -64,5 +70,6 @@ Global
 		{36C12F97-8DF9-4E13-B831-BF1351144AD4} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{5C65F37D-6593-45DF-BAD4-DD0FA45CC2F6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{E4F9DF87-91DF-476A-8C4F-D19FF4947660} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{4551EF08-E627-4A0A-BC46-C53D32189AE6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

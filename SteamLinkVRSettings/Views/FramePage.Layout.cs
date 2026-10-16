@@ -28,7 +28,10 @@ public sealed partial class FramePage
     private void OverviewMetrics_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         var wide = e.NewSize.Width >= 610;
-        OverviewMetrics.ColumnDefinitions[1].Width = OverviewMetrics.ColumnDefinitions[2].Width = wide ? GridLength.Auto : new GridLength(0);
+        // Bound every metric to its share of the card. Auto columns let long connection
+        // diagnostics consume the whole row and crush the bitrate into a few pixels.
+        OverviewMetrics.ColumnDefinitions[1].Width = OverviewMetrics.ColumnDefinitions[2].Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        OverviewMetrics.ColumnSpacing = wide ? 24 : 0;
         Grid.SetRow(TargetMetric, wide ? 0 : 1); Grid.SetColumn(TargetMetric, wide ? 1 : 0);
         Grid.SetRow(PathMetric, wide ? 0 : 2); Grid.SetColumn(PathMetric, wide ? 2 : 0);
         TargetMetric.Margin = PathMetric.Margin = wide ? new Thickness(0, 5, 0, 0) : new Thickness(0, 16, 0, 0);

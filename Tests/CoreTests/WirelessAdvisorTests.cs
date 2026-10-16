@@ -137,6 +137,7 @@ public class WirelessAdvisorTests
         {
             CurrentTargetMbps = 500, AutomaticBitrate = true, DriverPatched = true, StreamActive = true, Radio = GoodRadio,
             DriverBitrate = new(412, true, DateTimeOffset.Now, DateTimeOffset.Now, StreamingHealthCategory.LinkEstimate),
+            DriverBitrateAgeSeconds = 5,
             Histogram = Histogram((70, 2500)), HistogramAgeSeconds = 5, ThrottleEventsLastMinute = 0
         });
         Assert.Equal(500, advice.RecommendedMbps);
@@ -262,7 +263,7 @@ public class LinkCapacitySweepTests
         var conclusion = LinkCapacitySweep.Conclude(results);
         Assert.Equal(250, conclusion.BestCleanMbps);
         Assert.Equal("Highest clean target: 250 Mbps; 300 and 350 Mbps were marginal.", conclusion.Summary);
-        Assert.Null(conclusion.CarriedVideoMbps); Assert.False(conclusion.LightlyTested);
+        Assert.Null(conclusion.CarriedVideoMbps); Assert.True(conclusion.LightlyTested);
         Assert.Equal("Highest clean target: 200 Mbps; 250 Mbps was marginal; 300 Mbps failed.", LinkCapacitySweep.Conclude(
         [
             LinkCapacitySweep.Evaluate(200, Sample()), LinkCapacitySweep.Evaluate(250, Sample(throttles: 12)), LinkCapacitySweep.Evaluate(300, Sample(throttles: 44))
@@ -312,7 +313,7 @@ public class LinkCapacitySweepTests
         Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 150, 90, ""), new(now.AddHours(-1), 500, 90, "", LightlyTested: true)], now));
         Assert.Null(LinkCapacitySweep.AutomaticStart([new(now.AddHours(-2), 150, 90, ""), new(now.AddHours(-1), 500, 90, "Highest clean target: 500 Mbps. Encoded video averaged 266 Mbps at that step, so higher rates were only lightly tested; play something heavier for a fuller test.")], now));
         var lightListing = LinkCapacitySweep.DescribeHistory([new(now.AddHours(-3), 150, 90, ""), new(now.AddHours(-2), 300, 90, ""), new(now.AddHours(-1), 500, 90, "", LightlyTested: true)], now)!;
-        Assert.StartsWith("The last two sweeps ranged from 150 to 300 Mbps (", lightListing); Assert.Contains("One lightly tested result (a still scene) is not counted.", lightListing);
+        Assert.StartsWith("The last two sweeps ranged from 150 to 300 Mbps (", lightListing); Assert.Contains("One result without enough encoded video is not counted.", lightListing);
         // A sweep that found no clean step is left out of the range but mentioned.
         LinkCapacitySweep.Record(history, new(now.AddMinutes(-2), 200, 120, "No step was fully clean; 200 Mbps was the best marginal result.", NoCleanStep: true));
         var withGap = LinkCapacitySweep.DescribeHistory(history, now)!;

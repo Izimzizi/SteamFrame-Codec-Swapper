@@ -427,8 +427,13 @@ public sealed partial class FramePage : Page
                         RateControlInput.SelectedIndex = (int)currentPolicy.Requested.RateControl;
                         MultiPassInput.SelectedIndex = (int)currentPolicy.Requested.MultiPass;
                     }
-                    QualityInput.IsOn = snapshot.Enabled;
-                    if (snapshot.Enabled) { GazeInput.Value = snapshot.CenterOffset; PeripheralInput.Value = snapshot.PeripheralOffset; }
+                    // Gaze controls belong to the stream editor, whose dirty flag is independent
+                    // of the Advanced policy editor. Polling must preserve edits after focus leaves.
+                    if (!_bandwidthEdited && _pendingPreset is null)
+                    {
+                        QualityInput.IsOn = snapshot.Enabled;
+                        if (snapshot.Enabled) { GazeInput.Value = snapshot.CenterOffset; PeripheralInput.Value = snapshot.PeripheralOffset; }
+                    }
                 }
                 finally { _syncingBandwidth = false; }
             }

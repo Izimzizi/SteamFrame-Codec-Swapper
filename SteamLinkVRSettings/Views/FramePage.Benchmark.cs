@@ -23,6 +23,7 @@ public sealed partial class FramePage
             BenchmarkReduceQuality.IsChecked==true,BenchmarkResolutions.IsChecked==true,BenchmarkRefreshRates.IsChecked==true,
             BenchmarkIssuePercent.Value,Whole(BenchmarkIssueMilliseconds.Value));
         options.Validate();
+        ActionStatus.IsOpen=false;
         _benchmarkStop=CancellationTokenSource.CreateLinkedTokenSource(_lifetime?.Token??default);
         foreach(var control in BenchmarkOptionsPanel.Children.OfType<Control>())control.IsEnabled=false;
         BenchmarkStartButton.IsEnabled=BenchmarkRecoverButton.IsEnabled=false;BenchmarkCancelButton.IsEnabled=true;

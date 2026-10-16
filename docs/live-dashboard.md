@@ -110,11 +110,12 @@ marginal or failed confirmation downgrades it and moves the ceiling down a step.
 marks steps measured twice with x2 and keeps both passes' reasons. Your original target and
 automatic setting are restored when the sweep ends, is stopped, or the app closes; with **Apply
 the measured ceiling when the sweep finishes** ticked in the start dialog (the default, remembered
-between runs) the app then puts the highest clean target on the stream with automatic bitrate off,
+between runs) the app then puts the highest fully measured and confirmed clean target on the stream with automatic bitrate off,
 so one click measures and applies. Keep playing during the sweep so the encoder has real work: the
 target is only a budget, and the summary states how much video the winning step actually averaged.
-When that is under 85% of the target the result is called lightly tested, because the link was
-never asked for the full rate. An idle headset produces little video and tells you nothing about
+When that is under 85% of the target, or encoded video measurements are missing, the result is
+called lightly tested and is not applied or saved as a measured-ceiling preset. A dropped or
+cancelled confirmation also prevents automatic application. An idle headset produces little video and tells you nothing about
 the limit, so the start dialog also offers **Show the moving test scene in the headset during the
 sweep**: it runs Auto tune's scene (the same `SteamFrameBenchmark.exe`, unattended, with its own
 camera motion) for the length of the sweep and stops it afterwards. It is ticked by default when
@@ -196,12 +197,19 @@ window ended with no link at all. Starting the scene cost the stream once in fou
 runs, so the first drop is the scene switch; the second is the link itself. Treat the climb as
 real and the hold as something to confirm with a longer session on your own game.
 **Apply N Mbps now** appears for 20 minutes after a sweep whose winning step the encoder
-filled (at least 85% of the target) and sets that target on the running stream with automatic
+filled (at least 85% of the target) and confirmed on a second pass, and sets that target on the running stream with automatic
 bitrate off, in one click and without touching any other control; **Use N Mbps** still loads it
 into Stream settings for review instead. An older or lightly tested ceiling is not kept on a
-button: it stays in the card's text and in the Measured ceiling preset, because one afternoon's
-number is not a standing recommendation. Lightly tested results are also left out of the history
-range and of the Automatic from N Mbps suggestion.
+button: results remain in the card's text, because one afternoon's number is not a standing
+recommendation. Only fully measured, confirmed sweeps create a Measured ceiling preset.
+Lightly tested and unconfirmed results are left out of the history range and of the Automatic
+from N Mbps suggestion. After a 90-second settling window, fresh link trouble or missing live
+evidence takes priority over a recent sweep.
+
+The live advisor waits for at least 100 fresh capacity samples before suggesting an increase.
+It can still recommend reducing the target when loss or held frames show trouble. Low encoded
+output in a simple scene does not prove headroom for a higher target. Radio and capacity details,
+including desk-testing controls, are available in the disclosure beneath the wireless actions.
 
 ### Restart Frame stream
 

@@ -139,8 +139,8 @@ public sealed record BenchmarkRecommendation(string Name, BenchmarkCandidate Can
 /// <summary>Pure, conservative policy: absent/changing evidence can never produce a passing preset.</summary>
 public static class WirelessBenchmark
 {
-    public static BenchmarkTrial Evaluate(BenchmarkCandidate candidate, IReadOnlyList<BenchmarkSample> samples, int fps, int requiredSeconds)
-        => BenchmarkScoring.Evaluate(candidate, samples, fps, requiredSeconds);
+    public static BenchmarkTrial Evaluate(BenchmarkCandidate candidate, IReadOnlyList<BenchmarkSample> samples, int fps, int requiredSeconds, bool completeWindow = true)
+        => BenchmarkScoring.Evaluate(candidate, samples, fps, requiredSeconds, completeWindow);
 
     public static IEnumerable<BenchmarkTrial> Rank(IEnumerable<BenchmarkTrial> trials) => BenchmarkScoring.Rank(trials);
 

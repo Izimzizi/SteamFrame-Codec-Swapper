@@ -159,6 +159,15 @@ internal sealed class BenchmarkSettingsLease(SteamPaths paths, EncoderProbe prob
         var live=await _settings.Read();
         if(Keys.Any(k=>!MatchesControl(k,live,data.Expected,data.ExpectedAutomaticOwner)))throw new IOException("Stream settings changed outside the benchmark.");
     }
+    public async Task CheckEncoderOwnershipAsync()
+    {
+        if(_beginFailed)throw new IOException("This instance does not own the benchmark journal.");
+        var data=_data ??= await ReadDataAsync();
+        var snapshot=await _settings.Snapshot();
+        if(!snapshot.Installed || snapshot.Generation!=data.Generation || snapshot.PairedCodecTrialPresent ||
+            snapshot.EncodingPolicy?.Requested!=data.ExpectedPolicy || data.ExpectedQuality is {} quality && !quality.Matches(snapshot))
+            throw new IOException("Another session or encoder controller changed the stream.");
+    }
     internal static HashSet<string> OwnedKeys(BenchmarkLeaseData data, Dictionary<string, JsonElement> live) => Keys
         .Where(k => live.ContainsKey(k) && (MatchesControl(k,live,data.Expected,data.ExpectedAutomaticOwner) || MatchesControl(k,live,data.Previous,data.PreviousAutomaticOwner))).ToHashSet();
     // Valve owns targetBandwidth while automatic bandwidth is enabled. Its

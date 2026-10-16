@@ -14,7 +14,7 @@ public sealed record BenchmarkAssessment(bool MeasurementValid, bool MajorIssues
 
 internal static class BenchmarkScoring
 {
-    public static BenchmarkTrial Evaluate(BenchmarkCandidate candidate, IReadOnlyList<BenchmarkSample> samples, int fps, int requiredSeconds)
+    public static BenchmarkTrial Evaluate(BenchmarkCandidate candidate, IReadOnlyList<BenchmarkSample> samples, int fps, int requiredSeconds, bool completeWindow = true)
     {
         double duration = samples.Count > 1 ? samples[^1].Seconds - samples[0].Seconds : 0;
         bool timed = double.IsFinite(duration) && duration > 0;
@@ -84,7 +84,10 @@ internal static class BenchmarkScoring
         double burstRate = bursts*60d/duration;
         bool major = percent > 1 || worst >= 250 || longestSlow >= 3 || longestNoDelivery >= .5 ||
             encoded < fps*.95 || receiverFps < fps*.95 || sourceMean < fps*.95 || gpu > 1000d/fps*.80;
-        if (mbps < Math.Min(25, candidate.TargetMbps*.25)) return Invalid("Too little picture data was encoded; the scene may be idle.");
+        // A short low-output interval can recover within the requested window.
+        // Keep measuring it; only the completed window can establish insufficient workload.
+        // Counter resets, lost configuration and other invalid evidence still stop immediately.
+        if (completeWindow && mbps < Math.Min(25, candidate.TargetMbps*.25)) return Invalid("Too little picture data was encoded; the scene may be idle.");
         double smooth = Math.Clamp(100-30*percent-Math.Min(30,burstRate*2)-Math.Min(35,worst/10)-Math.Min(25,longestSlow*8),0,100);
         string description = major ? "Frequent hitches or delivery slowdowns observed" : affected == 0 ? "No measured delivery hitches" : "Usable with occasional delivery hitches";
         var trial=new BenchmarkTrial(candidate,!major,description,duration,mbps,encoded,receiverFps,gpu,samples)

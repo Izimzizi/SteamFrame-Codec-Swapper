@@ -6,8 +6,12 @@ internal static class BenchmarkRuntimeRestart
     public static async Task<EncoderSnapshot> RunAsync(SteamPaths paths, FramePreferences preferences, EncoderProbe probe,
         BenchmarkSettingsLease lease, Action<string> progress, CancellationToken token,string? capturedHost=null)
     {
-        await lease.CheckControlsAsync();
+        // A dropped headset can make Background OpenVR initialization fail (215).
+        // Verify the owned helper first, then revive the same host before using settings APIs.
+        await lease.CheckEncoderOwnershipAsync();
         var host=capturedHost??await BenchmarkHostConnection.CaptureAsync(preferences,token);
+        await EnsureConnectionAsync(paths,preferences,probe,lease,progress,token,host);
+        await lease.CheckControlsAsync();
         FrameReconnectTuning? expected=null;
         var result=await FrameReconnectRecovery.RunAsync(probe.GetSnapshotAsync,
             pid=>SteamVrRuntime.StartOrRestartForReconnectAsync(paths,pid),async(before,ready)=>
@@ -31,6 +35,19 @@ internal static class BenchmarkRuntimeRestart
         await OpenVrSettings.WaitUntilAvailableAsync(paths);
         await lease.CheckControlsAsync();
         return snapshot;
+    }
+
+    internal static async Task EnsureConnectionAsync(SteamPaths paths,FramePreferences preferences,EncoderProbe probe,
+        BenchmarkSettingsLease lease,Action<string> progress,CancellationToken token,string? capturedHost)
+    {
+        if(!(await probe.GetSnapshotAsync()).Active)
+        {
+            await lease.CheckEncoderOwnershipAsync();
+            var host=capturedHost??await BenchmarkHostConnection.CaptureAsync(preferences,token);
+            progress("Resuming the disconnected Frame before restoring the SteamVR connection…");
+            await BenchmarkHostConnection.ResumeAsync(preferences,host,token);
+        }
+        await OpenVrSettings.WaitUntilAvailableAsync(paths);
     }
 }
 
@@ -59,11 +76,27 @@ internal static class BenchmarkHostConnection
  if(streams.some(s=>String(s.m_clientid)!==HOST))throw new Error("Another VR host is active");
  const hosts=RemotePlayStore_SteamUI.devices.filter(d=>String(d.clientId)===HOST && d.bCanStreamVR && d.bHasLocalConnection);
  if(hosts.length!==1)throw new Error("The same VR host is no longer available");
- SteamClient.Apps.StreamGame(250820,hosts[0].clientId,-1);return true;
+ return true;
 })()
 """.Replace("HOST",identity);
-        if(!System.Text.Json.JsonSerializer.Deserialize<bool>(await Evaluate(preferences,expression,token)))
-            throw new IOException("The Frame did not resume the selected VR host.");
+        await RestartClientAsync(async ct =>
+        {
+            if(!System.Text.Json.JsonSerializer.Deserialize<bool>(await Evaluate(preferences,expression,ct)))
+                throw new IOException("The Frame did not identify the selected VR host.");
+        }, ct => FrameStreamControl.StopAsync(preferences,ct),
+            ct => FrameStreamControl.StartAsync(preferences,host,ct),token);
+    }
+    internal static async Task RestartClientAsync(Func<CancellationToken,Task> validateHost,
+        Func<CancellationToken,Task> stop,Func<CancellationToken,Task> start,CancellationToken token,
+        Func<CancellationToken,Task>? settle=null)
+    {
+        token.ThrowIfCancellationRequested();
+        await validateHost(token); // Never terminate a stream belonging to another PC.
+        await stop(token);
+        await (settle?.Invoke(token) ?? Task.Delay(FrameStreamControl.Settle,token));
+        token.ThrowIfCancellationRequested();
+        await validateHost(token);
+        await start(token); // A stale receiver needs a stop/start, not another StreamGame request.
     }
     private static Task<string> Evaluate(FramePreferences preferences,string expression,CancellationToken token) =>
         FrameSsh.ExecuteAsync(preferences,FrameLinkQuery.SessionScript+"\nwith FrameUiConnection() as ui:\n print(json.dumps(ui.evaluate("+

@@ -13,6 +13,21 @@ public class WirelessTuningTests
 
     [Fact] public void SliderTargetIsNotMeasuredBitrate()
     { var t=Trial(Candidate,25,240);Assert.True(t.Passed);Assert.Equal(240,t.ActualMbps);Assert.Equal(90,t.ReceiverFps); }
+    [Fact] public void LowOutputAtTheStartDoesNotEndTheRequestedWindowEarly()
+    {
+        var rows=Good(10).Select((s,i)=>s with
+            {Bytes=(ulong)((Math.Min(i,3)*10+Math.Max(0,i-3)*100)*1e6/8)}).ToArray();
+        var early=WirelessBenchmark.Evaluate(Candidate,rows.Take(4).ToArray(),90,3,completeWindow:false);
+        Assert.True(early.MeasurementValid);
+        var finished=WirelessBenchmark.Evaluate(Candidate,rows,90,10);
+        Assert.True(finished.MeasurementValid);Assert.Equal(10,finished.Seconds);Assert.Equal(73,finished.ActualMbps);
+        Assert.False(WirelessBenchmark.Evaluate(Candidate,Good(10,mbps:10),90,10).MeasurementValid);
+    }
+    [Fact] public void InterimLowOutputStillRejectsInvalidCountersImmediately()
+    {
+        var rows=Good(3,mbps:10);rows[3]=rows[3] with {Identity="replacement"};
+        Assert.False(WirelessBenchmark.Evaluate(Candidate,rows,90,3,completeWindow:false).MeasurementValid);
+    }
     [Fact] public void OneTimeoutIn197SecondsIsUsableAndRetained()
     {
         var t=WirelessBenchmark.Evaluate(Candidate,Hitches(Good(300),(197,1)),90,300);

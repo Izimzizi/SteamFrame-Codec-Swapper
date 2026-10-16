@@ -86,12 +86,13 @@
                     <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="20">
                         <StackPanel Spacing="10">
                             <TextBlock Text="Presets built around your connection" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
-                            <TextBlock Text="Find several setups for your connection: balanced, higher detail or higher refresh. A moving room compares resolution, active Hz, encoder passes and gaze/periphery quality, then adjusts bitrate and checks for serious stuttering." Style="{StaticResource Hint}" />
-                            <TextBlock Text="Close your VR game and connect using HEVC. Leave the Frame on a desk with its tracking cameras unobstructed; the app keeps it awake and moves the test scene for you. Start from the resolution, refresh rate and gaze quality you want to use. NVIDIA NVENC and paired wireless SSH are required." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Compare balanced, higher-detail and higher-refresh setups using a moving test room. Auto tune checks resolution, Hz, encoder passes, gaze quality and bitrate." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Close your VR game and connect using HEVC. Leave the Frame on a desk with its tracking cameras uncovered. Requires NVIDIA NVENC and paired wireless SSH." Style="{StaticResource Hint}" />
+                            <TextBlock Text="Allow about 15–25 minutes. The app keeps the Frame awake, may restart SteamVR, and restores your starting settings and Hz afterward. You can stop and restore at any time." Style="{StaticResource Hint}" />
+                            <Button x:Name="BenchmarkStartButton" Content="Start auto tune" Style="{StaticResource SteamActionButtonStyle}" Click="BenchmarkStart_Click" />
                             <HyperlinkButton Content="Set up headset monitoring" Tag="connection" Click="OpenSection_Click" Padding="0" HorizontalAlignment="Left" />
                         </StackPanel>
                     </Border>
-                    <TextBlock Text="The result is a list of explicit presets you can choose from. Brief screens explore the options; longer checks confirm the strongest settings with headroom. Occasional hitches remain scored observations. There is no required Mbps target or Valve-default fallback." Style="{StaticResource Hint}" />
                     <Expander Header="Test limits and comparisons" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="12" x:Name="BenchmarkOptionsPanel" Padding="0,12,0,0">
                         <CheckBox x:Name="BenchmarkUnattended" Content="Run without wearing the Frame (temporary keep-awake)" IsChecked="True" />
@@ -111,10 +112,7 @@
                         <TextBlock Text="The active sender mode stays fixed. To compare another mode, change Asynchronous sending in Advanced, reconnect, then run auto tune again." Style="{StaticResource Hint}" />
                     </StackPanel>
                     </Expander>
-                    <TextBlock Text="Default: 10-second screens, 35-second confirmations and 10% bitrate headroom. Allow roughly 15–25 minutes with all comparisons enabled, depending on mode switches. SteamVR may restart. Stop at any time to keep partial results. Original settings and Hz are restored afterward. If measurement is unavailable, an explicit unmeasured starting option is offered." Style="{StaticResource Hint}" />
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Button x:Name="BenchmarkStartButton" Content="Start auto tune" Style="{StaticResource SteamActionButtonStyle}" Click="BenchmarkStart_Click" />
-                    </StackPanel>
+                    <TextBlock Text="Default: 10-second screens, 35-second confirmations and 10% bitrate headroom. You choose which resulting preset to apply. Options without usable measurements are labeled unmeasured." Style="{StaticResource Hint}" />
                     <Border x:Name="BenchmarkResultCard" Visibility="Collapsed" Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="20">
                         <StackPanel Spacing="12">
                             <TextBlock x:Name="BenchmarkResultTitle" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -137,8 +135,8 @@
                         <Grid ColumnSpacing="32" x:Name="OverviewMetrics" SizeChanged="OverviewMetrics_SizeChanged">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Spacing="4" x:Name="VideoMetric">
                                 <TextBlock Text="Encoded video" FontSize="15" />
@@ -147,14 +145,14 @@
                                     <TextBlock Text="Mbps" FontSize="18" VerticalAlignment="Bottom" Margin="0,0,0,10" />
                                 </StackPanel>
                                 <TextBlock x:Name="VideoDetail" Text="Start the live monitor during a stream." Style="{StaticResource Hint}" />
-                                <TextBlock x:Name="CodecReadback" Text="Codec: Unknown" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock x:Name="CodecReadback" Text="Codec: Unknown" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="8" Margin="0,5,0,0" x:Name="TargetMetric">
                                 <TextBlock Text="Requested target" Style="{StaticResource Hint}" />
-                                <TextBlock x:Name="TargetReadback" Text="— Mbps" FontSize="24" />
+                                <TextBlock x:Name="TargetReadback" Text="— Mbps" FontSize="24" TextWrapping="Wrap" />
                                 <TextBlock x:Name="TargetMode" Text="" Style="{StaticResource Hint}" />
                             </StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="8" Margin="0,5,0,0" MinWidth="170" x:Name="PathMetric">
+                            <StackPanel Grid.Column="2" Spacing="8" Margin="0,5,0,0" x:Name="PathMetric">
                                 <TextBlock Text="Video path" Style="{StaticResource Hint}" />
                                 <TextBlock x:Name="WiredReadback" Text="Unknown" FontSize="24" MaxWidth="210" TextWrapping="Wrap" HorizontalAlignment="Left" />
                                 <TextBlock x:Name="WifiReadback" Text="Wi-Fi: unknown" Style="{StaticResource Hint}" />
@@ -167,49 +165,10 @@
                             </Grid.RowDefinitions>
                         </Grid>
                     </Border>
-                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="16">
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Wireless link" FontSize="15" />
-                            <TextBlock x:Name="LinkStateReadback" Text="Video link: no change seen since this app opened" TextWrapping="Wrap" />
-                            <ToggleSwitch x:Name="KeepFrameAwakeInput" Header="Keep Frame awake" OnContent="Renewing the headset's activity extension" OffContent="Headset idles normally when it is off your head" Toggled="KeepFrameAwake_Toggled" IsEnabled="False" />
-                            <TextBlock x:Name="KeepFrameAwakeHint" Text="For tests with the Frame on a desk: extends the headset's own activity timeout by 60 s every 20 s over the paired SSH connection, like Auto tune's unattended mode. Nothing else changes; the extension ends when this is switched off or the app closes. The sweep and Restart Frame stream hold it automatically." Style="{StaticResource Hint}" MaxWidth="900" />
-                            <TextBlock x:Name="LinkEstimateReadback" Text="SteamVR link estimate: waiting for a stream" TextWrapping="Wrap" />
-                            <TextBlock x:Name="HeldFramesReadback" Text="Held frames: none recorded yet" TextWrapping="Wrap" />
-                            <TextBlock x:Name="CapacityReadback" Text="Link capacity: waiting for SteamVR's 30-second capacity histogram." Style="{StaticResource Hint}" MaxWidth="900" />
-                            <StackPanel x:Name="CapacityPanel" Spacing="4" Visibility="Collapsed">
-                                <Canvas x:Name="CapacityGraph" Height="44" SizeChanged="CapacityGraph_SizeChanged" />
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="0 Mbps" Style="{StaticResource Hint}" FontSize="11" />
-                                    <TextBlock x:Name="CapacityAxisRight" Text="" Style="{StaticResource Hint}" FontSize="11" Grid.Column="1" />
-                                </Grid>
-                                <TextBlock Text="Blue: frames by measured link capacity (log scale)   Green: at or above the histogram's top bucket   Dashed: requested target" Style="{StaticResource Hint}" FontSize="11" MaxWidth="900" />
-                            </StackPanel>
-                            <TextBlock x:Name="RadioReadback" Text="Radio: checking…" TextWrapping="Wrap" />
-                            <TextBlock x:Name="RadioDetail" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
-                            <Border Height="1" Background="{StaticResource SteamBorderBrush}" />
-                            <TextBlock x:Name="AdviceHeadline" Text="No recommendation yet." FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="900" />
-                            <TextBlock x:Name="AdviceReasons" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
-                            <StackPanel Spacing="12" Orientation="Horizontal">
-                                <Button x:Name="ApplyCeilingButton" Content="Apply measured ceiling" Style="{StaticResource SteamActionButtonStyle}" Click="ApplyCeiling_Click" Visibility="Collapsed" />
-                                <Button x:Name="AutoStartButton" Content="Automatic from measured" Click="AutomaticStart_Click" Visibility="Collapsed" ToolTipService.ToolTip="Turns automatic bitrate on with SteamVR starting at the highest clean ceiling the last week's sweeps measured, so it starts high and backs off when the link dips." />
-                                <Button x:Name="UseAdviceButton" Content="Use recommended target" Click="UseAdvice_Click" IsEnabled="False" />
-                            </StackPanel>
-                            <StackPanel Spacing="12" Orientation="Horizontal">
-                                <Button x:Name="SweepButton" Content="Find my link's limit" Click="Sweep_Click" IsEnabled="False" />
-                                <Button x:Name="QuickCheckButton" Content="Check this rate (30 s)" Click="QuickCheck_Click" IsEnabled="False" ToolTipService.ToolTip="Measures the current target once, about 30 seconds, without changing or saving anything: is this rate still clean today?" />
-                                <Button x:Name="SweepStopButton" Content="Stop sweep" Click="StopSweep_Click" Visibility="Collapsed" />
-                                <Button x:Name="RestartStreamButton" Content="Restart Frame stream" Click="RestartFrameStream_Click" />
-                            </StackPanel>
-                            <TextBlock x:Name="SweepStatus" Text="The sweep raises the manual target step by step during a real stream, scores each step, and restores your target afterwards. Auto tune compares complete presets with its own test scene. Restart Frame stream tells the headset to stop and start PC streaming again, without restarting SteamVR; the sweep and Reconnect Frame use it automatically when the video link stays down." Style="{StaticResource Hint}" MaxWidth="900" />
-                            <Border x:Name="SweepResultsCard" Background="{StaticResource SteamDarkBgBrush}" CornerRadius="4" Padding="12" Visibility="Collapsed">
-                                <TextBlock x:Name="SweepResults" Text="" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                            </Border>
-                        </StackPanel>
-                    </Border>
+                    <controls:ActionPanel>
+                        <Button x:Name="MonitorButton" Content="Start monitoring" Style="{StaticResource SteamActionButtonStyle}" Click="StartMonitor_Click" />
+                        <Button x:Name="StopMonitorButton" Content="Stop monitoring" Click="StopMonitor_Click" />
+                    </controls:ActionPanel>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -219,11 +178,54 @@
                         <TextBlock x:Name="GraphScale" Text="0–500 Mbps" HorizontalAlignment="Right" Style="{StaticResource Hint}" Grid.Column="1" />
                     </Grid>
                     <Canvas x:Name="RateGraph" Height="175" SizeChanged="Graph_SizeChanged" />
-                    <TextBlock Text="Blue: encoded video   Green: active connection traffic   Dashed: requested target" Style="{StaticResource Hint}" />
-                    <StackPanel Spacing="12" Orientation="Horizontal">
-                        <Button x:Name="MonitorButton" Content="Start monitoring" Style="{StaticResource SteamActionButtonStyle}" Click="StartMonitor_Click" />
-                        <Button x:Name="StopMonitorButton" Content="Stop monitoring" Click="StopMonitor_Click" />
-                    </StackPanel>
+                    <TextBlock Text="Blue: encoded video   Green: connection traffic   Dashed: driver-reported rate when fresh, otherwise requested target" Style="{StaticResource Hint}" />
+                    <Border Background="{StaticResource SteamCardBgBrush}" CornerRadius="6" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Wireless link" FontSize="15" />
+                            <TextBlock x:Name="LinkStateReadback" Text="Video link: no change seen since this app opened" TextWrapping="Wrap" />
+                            <TextBlock x:Name="LinkEstimateReadback" Text="SteamVR link estimate: waiting for a stream" TextWrapping="Wrap" />
+                            <TextBlock x:Name="HeldFramesReadback" Text="Held frames: none recorded yet" TextWrapping="Wrap" />
+                            <TextBlock x:Name="RadioReadback" Text="Radio: checking…" TextWrapping="Wrap" />
+                            <Border Height="1" Background="{StaticResource SteamBorderBrush}" />
+                            <TextBlock x:Name="AdviceHeadline" Text="No recommendation yet." FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="900" />
+                            <TextBlock x:Name="AdviceReasons" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
+                            <controls:ActionPanel>
+                                <Button x:Name="ApplyCeilingButton" Content="Apply measured ceiling" Style="{StaticResource SteamActionButtonStyle}" Click="ApplyCeiling_Click" Visibility="Collapsed" />
+                                <Button x:Name="AutoStartButton" Content="Automatic from measured" Click="AutomaticStart_Click" Visibility="Collapsed" ToolTipService.ToolTip="Turns automatic bitrate on with SteamVR starting at the highest clean ceiling the last week's sweeps measured, so it starts high and backs off when the link dips." />
+                                <Button x:Name="UseAdviceButton" Content="Use recommended target" Click="UseAdvice_Click" IsEnabled="False" />
+                            </controls:ActionPanel>
+                            <controls:ActionPanel>
+                                <Button x:Name="SweepButton" Content="Find my link's limit" Click="Sweep_Click" IsEnabled="False" />
+                                <Button x:Name="QuickCheckButton" Content="Check this rate (30 s)" Click="QuickCheck_Click" IsEnabled="False" ToolTipService.ToolTip="Measures the current target once, about 30 seconds, without changing or saving anything: is this rate still clean today?" />
+                                <Button x:Name="SweepStopButton" Content="Stop sweep" Click="StopSweep_Click" Visibility="Collapsed" />
+                                <Button x:Name="RestartStreamButton" Content="Restart Frame stream" Click="RestartFrameStream_Click" />
+                            </controls:ActionPanel>
+                            <TextBlock x:Name="SweepStatus" Text="Find my link’s limit tests bitrate steps, then restores your settings or applies a fully measured, confirmed result if you choose. Check this rate takes about 30 seconds. Auto tune compares complete picture-quality presets." Style="{StaticResource Hint}" MaxWidth="900" />
+                            <Border x:Name="SweepResultsCard" Background="{StaticResource SteamDarkBgBrush}" CornerRadius="4" Padding="12" Visibility="Collapsed">
+                                <TextBlock x:Name="SweepResults" Text="" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                            </Border>
+                            <Expander Header="Radio, capacity and desk testing" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                <StackPanel Spacing="10" Padding="0,12,0,0">
+                                    <TextBlock x:Name="CapacityReadback" Text="Link capacity: waiting for SteamVR's 30-second capacity histogram." Style="{StaticResource Hint}" MaxWidth="900" />
+                                    <StackPanel x:Name="CapacityPanel" Spacing="4" Visibility="Collapsed">
+                                        <Canvas x:Name="CapacityGraph" Height="44" SizeChanged="CapacityGraph_SizeChanged" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="0 Mbps" Style="{StaticResource Hint}" FontSize="11" />
+                                            <TextBlock x:Name="CapacityAxisRight" Text="" Style="{StaticResource Hint}" FontSize="11" Grid.Column="1" />
+                                        </Grid>
+                                        <TextBlock Text="Blue: frames by measured link capacity (log scale)   Green: at or above the histogram's top bucket   Dashed: requested target" Style="{StaticResource Hint}" FontSize="11" MaxWidth="900" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="RadioDetail" Text="" Style="{StaticResource Hint}" MaxWidth="900" />
+                                    <ToggleSwitch x:Name="KeepFrameAwakeInput" Header="Keep Frame awake" OnContent="Renewing the headset's activity extension" OffContent="Headset idles normally when it is off your head" Toggled="KeepFrameAwake_Toggled" IsEnabled="False" />
+                                    <TextBlock x:Name="KeepFrameAwakeHint" Text="Keeps the headset streaming while it is on a desk. Requires paired SSH and ends when switched off or the app closes. Link tests keep it awake automatically." Style="{StaticResource Hint}" MaxWidth="900" />
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </Border>
                     <TextBlock x:Name="HealthCounts" Style="{StaticResource Hint}" />
                     <Button x:Name="ReconnectFrameButton" Content="Reconnect Frame" Click="ReconnectFrame_Click" />
                     <TextBlock Text="Restarts SteamVR once and restores applied HEVC tuning. A running VR game may close. Keep the Frame awake; the app checks for fresh video afterward." Style="{StaticResource Hint}" />
@@ -252,18 +254,18 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ComboBox PlaceholderText="Choose a complete preset" SelectionChanged="PresetSelection_Changed" HorizontalAlignment="Stretch" x:Name="PresetSelection" />
+                            <controls:NoWheelComboBox PlaceholderText="Choose a complete preset" SelectionChanged="PresetSelection_Changed" HorizontalAlignment="Stretch" x:Name="PresetSelection" />
                             <Button Content="Save preset…" Click="SavePreset_Click" Grid.Column="1" />
                         </Grid>
                         <TextBlock Text="Presets load into the editor. Apply when you are ready." Style="{StaticResource Hint}" x:Name="PresetSummary" />
                         <HyperlinkButton x:Name="ReloadPresetButton" Content="Reload selected preset" Click="ReloadPreset_Click" HorizontalAlignment="Left" Padding="0" Visibility="Collapsed" />
                         <HyperlinkButton Content="Encoder, sending and driver options" Tag="advanced" Click="OpenSection_Click" HorizontalAlignment="Left" Padding="0" />
                         <TextBlock x:Name="CodecCurrentReadback" Text="Current encoder: checking…" TextWrapping="Wrap" Style="{StaticResource Hint}" />
-                        <ComboBox x:Name="CodecSelectionInput" Header="Video codec" SelectedIndex="0" SelectionChanged="CodecSelection_Changed" HorizontalAlignment="Stretch">
+                        <controls:NoWheelComboBox x:Name="CodecSelectionInput" Header="Video codec" SelectedIndex="0" SelectionChanged="CodecSelection_Changed" HorizontalAlignment="Stretch">
                             <ComboBoxItem Content="HEVC" />
                             <ComboBoxItem Content="AV1" />
                             <ComboBoxItem Content="H.264" />
-                        </ComboBox>
+                        </controls:NoWheelComboBox>
                         <Grid ColumnSpacing="16" RowSpacing="12" SizeChanged="StreamMainFields_SizeChanged" x:Name="StreamMainFields">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -274,10 +276,10 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <controls:NoWheelNumberBox x:Name="BitrateInput" Minimum="25" Maximum="500" SmallChange="5" LargeChange="25" Value="100" SpinButtonPlacementMode="Compact" Header="Video bitrate target (Mbps)" ValueChanged="Bandwidth_ValueChanged" />
-                            <ComboBox x:Name="CodecRefreshInput" Grid.Column="1" Header="Display refresh rate" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="CodecRefresh_Changed">
+                            <controls:NoWheelComboBox x:Name="CodecRefreshInput" Grid.Column="1" Header="Display refresh rate" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="CodecRefresh_Changed">
                                 <ComboBoxItem Content="90 Hz" />
                                 <ComboBoxItem Content="120 Hz" />
-                            </ComboBox>
+                            </controls:NoWheelComboBox>
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" x:Name="CodecModeHint" />
                         <TextBlock Style="{StaticResource Hint}" x:Name="RefreshReadback" Text="Active display Hz has not been verified." />
@@ -400,17 +402,17 @@
                     <TextBlock x:Name="AdvancedCapabilityStatus" Text="Checking the native helper…" TextWrapping="Wrap" />
                     <Expander Header="Encoding method" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                         <StackPanel Spacing="12" Padding="0,12,0,0">
-                            <ComboBox x:Name="RateControlInput" Header="Rate control" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
+                            <controls:NoWheelComboBox x:Name="RateControlInput" Header="Rate control" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
                                 <ComboBoxItem Content="Valve default" />
                                 <ComboBoxItem Content="VBR" />
                                 <ComboBoxItem Content="CBR without filler or padding" />
-                            </ComboBox>
-                            <ComboBox x:Name="MultiPassInput" Header="Encoding passes" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
+                            </controls:NoWheelComboBox>
+                            <controls:NoWheelComboBox x:Name="MultiPassInput" Header="Encoding passes" SelectedIndex="0" SelectionChanged="Policy_SelectionChanged" HorizontalAlignment="Stretch">
                                 <ComboBoxItem Content="Valve default" />
                                 <ComboBoxItem Content="Single pass" />
                                 <ComboBoxItem Content="Quarter-resolution multipass" />
                                 <ComboBoxItem Content="Full-resolution multipass (experimental)" />
-                            </ComboBox>
+                            </controls:NoWheelComboBox>
                             <TextBlock Text="Single pass uses less encoding work. Quarter-resolution multipass analyzes a smaller image first, then encodes at full resolution. Full-resolution multipass analyzes and encodes at full resolution; compare detail and frame timing before keeping it." Style="{StaticResource Hint}" />
                             <TextBlock Text="Extra encoding work can increase latency. Bitrate targets describe useful video, without filler traffic. Multipass changes encoder analysis; native HEVC still uses one decoder." Style="{StaticResource Hint}" />
                             <TextBlock Text="CBR here does not add padding or lock Valve's adaptive encoder target. Actual Mbps can still vary. Switching between VBR and CBR may need a new encoder session; check the accepted mode after reconnecting." Style="{StaticResource Hint}" />

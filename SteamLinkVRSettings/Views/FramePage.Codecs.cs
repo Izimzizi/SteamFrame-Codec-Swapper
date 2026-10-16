@@ -78,7 +78,11 @@ public sealed partial class FramePage
         ApplyButton.IsEnabled = idle;
         CodecSelectionInput.IsEnabled = CodecPasswordInput.IsEnabled = BitrateInput.IsEnabled = idle;
         CodecRefreshInput.IsEnabled = idle;
-        AutomaticInput.IsEnabled = StartingBandwidthInput.IsEnabled = idle && !paired;
+        AutomaticInput.IsEnabled = idle && !paired;
+        StartingBandwidthInput.IsEnabled = idle && !paired && AutomaticInput.IsOn;
+        StreamWidthInput.IsEnabled = idle && !paired && !AutomaticWidthInput.IsOn;
+        AutomaticWidthInput.IsEnabled = QualityInput.IsEnabled = idle && !paired;
+        GazeInput.IsEnabled = PeripheralInput.IsEnabled = idle && !paired && QualityInput.IsOn;
         AutomaticOptions.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
         HevcPictureOptions.Visibility = paired ? Visibility.Collapsed : Visibility.Visible;
         AmfInput.IsEnabled = MultipleLinksInput.IsEnabled = idle && !paired;

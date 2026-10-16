@@ -8,6 +8,18 @@ public sealed class BenchmarkRecoveryTests : IDisposable
     private string Journal => Path.Combine(_directory, "recovery.json");
     private BenchmarkSettingsLease Lease(Fake settings) => new(Paths, new EncoderProbe(), Journal, settings);
 
+    [Theory][InlineData("generation")][InlineData("quality")][InlineData("policy")]
+    public async Task ReconnectRefusesAnEncoderOwnedByAnotherController(string change)
+    {
+        var backend=new Fake();var lease=Lease(backend);await lease.BeginAsync(await backend.Snapshot());
+        await lease.CheckEncoderOwnershipAsync();
+        if(change=="generation")backend.Generation="replacement";
+        else if(change=="quality")backend.QualityValue=new(true,-4,0);
+        else backend.Request=new(EncoderRateControl.Vbr,EncoderMultiPass.SinglePass);
+        await Assert.ThrowsAsync<IOException>(lease.CheckEncoderOwnershipAsync);
+        Assert.True(lease.Pending);
+    }
+
     [Fact] public async Task RestoresAbsentOverridesAndOriginalPolicyAfterCompletedRun()
     {
         var backend = new Fake(); var lease = Lease(backend);

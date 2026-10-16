@@ -101,7 +101,7 @@ public static class WirelessAdvisor
         }
 
         var histogram = input.Histogram;
-        var histogramFresh = histogram is not null && input.HistogramAgeSeconds is <= FreshSeconds;
+        var histogramFresh = histogram is { TotalSamples: >= 100 } && input.HistogramAgeSeconds is >= 0 and <= FreshSeconds;
         double? capacityP10 = null; bool capacityOpenEnded = false;
         if (histogramFresh && histogram!.TotalSamples >= 100)
         {
@@ -116,7 +116,7 @@ public static class WirelessAdvisor
         var throttles = input.ThrottleEventsLastMinute;
         var heldLimiting = HeldFramesLimiting(throttles, input.ThrottleMsLastMinute, input.RefreshHz);
         var heldNoticeable = HeldFramesNoticeable(throttles, input.ThrottleMsLastMinute, input.RefreshHz);
-        var stepDown = input.LatestBitrateChange is { ChangedBitrate: true } change && change.NewBitrateMbps < change.PreviousBitrateMbps && input.BitrateChangeAgeSeconds is <= 120 ? change : null;
+        var stepDown = input.LatestBitrateChange is { ChangedBitrate: true } change && change.NewBitrateMbps < change.PreviousBitrateMbps && input.BitrateChangeAgeSeconds is >= 0 and <= 120 ? change : null;
         var strong = heldLimiting || stepDown is not null || input.HeadsetLossRatio is > 0.01;
         var mild = !strong && (heldNoticeable || input.HeadsetLossRatio is > 0.002 || input.HeadsetLatencyMs is > LatencyNoticeMs);
         if (heldNoticeable)
@@ -128,14 +128,24 @@ public static class WirelessAdvisor
         if (stepDown is not null) reasons.Add($"SteamVR lowered the stream from {stepDown.PreviousBitrateMbps:0} to {stepDown.NewBitrateMbps:0} Mbps after a {stepDown.DurationMs:0} ms link stall {Age(input.BitrateChangeAgeSeconds)}.");
         if (input.HeadsetLossRatio is > 0.002) reasons.Add($"The headset reports {input.HeadsetLossRatio:P2} packet loss on the active link.");
         if (input.HeadsetLatencyMs is > LatencyNoticeMs) reasons.Add($"The headset reports {input.HeadsetLatencyMs:0.#} ms worst-case link latency; queued packets usually mean the link is near its limit.");
-        if (input.AutomaticBitrate && input.DriverBitrate is { } driver)
+        if (input.AutomaticBitrate && input.DriverBitrate is { } driver && input.DriverBitrateAgeSeconds is >= 0 and <= FreshSeconds)
             reasons.Add($"Automatic bitrate is on; SteamVR's own estimate is {driver.Mbps:0} Mbps. The recommendation pins a manual target instead of letting it drift.");
 
-        if (!input.StreamActive && !histogramFresh && throttles == 0)
+        if (!input.StreamActive)
         {
             reasons.Insert(0, "Start a wireless stream; SteamVR reports link capacity every 30 seconds while it runs.");
             return new(null, "Waiting for stream measurements.", reasons, AdviceConfidence.None, false, false);
         }
+
+        // An active encoder and an absence of warnings do not establish link capacity.
+        // Wait for a populated, current histogram before proposing a higher target.
+        if (!histogramFresh && !strong && !mild)
+        {
+            reasons.Insert(0, "Keep the current target while SteamVR collects fresh link capacity measurements (about 30 seconds). No recent faults alone does not prove headroom.");
+            return new(null, "Collecting link measurements; keep the current target.", reasons, AdviceConfidence.None, false, false);
+        }
+        var lightlyLoaded = target is > 0 && input.MeasuredVideoMbps is double video &&
+            double.IsFinite(video) && video < target * LinkCapacitySweep.FullTestShare;
 
         // Capacity-based base: resolved percentile with headroom, or the open-ended edge.
         double? baseline = capacityP10 is double p
@@ -161,7 +171,7 @@ public static class WirelessAdvisor
         {
             var limit = Math.Min(ceiling, radioCap);
             var upper = baseline is double b && !capacityOpenEnded ? Math.Min(limit, b) : limit;
-            if (t + 5 <= upper)
+            if (t + 5 <= upper && !lightlyLoaded)
             {
                 headroom = true;
                 recommended = Round5(Math.Min(upper, t + (upper - t > 100 ? 50 : 25)));
@@ -179,24 +189,35 @@ public static class WirelessAdvisor
             else
             {
                 recommended = Round5(Math.Min(t, upper));
-                reasons.Add(t >= limit ? $"The target is already at the {limit} Mbps limit for this setup." : "The link is clean at the current target; keep it.");
+                reasons.Add(t >= limit ? $"The target is already at the {limit} Mbps limit for this setup." : "Keep the current target while checking a busier scene.");
             }
         }
         else recommended = Round5(Math.Min(baseline ?? ValveDefaultStartMbps, Math.Min(ceiling, radioCap)));
 
         recommended = Math.Min(recommended, Math.Min(ceiling, radioCap));
         recommended = Math.Max(recommended, 25);
+        if (lightlyLoaded)
+            reasons.Add($"Encoded video is only {input.MeasuredVideoMbps:0} Mbps against a {target:0} Mbps target. A still or simple scene has not tested that budget; use a busier game or Find my link's limit before raising it.");
         var confidence = histogramFresh && (input.StreamActive || throttles > 0) ? AdviceConfidence.High
             : input.StreamActive || histogramFresh ? AdviceConfidence.Medium : AdviceConfidence.Low;
         var keeping = target is double current && Math.Abs(current - recommended) < 2.5;
         var headline = linkLimited ? $"The link is holding the stream back at the current rate; try {recommended} Mbps."
             : headroom ? $"Headroom available; try {recommended} Mbps and watch held frames."
             : keeping && mild ? $"Keep {recommended} Mbps for now; the link shows occasional held frames or latency at this rate."
+            : keeping && lightlyLoaded ? $"Keep {recommended} Mbps; the current scene has not tested the full target."
             : keeping ? $"Keep {recommended} Mbps; the link is clean at this rate."
             : $"Suggested manual target: {recommended} Mbps.";
         if (recommended > ValveDefaultStartMbps) reasons.Add($"That is {(recommended - ValveDefaultStartMbps) * 100 / ValveDefaultStartMbps}% above Valve's default 200 Mbps starting rate, which the automatic mode then adjusts from.");
         return new(recommended, headline, reasons, confidence, linkLimited, headroom);
     }
+
+    /// <summary>A confirmed sweep may lead briefly while its own fault counters settle.
+    /// After that, current trouble or missing live evidence takes precedence.</summary>
+    public static int? PreferredSweepCeiling(WirelessAdvice live, SweepConclusion? sweep, bool settling)
+        => sweep?.ApplicableCeilingMbps is int ceiling &&
+            (settling || live.Confidence != AdviceConfidence.None && !live.LinkLimited &&
+                live.RecommendedMbps is int current && current >= ceiling)
+            ? ceiling : null;
 
     private static string Age(double? seconds) => seconds is double s ? s < 60 ? $"{s:0} s ago" : $"{s / 60:0} min ago" : "recently";
 }

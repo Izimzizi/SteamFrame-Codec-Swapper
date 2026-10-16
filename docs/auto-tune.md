@@ -50,6 +50,8 @@ The affected-frame estimate takes the largest overlapping PC, receiver or cadenc
 
 Missing/stale counters, changed stream identities or wireless routes, inactive requested settings and encoder errors cannot support a measured recommendation. Such evidence is retained as an invalid observation rather than fabricated into a successful trial. Normal reprojection and packet-repair log entries are not converted into optical frame losses.
 
+Low encoded output by itself does not end a trial early. The tuner measures the requested window before deciding whether it contained enough picture data; a brief low-output interval may recover. A completed window with insufficient workload still cannot support a measured recommendation. Invalid counters or changed settings continue to stop that window immediately.
+
 ## Display changes and recovery
 
 For a new Hz, the host preference is written first, the Frame's `vrlink.client` per-app display preference is changed through paired SSH, and both the receiver and PC active rates are checked. That per-app preference takes precedence over the Frame's global SteamVR setting. SteamVR is restarted when needed. Width changes are verified from accepted encoder settings. Each mode gets fresh scene/receiver observers and a new warmup; comparison counters never span a deliberate mode switch.
@@ -58,8 +60,20 @@ Bitrate and quality changes use the running stream. Width and Hz changes also av
 
 After a mode switch, headset counter startup allows 20 seconds for the wireless route and streaming scene to settle, with a 30-second host-side bound. Three consistent startup observations are required. If a transient missing route or receiver persists, the app resumes the same captured PC once and retries. Ambiguous or wired routes remain explicit errors. Once measurement starts, changed identities, missing telemetry or route changes still invalidate that window; reconnection never joins unrelated counters into a seemingly clean result.
 
+Before changing a candidate and before opening its measurement window, the tuner verifies advancing encoded frames and bytes. If output has stopped, it can recover the owned runtime up to twice during the whole run. A reconnect stops the headset's stale streaming client, rechecks the captured PC, and starts that same host again. Fresh output is required afterward. Completed observations remain in the report; persistent failures stop with a bounded recovery error. A cleanup failure is appended to the original cause instead of hiding it.
+
 App-requested multipass transitions use a fresh encoder session. Live testing found a GPU fault after switching to full multipass inside an existing session despite an accepted API return. The helper now retains the accepted pass until initialization, and the search groups modes by pass to limit restarts. Original multipass restoration follows the same rule.
 
 Before writing settings, the app journals original overrides and absent keys. A separate display journal preserves original active Hz and the PC/Frame refresh preferences. Cancellation, normal completion and recovery restore those values, preserving newer external edits. A failed restore keeps its journal for retry. After an interruption, reconnect the Frame and use **Restore starting settings**. If a dedicated connection is stuck, reconnecting the dongle can help even in the same USB 3 port or hub.
 
 Reports are local under `%LOCALAPPDATA%/SteamLinkVRSettings/Benchmarks`. Version 4 reports include independent region stages and optional bracketed QP metadata, alongside each candidate's mode and saved recommendation profiles. Version 3 reports used an earlier, narrower quality search and bitrate-based quality preference; old reports retain their original observations and semantics. No credentials or reports are uploaded.
+
+## Streaming experience audit — October 15, 2026
+
+The updated Windows app completed the full default comparison on the connected Frame over its dedicated wireless dongle: **64 valid trials in 25:05**, all 18 mode/pass screens, four longer confirmations (including one alternative), three saved choices, 100% completion and no pending recovery. The report is `benchmark-20261015-183828-7aa1367a.json`. Two final choices retained the **Screened only; limited confidence** label; the third was confirmed. Performance warnings remain attached to the observations. Completion does not certify every candidate or every game as hitch-free.
+
+An additional live fault-injection check deliberately stopped the headset stream between two measurements. Auto tune reconnected the same PC, required a fresh stream identity, and completed the next measurement at approximately 90 encoded/received FPS. Both windows were valid and settings restored without intervention (`benchmark-20261015-183612-a5c7f4f8.json`). The first full audit attempt exposed this dropped-stream recovery defect; that interrupted attempt is not counted as a successful run.
+
+Readback after the completed run verified the original 225 Mbps target, 1664-pixel stream width, 90 Hz display, CBR quarter-resolution multipass and enabled gaze −20 / periphery −12 offsets. Settings, display and power recovery journals were absent, the test scene had exited, and streaming was active. Loading a result opened the settings editor for review without applying it. The review-only change was discarded afterward.
+
+The audit also checked the compact-window layout, recommendation confidence labels, pending quality edits across polling/navigation, cancellation and restoration. Automated verification passed 329 managed tests, seven native tests and 30 compositor assertions. Two patcher fixture tests were skipped because their external driver fixtures were not supplied.

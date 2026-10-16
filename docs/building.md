@@ -98,6 +98,7 @@ The projects under `Tests\` are xUnit projects in the solution and appear in Tes
 
 ```powershell
 dotnet test Tests\CoreTests
+dotnet test Tests\BenchmarkTests
 dotnet test Tests\StreamingHealthTests
 dotnet test Tests\StreamingFrameTraceTests
 dotnet test Tests\FrameReceiverDiagnosticsTests
@@ -106,6 +107,7 @@ dotnet test Tests\FrameReceiverDiagnosticsTests
 | Project | Covers |
 | --- | --- |
 | CoreTests | Settings file safety, the settings editor view model, Steam paths, preferences, rate math, traffic selection |
+| BenchmarkTests | Auto tune search, telemetry validity, startup retries, cancellation, settings ownership and display recovery |
 | StreamingHealthTests | PC log parsing, rotation, truncation and privacy of captured events |
 | StreamingFrameTraceTests | Recovery-trace timing without inventing drops |
 | FrameReceiverDiagnosticsTests | The headset-side collector script, run locally against fixture logs |

@@ -14,10 +14,13 @@ public sealed record SweepStepResult(int TargetMbps, SweepSample Sample, SweepVe
     public double HeldMsPerMinute => Sample.Seconds > 0 ? Sample.ThrottleMs * 60.0 / Sample.Seconds : 0;
 }
 
-public sealed record SweepConclusion(int? BestCleanMbps, int? HighestMarginalMbps, string Summary, double? CarriedVideoMbps = null, bool Check = false)
+public sealed record SweepConclusion(int? BestCleanMbps, int? HighestMarginalMbps, string Summary, double? CarriedVideoMbps = null, bool Check = false, bool Confirmed = false)
 {
     /// <summary>True when the encoder produced well under the clean target, so higher rates were only lightly tested.</summary>
-    public bool LightlyTested => BestCleanMbps is int best && CarriedVideoMbps is double carried && carried < best * LinkCapacitySweep.FullTestShare;
+    public bool LightlyTested => BestCleanMbps is int best &&
+        (CarriedVideoMbps is not double carried || !double.IsFinite(carried) || carried < best * LinkCapacitySweep.FullTestShare);
+    /// <summary>Shared by automatic apply, one-click apply and the advisor. Missing output is not a measured ceiling.</summary>
+    public int? ApplicableCeilingMbps => !Check && Confirmed && !LightlyTested ? BestCleanMbps : null;
 }
 
 /// <summary>
@@ -163,9 +166,11 @@ public static class LinkCapacitySweep
         var window = history.Where(r => now - r.At <= HistoryWindow && r.At - now <= TimeSpan.FromMinutes(5)).OrderBy(r => r.At).ToList();
         var recent = window.Where(r => r.IsFullyTested).ToList();
         var noClean = window.Count(r => r.NoCleanStep);
-        var light = window.Count - recent.Count - noClean;
+        var unconfirmed = window.Count(r => !r.NoCleanStep && !r.Confirmed);
+        var light = window.Count - recent.Count - noClean - unconfirmed;
         var noCleanText = (noClean == 0 ? "" : noClean == 1 ? " One sweep found no clean step at all." : $" {noClean} sweeps found no clean step at all.")
-            + (light == 0 ? "" : light == 1 ? " One lightly tested result (a still scene) is not counted." : $" {light} lightly tested results (still scenes) are not counted.");
+            + (light == 0 ? "" : light == 1 ? " One result without enough encoded video is not counted." : $" {light} results without enough encoded video are not counted.")
+            + (unconfirmed == 0 ? "" : unconfirmed == 1 ? " One unconfirmed result is not counted." : $" {unconfirmed} unconfirmed results are not counted.");
         if (recent.Count < 2) return noClean > 0 && window.Count >= 2 ? $"The last {window.Count} sweeps disagreed." + noCleanText + " Sweep again before trusting any single result." : null;
         int low = recent.Min(r => r.CeilingMbps), high = recent.Max(r => r.CeilingMbps);
         var runs = recent.Count == 2 ? "two sweeps" : $"{recent.Count} sweeps";
@@ -225,6 +230,7 @@ public static class LinkCapacitySweep
         var summary = best is int clean
             ? $"Highest clean target: {clean} Mbps" + marginalText + (firstFailure is int f ? $"; {f} Mbps failed." : ".") + carriedText
             : marginal is int only ? $"No step was fully clean; {only} Mbps was the best marginal result." : "Every step showed link trouble; check the radio signal and dongle placement before streaming at higher rates.";
-        return new(best, marginal, summary, carried);
+        var confirmed = best is int winner && results.Last(r => r.TargetMbps == winner && r.Verdict == SweepVerdict.Clean).Passes >= 2;
+        return new(best, marginal, summary, carried, Confirmed: confirmed);
     }
 }
