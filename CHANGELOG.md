@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.8.1 — Auto tune recovery and clearer streaming controls
+
+- Auto tune detects stopped video between trials, reconnects the same captured PC with
+  at most two recovery attempts per run, and requires fresh output before measuring again.
+  Reconnection stops a stale headset streaming client before restarting it, and restores
+  the connection before using SteamVR settings APIs. Cleanup errors retain the original cause.
+- A brief low-output interval no longer ends a trial after only a few seconds. Completed
+  windows still require enough encoded video; invalid counters and changed settings remain errors.
+- Wireless advice now requires fresh measurements and avoids recommending more bandwidth
+  from an underloaded scene. Current link problems take priority over an older sweep result.
+- A measured ceiling must have adequate video output and a completed clean confirmation
+  before it can be offered, applied or saved. If confirmation fails, a lower clean candidate
+  receives its own confirmation instead of being assumed safe.
+- Pending gaze-quality edits survive background polling and navigation. Irrelevant controls
+  are disabled, and scrolling no longer accidentally changes dropdown selections.
+- Compact windows have wrapping action buttons, readable Overview metrics, a more accessible
+  live graph and Auto tune start button, and grouped radio/capacity details.
+- Live verification completed 64 valid Auto tune trials in 25:05, produced three labeled
+  recommendations and restored the starting settings. A separate deliberate stream-drop test
+  verified automatic recovery and continued measurement. Short screens retain limited-confidence
+  labels, and observed streaming hitches remain visible.
+- Validation: 329 managed tests, seven native tests and 30 compositor assertions passed.
+  Two patcher tests were skipped because external driver fixtures were not provided.
+
 ## 1.8.0 — Headless sweeps and the measured ceiling
 
 - **Keep Frame awake** on the Overview card renews the headset's own 60-second activity
