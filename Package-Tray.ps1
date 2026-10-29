@@ -1,5 +1,5 @@
 param(
-    # A CodecLab folder that supplies runtime\ (isolated Python), Assets\ and Backend\ (the PC hook binaries).
+    # A CodecLab folder that supplies runtime\ (isolated Python; Tools\Prepare-CodecLab.ps1 builds it) and Backend\ (the PC hook binaries, or use -BuildBackend).
     [string]$CodecLabSource = (Join-Path $PSScriptRoot 'artifacts\CodecLab'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\SteamFrameTray'),
     # Rebuild the PC hook binaries from Native\H264Hook instead of taking them from CodecLabSource.
@@ -14,8 +14,8 @@ Push-Location $PSScriptRoot
 try {
     $out = [IO.Path]::GetFullPath($OutputDirectory)
     $source = [IO.Path]::GetFullPath($CodecLabSource)
-    foreach ($required in @('runtime\python.exe', 'Assets')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $source $required))) { throw "CodecLab source is missing $required ($source). Point -CodecLabSource at a codec-enabled release's CodecLab folder." }
+    foreach ($required in @('runtime\python.exe')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $source $required))) { throw "CodecLab source is missing $required ($source). Run Tools\Prepare-CodecLab.ps1 or point -CodecLabSource at a CodecLab folder." }
     }
     $running = Get-Process -Name SteamFrameTray -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($out, [StringComparison]::OrdinalIgnoreCase) }
     if ($running) { throw 'Exit SteamFrameTray (right-click the icon, Exit) before packaging over it.' }
@@ -40,7 +40,7 @@ try {
     if (Test-Path -LiteralPath $lab) { Remove-Item -LiteralPath $lab -Recurse -Force }
     New-Item -ItemType Directory -Path $lab, (Join-Path $lab 'Backend') | Out-Null
     Copy-Item -LiteralPath (Join-Path $source 'runtime') -Destination $lab -Recurse
-    Copy-Item -LiteralPath (Join-Path $source 'Assets') -Destination $lab -Recurse
+    if (Test-Path -LiteralPath (Join-Path $source 'Assets')) { Copy-Item -LiteralPath (Join-Path $source 'Assets') -Destination $lab -Recurse }
     foreach ($helper in @('codec_supervisor.py', 'root_session.py', 'frame_cef_stdio.py', 'start_stream.js', 'stop_stream.js')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Frame\Codec\$helper") -Destination $lab
     }

@@ -1,0 +1,66 @@
+name: Dev release
+
+# Builds the package from a commit and publishes it as a GitHub pre-release.
+# Run it from the Actions tab: choose the commit (any ref), a tag name and optional notes.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to build
+        default: main
+        required: true
+      tag:
+        description: New release tag (for example dev-2026-10-29)
+        required: true
+      notes:
+        description: Release notes (markdown)
+        default: Dev build for testing. Extract the whole zip and run SteamFrameTray.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the source to build
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          path: src
+      - name: Check out this workflow's helper scripts
+        uses: actions/checkout@v4
+        with:
+          path: ci
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Test
+        shell: pwsh
+        working-directory: src
+        run: |
+          dotnet test Tests/CoreTests -c Release --nologo
+          dotnet test Tests/TrayTests -c Release --nologo
+      - name: Assemble the Python runtime
+        shell: pwsh
+        run: |
+          # Commits from before the Assets folder was dropped still insist on it.
+          $legacy = Select-String -Path src/Package-Tray.ps1 -Pattern "'runtime\python.exe', 'Assets'" -Quiet
+          $arguments = @{ OutputDirectory = "$PWD/codeclab" }
+          if ($legacy) { $arguments.LegacyAssets = $true }
+          & ci/Tools/Prepare-CodecLab.ps1 @arguments
+      - name: Build the hook and package the tray
+        shell: pwsh
+        working-directory: src
+        run: ./Package-Tray.ps1 -CodecLabSource "$env:GITHUB_WORKSPACE/codeclab" -OutputDirectory "$env:GITHUB_WORKSPACE/out/SteamFrameTray" -BuildBackend
+      - name: Publish the pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+        working-directory: src
+        run: |
+          $sha = git rev-parse HEAD
+          Set-Content -Path "$env:RUNNER_TEMP/notes.md" -Value "$env:NOTES`n`nBuilt from commit $sha."
+          gh release create "${{ inputs.tag }}" "$env:GITHUB_WORKSPACE/out/SteamFrameTray.zip" --repo "${{ github.repository }}" --target $sha --prerelease --title "${{ inputs.tag }}" --notes-file "$env:RUNNER_TEMP/notes.md"
