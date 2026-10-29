@@ -35,6 +35,8 @@ public sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _installPatch = new("Install patch");
     private readonly ToolStripMenuItem _removePatch = new("Remove patch");
     private readonly ToolStripMenuItem _admin = new("Restart as administrator");
+    private readonly ToolStripMenuItem _driverMenu = new("Permanent PC driver (experiment)");
+    private readonly PermanentDriver _driver;
     private readonly SetupCheck _setup;
     private SetupForm? _setupForm;
     private bool _busy, _exiting;
@@ -44,6 +46,7 @@ public sealed class TrayApp : ApplicationContext
         _codec = new CodecController(sessionDirectory: TrayData.SessionDirectory, steamPaths: _paths);
         _patch = new DriverPatch(new BitratePatcher(), _paths.Driver);
         _liveBitrate = new LiveBitrate(_paths);
+        _driver = PermanentDriver.ForThisPc(_paths);
         _controller = new TrayController(new CodecServiceAdapter(_codec), new CredentialVault(new FrameCredentialStore()), _patch, _preferences, () => _preferences.SaveAsync(TrayData.SettingsPath), _liveBitrate);
         _setup = new SetupCheck(new ProcessRunner(), _preferences, () => _preferences.SaveAsync(TrayData.SettingsPath), new CredentialVault(new FrameCredentialStore()), SetupEnvironment.ForThisPc(_paths, Path.Combine(AppContext.BaseDirectory, "CodecLab")), _patch);
         _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: new HealthReader(_paths, TrayData.DiagnosticsDirectory).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed), () => _controller.Current);
@@ -100,6 +103,7 @@ public sealed class TrayApp : ApplicationContext
         _admin.Click += (_, _) => { if (Elevation.RestartElevated()) ExitApp(); };
         _patchMenu.DropDownItems.AddRange([_patchState, new ToolStripSeparator(), _installPatch, _removePatch, _admin]);
         _patchMenu.DropDownOpening += async (_, _) => await RefreshPatchMenuAsync();
+        BuildDriverMenu();
         var setup = new ToolStripMenuItem("Setup / connection check…");
         setup.Click += (_, _) => ShowSetup();
         var openLogs = new ToolStripMenuItem("Open logs folder");
@@ -109,7 +113,7 @@ public sealed class TrayApp : ApplicationContext
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
         menu.Items.AddRange([_status, new ToolStripSeparator(), _toggle, _bitrateLabel, _menuSlider, _rateMenu, _liveCodecMenu, new ToolStripSeparator(), _statsItem, _record, openLogs,
-            new ToolStripSeparator(), _startup, setup, _password, _patchMenu, folder, new ToolStripSeparator(), exit]);
+            new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
             _startup.Checked = StartupRegistration.IsEnabled;
@@ -171,6 +175,31 @@ public sealed class TrayApp : ApplicationContext
         stockItem.Click += async (_, _) => await RunAsync(() => Switch(true));
         h264Item.Click += async (_, _) => await RunAsync(() => Switch(false));
         _liveCodecMenu.DropDownItems.AddRange([stockItem, h264Item]);
+    }
+
+    /// <summary>Registers the hook as a SteamVR driver: loaded at every SteamVR start, streaming stock HEVC until H.264 is armed.</summary>
+    private void BuildDriverMenu()
+    {
+        var state = new ToolStripMenuItem { Enabled = false };
+        var install = new ToolStripMenuItem("Install (or update)");
+        var remove = new ToolStripMenuItem("Remove");
+        void Refresh()
+        {
+            var current = _driver.Inspect();
+            state.Text = current switch { PermanentDriverState.Installed => "Installed: loads with SteamVR", PermanentDriverState.Outdated => "Installed, but not this tray's version", _ => "Not installed" };
+            install.Enabled = _driver.PackageAvailable && current != PermanentDriverState.Installed;
+            remove.Enabled = current != PermanentDriverState.NotInstalled;
+        }
+        async Task Do(Action action, string done)
+        {
+            try { await Task.Run(action); Balloon("Permanent PC driver", done, ToolTipIcon.Info); }
+            catch (Exception error) when (error is not OperationCanceledException) { Balloon("Permanent PC driver", error.Message, ToolTipIcon.Warning); }
+            Refresh();
+        }
+        install.Click += async (_, _) => await RunAsync(() => Do(_driver.Install, "Installed. It takes effect the next time SteamVR starts."));
+        remove.Click += async (_, _) => await RunAsync(() => Do(_driver.Remove, "Removed. SteamVR no longer loads it."));
+        _driverMenu.DropDownOpening += (_, _) => Refresh();
+        _driverMenu.DropDownItems.AddRange([state, new ToolStripSeparator(), install, remove]);
     }
 
     private void OnSessionEnding(object? sender, SessionEndingEventArgs e)

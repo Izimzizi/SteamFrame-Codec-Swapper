@@ -60,8 +60,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookInstallTrial(void* argument){
  if(requested.size!=sizeof(HookTrialConfig)||requested.version!=5)return 19;
  if(installed){
   if(!resident)return memcmp(&requested,&budget,sizeof(budget))?19:0;
-  // The driver is already in place with its own defaults: take over only the encoder options.
+  // The driver is already in place with its own defaults: arming means H.264 from here on, with the requested encoder options.
   if(HookQueueLegacyEncoder(requested.rate_control,requested.preset,requested.vbv_frames))return 19;
+  HookSetDefaultLegacyMode(0);
   budget.rate_control=requested.rate_control;budget.preset=requested.preset;budget.vbv_frames=requested.vbv_frames;
   return 0;
  }

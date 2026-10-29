@@ -69,7 +69,8 @@ int wmain(int argc,wchar_t** argv){
   if(!QueryFullProcessImageNameW(process.value,0,image,&length)||_wcsicmp(std::filesystem::path(image).filename().c_str(),L"vrserver.exe")||
      !IsWow64Process2(process.value,&machine,&native)||machine||native!=IMAGE_FILE_MACHINE_AMD64)throw std::runtime_error("Target is not x64 vrserver.exe");
   auto inventory=modules(process.value);HMODULE remote=nullptr;
-  for(const auto& m:inventory)if(!_wcsicmp(m.path.c_str(),path.c_str()))remote=m.base;
+  // The same binary may already be resident as SteamVR's external driver (driver_steamframe.dll): use that copy, never load a second one.
+  for(const auto& m:inventory)if(!_wcsicmp(m.path.c_str(),path.c_str())||!_wcsicmp(std::filesystem::path(m.path).filename().c_str(),L"driver_steamframe.dll"))remote=m.base;
   if(!remote){
    if(action!=L"install")throw std::runtime_error("Trial module is not loaded");
    auto loader=GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"LoadLibraryW");HMODULE owner=nullptr;

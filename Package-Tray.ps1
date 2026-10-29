@@ -57,6 +57,11 @@ try {
             Copy-Item -LiteralPath $path -Destination (Join-Path $lab 'Backend')
         }
     }
+    # The same hook DLL doubles as the optional permanent SteamVR driver (the tray's "Permanent PC driver" menu installs it).
+    $driverPackage = Join-Path $lab 'Backend\Driver'
+    New-Item -ItemType Directory -Path (Join-Path $driverPackage 'bin\win64') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $lab 'Backend\SteamFrameH264Hook.dll') -Destination (Join-Path $driverPackage 'bin\win64\driver_steamframe.dll')
+    Set-Content -LiteralPath (Join-Path $driverPackage 'driver.vrdrivermanifest') -Encoding ASCII -Value '{"alwaysActivate": true, "name": "steamframe", "directory": "", "resourceOnly": false, "hmd_presence": []}'
     foreach ($file in @('SteamFrameTray.exe', 'CodecLab\codec_supervisor.py', 'CodecLab\runtime\python.exe', 'CodecLab\Backend\hook_control.exe', 'CodecLab\Backend\SteamFrameH264Hook.dll', 'Native\SteamFrameEncoderProbe.dll')) {
         if (-not (Test-Path -LiteralPath (Join-Path $out $file))) { throw "Package is incomplete: $file is missing." }
     }
