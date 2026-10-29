@@ -5,10 +5,12 @@
 #include <cstring>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "nvEncodeAPI12.h"
 #include "legacy_api_bridge.h"
 #include "legacy_picture.h"
+#include "stock_forward.h"
 
 namespace {
 constexpr uint32_t old_common=0x7101000b,old_table=0x7102000b;
@@ -23,6 +25,8 @@ static_assert(sizeof(NV_ENC_CREATE_BITSTREAM_BUFFER)==776);
 static_assert(sizeof(NV_ENC_EVENT_PARAMS)==1544);
 static_assert(sizeof(NV_ENC_SEQUENCE_PARAM_PAYLOAD)==1544);
 NV_ENCODE_API_FUNCTION_LIST api{};
+using Factory=NVENCSTATUS(NVENCAPI*)(NV_ENCODE_API_FUNCTION_LIST*);
+Factory factory=nullptr;
 HMODULE module=nullptr;
 std::mutex mutex;
 uint32_t requested_average=100000000,requested_peak=115000000;
@@ -43,7 +47,16 @@ GUID preset_guid(){
  }
 }
 HookBridgeStats stats{sizeof(HookBridgeStats),1};
+// SteamVR sees one set of buffer handles. Each wraps the handle in the H.264 session and the one in the stock HEVC session
+// (when the driver's own API is available), so the codec can change while SteamVR keeps running.
+struct VResource{void* h264=nullptr;void* stock=nullptr;};
+struct VOutput{void* h264=nullptr;void* stock=nullptr;int last=0;};
+struct VMapped{void* real=nullptr;int on=0;uint32_t format=0;};
+int active_mode=0; // 0 H.264, 1 stock HEVC
+HookSwitchInfo switch_info{sizeof(HookSwitchInfo),1};
 struct State {
+ void* stock=nullptr;int last_encoded=-1;
+ std::unordered_set<VResource*> resources;std::unordered_set<VOutput*> outputs;std::unordered_set<VMapped*> mapped;
  uint32_t width=0,height=0;
  std::unordered_map<void*,std::vector<int8_t>> maps;
  // The host reconfigures before every frame; the codec preset is fixed per session.
@@ -62,11 +75,16 @@ NVENCSTATUS NVENCAPI open(NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS* source,void** ou
  if(!output||!upgrade(source,copy,old_common,NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER))return NV_ENC_ERR_INVALID_VERSION;
  if(copy.deviceType!=NV_ENC_DEVICE_TYPE_DIRECTX)return NV_ENC_ERR_UNSUPPORTED_DEVICE;
  copy.apiVersion=NVENCAPI_VERSION;
+ // The driver validates an open against the API version of the process's latest factory call; a stock SDK 11.1 session
+ // opened beside this one makes that 11.1, so ask for 12.1 again first.
+ if(factory){NV_ENCODE_API_FUNCTION_LIST fresh{};fresh.version=NV_ENCODE_API_FUNCTION_LIST_VER;factory(&fresh);}
  const auto status=api.nvEncOpenEncodeSessionEx(&copy,output);
  {std::lock_guard<std::mutex> lock(mutex);stats.last_status=status;
   if(status==NV_ENC_SUCCESS){
    if(pending_encoder){requested_rate_control=pending_rate_control;requested_preset=pending_preset;requested_vbv_frames=pending_vbv_frames;pending_encoder=false;}
-   sessions.emplace(*output,State{});++stats.opens;
+   State state{};
+   if(StockReady()){const auto stock_status=StockOpen(source,&state.stock);if(stock_status){state.stock=nullptr;++switch_info.stock_errors;switch_info.last_stock_status=uint32_t(stock_status);}}
+   sessions.emplace(*output,std::move(state));++stats.opens;
   }else ++stats.errors;}
  return status;
 }
@@ -166,11 +184,15 @@ NVENCSTATUS NVENCAPI initialize(void* encoder,NV_ENC_INITIALIZE_PARAMS* source){
    if(error)strncpy_s(stats.initialize_error,error,_TRUNCATE);}
   if(status==NV_ENC_SUCCESS){auto found=sessions.find(encoder);if(found==sessions.end())return NV_ENC_ERR_INVALID_ENCODERDEVICE;
    found->second.width=copy.encodeWidth;found->second.height=copy.encodeHeight;
+   if(found->second.stock&&StockInitialize(found->second.stock,source)){
+    // The stock session cannot take SteamVR's own parameters: this session streams H.264 only.
+    ++switch_info.stock_errors;StockDestroy(found->second.stock);found->second.stock=nullptr;
+   }
    ++stats.initializes;stats.width=copy.encodeWidth;stats.height=copy.encodeHeight;
    stats.average_bps=config.rcParams.averageBitRate;stats.peak_bps=config.rcParams.maxBitRate;}else ++stats.errors;}
  return status;
 }
-NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
+NVENCSTATUS reconfigure_h264(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
  NV_ENC_RECONFIGURE_PARAMS copy{};NV_ENC_CONFIG config{};
  auto reject=[](NVENCSTATUS status){std::lock_guard<std::mutex> lock(mutex);
   ++stats.errors;stats.last_status=status;return status;};
@@ -211,31 +233,85 @@ NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source
    stats.average_bps=config.rcParams.averageBitRate;stats.peak_bps=config.rcParams.maxBitRate;}}
  return status;
 }
+NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
+ const auto h264=reconfigure_h264(encoder,source);
+ void* stock=nullptr;int mode=0;
+ {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())stock=found->second.stock;mode=active_mode;}
+ if(!stock)return h264;
+ // The stock encoder follows SteamVR's own reconfigure requests unchanged, so a switch finds it already at the right size and rate.
+ const auto result=StockReconfigure(stock,source);
+ if(result){std::lock_guard<std::mutex> lock(mutex);++switch_info.stock_errors;}
+ return mode==1?static_cast<NVENCSTATUS>(result):h264;
+}
+State* find_session(void* encoder){auto found=sessions.find(encoder);return found==sessions.end()?nullptr:&found->second;}
 NVENCSTATUS NVENCAPI create_output(void* encoder,NV_ENC_CREATE_BITSTREAM_BUFFER* source){
  NV_ENC_CREATE_BITSTREAM_BUFFER copy{};
  if(!upgrade(source,copy,old_common,NV_ENC_CREATE_BITSTREAM_BUFFER_VER))return NV_ENC_ERR_INVALID_VERSION;
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
  const auto status=api.nvEncCreateBitstreamBuffer(encoder,&copy);
- if(status==NV_ENC_SUCCESS)source->bitstreamBuffer=copy.bitstreamBuffer;
+ if(status!=NV_ENC_SUCCESS)return status;
+ auto* output=new VOutput{copy.bitstreamBuffer,nullptr,0};
+ if(session->stock&&StockCreateOutput(session->stock,source,&output->stock)){output->stock=nullptr;++switch_info.stock_errors;}
+ session->outputs.insert(output);source->bitstreamBuffer=output;
  return status;
+}
+NVENCSTATUS NVENCAPI destroy_output(void* encoder,NV_ENC_OUTPUT_PTR handle){
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+ auto* output=static_cast<VOutput*>(handle);if(!session->outputs.erase(output))return NV_ENC_ERR_INVALID_PTR;
+ if(output->stock)StockDestroyOutput(session->stock,output->stock);
+ const auto status=api.nvEncDestroyBitstreamBuffer(encoder,output->h264);
+ session->maps.erase(output);delete output;return status;
 }
 NVENCSTATUS NVENCAPI register_resource(void* encoder,NV_ENC_REGISTER_RESOURCE* source){
  NV_ENC_REGISTER_RESOURCE copy{};
  if(!upgrade(source,copy,old_register,NV_ENC_REGISTER_RESOURCE_VER))return NV_ENC_ERR_INVALID_VERSION;
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
  const auto status=api.nvEncRegisterResource(encoder,&copy);
- if(status==NV_ENC_SUCCESS)source->registeredResource=copy.registeredResource;
+ if(status!=NV_ENC_SUCCESS)return status;
+ auto* resource=new VResource{copy.registeredResource,nullptr};
+ if(session->stock&&StockRegister(session->stock,source,&resource->stock)){resource->stock=nullptr;++switch_info.stock_errors;}
+ session->resources.insert(resource);source->registeredResource=resource;
  return status;
+}
+NVENCSTATUS NVENCAPI unregister_resource(void* encoder,NV_ENC_REGISTERED_PTR handle){
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+ auto* resource=static_cast<VResource*>(handle);if(!session->resources.erase(resource))return NV_ENC_ERR_INVALID_PTR;
+ if(resource->stock)StockUnregister(session->stock,resource->stock);
+ const auto status=api.nvEncUnregisterResource(encoder,resource->h264);
+ delete resource;return status;
 }
 NVENCSTATUS NVENCAPI map_resource(void* encoder,NV_ENC_MAP_INPUT_RESOURCE* source){
  NV_ENC_MAP_INPUT_RESOURCE copy{};
  if(!upgrade(source,copy,old_map,NV_ENC_MAP_INPUT_RESOURCE_VER))return NV_ENC_ERR_INVALID_VERSION;
- const auto status=api.nvEncMapInputResource(encoder,&copy);
- if(status==NV_ENC_SUCCESS){source->mappedResource=copy.mappedResource;source->mappedBufferFmt=copy.mappedBufferFmt;}
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+ auto* resource=static_cast<VResource*>(source->registeredResource);if(!session->resources.count(resource))return NV_ENC_ERR_INVALID_PTR;
+ // The codec is chosen here, per frame: the mapped handle remembers which session it belongs to.
+ const int on=(active_mode==1&&session->stock&&resource->stock)?1:0;
+ void* real=nullptr;uint32_t format=0;NVENCSTATUS status;
+ if(on)status=static_cast<NVENCSTATUS>(StockMap(session->stock,source,resource->stock,&real,&format));
+ else{copy.registeredResource=resource->h264;status=api.nvEncMapInputResource(encoder,&copy);real=copy.mappedResource;format=copy.mappedBufferFmt;}
+ if(status!=NV_ENC_SUCCESS)return status;
+ auto* mapped=new VMapped{real,on,format};session->mapped.insert(mapped);
+ source->mappedResource=mapped;source->mappedBufferFmt=static_cast<NV_ENC_BUFFER_FORMAT>(format);
  return status;
+}
+NVENCSTATUS NVENCAPI unmap_resource(void* encoder,NV_ENC_INPUT_PTR handle){
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+ auto* mapped=static_cast<VMapped*>(handle);if(!session->mapped.erase(mapped))return NV_ENC_ERR_INVALID_PTR;
+ const auto status=mapped->on?static_cast<NVENCSTATUS>(StockUnmap(session->stock,mapped->real)):api.nvEncUnmapInputResource(encoder,mapped->real);
+ delete mapped;return status;
 }
 NVENCSTATUS event_common(void* encoder,NV_ENC_EVENT_PARAMS* source,bool registration){
  NV_ENC_EVENT_PARAMS copy{};
  if(!upgrade(source,copy,old_common,NV_ENC_EVENT_PARAMS_VER))return NV_ENC_ERR_INVALID_VERSION;
- return registration?api.nvEncRegisterAsyncEvent(encoder,&copy):api.nvEncUnregisterAsyncEvent(encoder,&copy);
+ const auto status=registration?api.nvEncRegisterAsyncEvent(encoder,&copy):api.nvEncUnregisterAsyncEvent(encoder,&copy);
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);
+ // The completion event is a plain handle: both sessions may be given it, and only the one that encodes the frame signals it.
+ if(session&&session->stock){const auto stock_status=StockEvent(session->stock,source,registration?1:0);
+  // The driver refuses to register the same event with a second session, yet signals it for the frames that session encodes
+  // (the mode switch test waits on it), so this is recorded but is not an error.
+  if(stock_status)switch_info.last_stock_status=uint32_t(stock_status)+(registration?1000u:2000u);}
+ return status;
 }
 NVENCSTATUS NVENCAPI register_event(void* e,NV_ENC_EVENT_PARAMS* p){return event_common(e,p,true);}
 NVENCSTATUS NVENCAPI unregister_event(void* e,NV_ENC_EVENT_PARAMS* p){return event_common(e,p,false);}
@@ -247,35 +323,62 @@ NVENCSTATUS NVENCAPI sequence(void* encoder,NV_ENC_SEQUENCE_PARAM_PAYLOAD* sourc
 NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
  HookLegacyPicture view{sizeof(HookLegacyPicture),1};
  if(HookReadLegacyPicture(source,3344,&view))return NV_ENC_ERR_INVALID_VERSION;
+ std::lock_guard<std::mutex> lock(mutex);
+ auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+ auto* mapped=static_cast<VMapped*>(view.input);auto* output=static_cast<VOutput*>(view.output);
+ const bool eos=(view.flags&NV_ENC_PIC_FLAG_EOS)!=0;
+ // An end-of-stream picture carries no input.
+ if(!eos&&!session->mapped.count(mapped))return NV_ENC_ERR_INVALID_PTR;
+ if(!session->outputs.count(output))return NV_ENC_ERR_INVALID_PTR;
+ const int on=!eos?mapped->on:(session->last_encoded==1?1:0);
+ void* real_output=on?output->stock:output->h264;if(!real_output)return NV_ENC_ERR_INVALID_PARAM;
+ // The first picture a session encodes after a switch starts a fresh sequence: its decoder has seen nothing of this stream.
+ uint32_t extra_flags=0;
+ if(!eos){if(session->last_encoded<0)session->last_encoded=on;
+  else if(session->last_encoded!=on){extra_flags=NV_ENC_PIC_FLAG_FORCEIDR|NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;session->last_encoded=on;}}
+ output->last=on;
+ NVENCSTATUS status;
+ if(on){
+  status=static_cast<NVENCSTATUS>(StockEncode(session->stock,source,eos?nullptr:mapped->real,real_output,extra_flags));++switch_info.stock_encodes;
+  if(status!=NV_ENC_SUCCESS&&status!=NV_ENC_ERR_NEED_MORE_INPUT){++stats.errors;++switch_info.stock_errors;}
+  return status;
+ }
  NV_ENC_PIC_PARAMS copy{};copy.version=NV_ENC_PIC_PARAMS_VER;
  copy.inputWidth=view.width;copy.inputHeight=view.height;copy.inputPitch=view.pitch;
- copy.encodePicFlags=view.flags;copy.frameIdx=view.frame_index;copy.inputTimeStamp=view.timestamp;copy.inputDuration=view.duration;
- copy.inputBuffer=view.input;copy.outputBitstream=view.output;copy.completionEvent=view.completion_event;
+ copy.encodePicFlags=view.flags|extra_flags;copy.frameIdx=view.frame_index;copy.inputTimeStamp=view.timestamp;copy.inputDuration=view.duration;
+ copy.inputBuffer=eos?nullptr:mapped->real;copy.outputBitstream=real_output;copy.completionEvent=view.completion_event;
  copy.bufferFmt=static_cast<NV_ENC_BUFFER_FORMAT>(view.buffer_format);copy.pictureStruct=static_cast<NV_ENC_PIC_STRUCT>(view.picture_structure);
- std::lock_guard<std::mutex> lock(mutex);
- auto found=sessions.find(encoder);if(found==sessions.end())return NV_ENC_ERR_INVALID_ENCODERDEVICE;
- if(view.hevc_delta_map&&!(view.flags&NV_ENC_PIC_FLAG_EOS)){
+ if(view.hevc_delta_map&&!eos){
   const unsigned width=(view.width+31)/32,height=(view.height+31)/32;
   if(!width||!height||view.hevc_map_entries!=width*height)return NV_ENC_ERR_INVALID_PARAM;
   const unsigned block=16;
   const unsigned columns=(view.width+block-1)/block,rows=(view.height+block-1)/block;
-  auto& map=found->second.maps[view.output];map.resize(columns*rows);
+  auto& map=session->maps[output];map.resize(columns*rows);
   for(unsigned y=0;y<rows;++y)for(unsigned x=0;x<columns;++x)
    map[y*columns+x]=static_cast<int8_t>(std::clamp(int(view.hevc_delta_map[(y/2)*width+x/2]),-51,51));
   // Retain the HEVC 32x32 timing tile at high quality: every H.264 macroblock it covers.
   for(unsigned y=2*(height-1);y<rows;++y)for(unsigned x=0;x<std::min(2u,columns);++x)map[y*columns+x]=-51;
   copy.qpDeltaMap=map.data();copy.qpDeltaMapSize=static_cast<uint32_t>(map.size());
  }
- const auto status=api.nvEncEncodePicture(encoder,&copy);++stats.encodes;stats.last_status=status;
+ status=api.nvEncEncodePicture(encoder,&copy);++stats.encodes;stats.last_status=status;
  if(status!=NV_ENC_SUCCESS&&status!=NV_ENC_ERR_NEED_MORE_INPUT)++stats.errors;
  return status;
 }
 NVENCSTATUS NVENCAPI lock_output(void* encoder,NV_ENC_LOCK_BITSTREAM* source){
  if(!source||source->version!=old_common)return NV_ENC_ERR_INVALID_VERSION;
+ VOutput* output=nullptr;void* stock=nullptr;
+ {std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+  output=static_cast<VOutput*>(source->outputBitstream);if(!session->outputs.count(output))return NV_ENC_ERR_INVALID_PTR;stock=session->stock;}
+ if(output->last==1&&stock&&output->stock){
+  // Stock HEVC: the driver's own structure, filled in place.
+  const auto result=static_cast<NVENCSTATUS>(StockLock(stock,source,output->stock));
+  std::lock_guard<std::mutex> lock(mutex);if(result==NV_ENC_SUCCESS)++switch_info.stock_locks;else{++stats.errors;++switch_info.stock_errors;}
+  return result;
+ }
  // Only the audited common request/result prefix is accessed in the legacy
  // object; never copy/write the 1552-byte modern struct into its 1544 bytes.
  NV_ENC_LOCK_BITSTREAM copy{};copy.version=NV_ENC_LOCK_BITSTREAM_VER;
- copy.doNotWait=source->doNotWait;copy.outputBitstream=source->outputBitstream;copy.sliceOffsets=source->sliceOffsets;
+ copy.doNotWait=source->doNotWait;copy.outputBitstream=output->h264;copy.sliceOffsets=source->sliceOffsets;
  const auto status=api.nvEncLockBitstream(encoder,&copy);
  if(status==NV_ENC_SUCCESS){
   source->frameIdx=copy.frameIdx;source->hwEncodeStatus=copy.hwEncodeStatus;
@@ -289,7 +392,21 @@ NVENCSTATUS NVENCAPI lock_output(void* encoder,NV_ENC_LOCK_BITSTREAM* source){
   if(status==NV_ENC_SUCCESS){++stats.locks;stats.bytes+=copy.bitstreamSizeInBytes;}else ++stats.errors;}
  return status;
 }
+NVENCSTATUS NVENCAPI unlock_output(void* encoder,NV_ENC_OUTPUT_PTR handle){
+ std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
+ auto* output=static_cast<VOutput*>(handle);if(!session->outputs.count(output))return NV_ENC_ERR_INVALID_PTR;
+ if(output->last==1&&session->stock&&output->stock)return static_cast<NVENCSTATUS>(StockUnlock(session->stock,output->stock));
+ return api.nvEncUnlockBitstream(encoder,output->h264);
+}
 NVENCSTATUS NVENCAPI destroy(void* encoder){
+ void* stock=nullptr;
+ {std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(session){
+  stock=session->stock;
+  for(auto* item:session->resources)delete item;
+  for(auto* item:session->outputs)delete item;
+  for(auto* item:session->mapped)delete item;
+  session->resources.clear();session->outputs.clear();session->mapped.clear();}}
+ if(stock)StockDestroy(stock);
  const auto status=api.nvEncDestroyEncoder(encoder);
  if(status==NV_ENC_SUCCESS){std::lock_guard<std::mutex> lock(mutex);sessions.erase(encoder);}
  return status;
@@ -303,17 +420,19 @@ extern "C" int HOOK_CALL HookCreateLegacyFunctionTable(void* raw,uint32_t bytes,
  if(!sessions.empty()&&(average!=requested_average||peak!=requested_peak))return -2;
  if(!module){
   module=LoadLibraryExW(L"nvEncodeAPI64.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);if(!module)return -3;
-  using Create=NVENCSTATUS(NVENCAPI*)(NV_ENCODE_API_FUNCTION_LIST*);
-  auto create=reinterpret_cast<Create>(GetProcAddress(module,"NvEncodeAPICreateInstance"));
+  auto create=reinterpret_cast<Factory>(GetProcAddress(module,"NvEncodeAPICreateInstance"));
   api.version=NV_ENCODE_API_FUNCTION_LIST_VER;if(!create||create(&api)!=NV_ENC_SUCCESS)return -4;
+  factory=create;
  }
  requested_average=average;requested_peak=peak;
  auto table=api;table.version=old_table;
  table.nvEncOpenEncodeSessionEx=open;table.nvEncGetEncodeCaps=caps;
  table.nvEncGetEncodePresetConfig=preset;table.nvEncGetEncodePresetConfigEx=preset_ex;
  table.nvEncInitializeEncoder=initialize;table.nvEncReconfigureEncoder=reconfigure;
- table.nvEncCreateBitstreamBuffer=create_output;table.nvEncRegisterResource=register_resource;
- table.nvEncMapInputResource=map_resource;table.nvEncRegisterAsyncEvent=register_event;
+ table.nvEncCreateBitstreamBuffer=create_output;table.nvEncDestroyBitstreamBuffer=destroy_output;
+ table.nvEncRegisterResource=register_resource;table.nvEncUnregisterResource=unregister_resource;
+ table.nvEncMapInputResource=map_resource;table.nvEncUnmapInputResource=unmap_resource;table.nvEncUnlockBitstream=unlock_output;
+ table.nvEncRegisterAsyncEvent=register_event;
  table.nvEncUnregisterAsyncEvent=unregister_event;table.nvEncGetSequenceParams=sequence;
  table.nvEncEncodePicture=encode;table.nvEncLockBitstream=lock_output;table.nvEncDestroyEncoder=destroy;
  memcpy(raw,&table,sizeof(table));++stats.tables;return 0;
@@ -350,6 +469,28 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  std::lock_guard<std::mutex> lock(mutex);
  // The identity layout is shared with the managed reader: codec 2 is H.264, the only codec this hook produces.
  *output={sizeof(HookTrialIdentity),1,2,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};return 0;
+}
+
+extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory){
+ std::lock_guard<std::mutex> lock(mutex);return StockSetTable(sdk11_table,bytes,factory);
+}
+// 0 = H.264, 1 = the driver's own HEVC. Takes effect at the next frame SteamVR maps; refused unless every open session has a stock encoder.
+extern "C" int HOOK_CALL HookSetLegacyMode(uint32_t mode){
+ if(mode>1)return -1;
+ std::lock_guard<std::mutex> lock(mutex);
+ if(mode==1){
+  if(!StockReady())return -2;
+  for(auto& entry:sessions)if(!entry.second.stock)return -3;
+ }
+ if(active_mode!=int(mode)){active_mode=int(mode);++switch_info.switches;}
+ return 0;
+}
+extern "C" int HOOK_CALL HookGetLegacySwitchInfo(HookSwitchInfo* output){
+ if(!output||output->size!=sizeof(HookSwitchInfo)||output->version!=1)return -1;
+ std::lock_guard<std::mutex> lock(mutex);*output=switch_info;output->mode=uint32_t(active_mode);
+ output->sessions=uint32_t(sessions.size());output->stock_sessions=0;
+ for(auto& entry:sessions)if(entry.second.stock)++output->stock_sessions;
+ return 0;
 }
 
 extern "C" int HOOK_CALL HookGetLegacyBridgeStats(HookBridgeStats* output){

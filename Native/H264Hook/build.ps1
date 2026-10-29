@@ -21,7 +21,7 @@ try {
  & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\codec_caps.obj" "/Fe:$labOutput\codec_caps.exe" "$PSScriptRoot\codec_caps.cpp" d3d11.lib
  if($LASTEXITCODE){throw 'Codec capability query compilation failed'}
  if($CapsOnly){return}
- & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 /LD "/I$PSScriptRoot\..\vendor" "/I$PSScriptRoot\..\vendor\minhook\include" "/Fo:$labOutput\\" "/Fe:$labOutput\SteamFrameH264Hook.dll" "$PSScriptRoot\legacy_picture.cpp" "$PSScriptRoot\legacy_api_bridge.cpp" "$PSScriptRoot\hook_entry.cpp" "$PSScriptRoot\..\vendor\minhook\src\hook.c" "$PSScriptRoot\..\vendor\minhook\src\buffer.c" "$PSScriptRoot\..\vendor\minhook\src\trampoline.c" "$PSScriptRoot\..\vendor\minhook\src\hde\hde64.c" d3d11.lib /link "/IMPLIB:$labOutput\SteamFrameH264Hook.lib"
+ & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 /LD "/I$PSScriptRoot\..\vendor" "/I$PSScriptRoot\..\vendor\minhook\include" "/Fo:$labOutput\\" "/Fe:$labOutput\SteamFrameH264Hook.dll" "$PSScriptRoot\legacy_picture.cpp" "$PSScriptRoot\stock_forward.cpp" "$PSScriptRoot\legacy_api_bridge.cpp" "$PSScriptRoot\hook_entry.cpp" "$PSScriptRoot\..\vendor\minhook\src\hook.c" "$PSScriptRoot\..\vendor\minhook\src\buffer.c" "$PSScriptRoot\..\vendor\minhook\src\trampoline.c" "$PSScriptRoot\..\vendor\minhook\src\hde\hde64.c" d3d11.lib /link "/IMPLIB:$labOutput\SteamFrameH264Hook.lib"
  if($LASTEXITCODE){throw 'Hook DLL compilation failed'}
  & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot" "/Fo:$labOutput\hook_control.obj" "/Fe:$labOutput\hook_control.exe" "$PSScriptRoot\hook_control.cpp" psapi.lib
  if($LASTEXITCODE){throw 'Hook controller compilation failed'}
@@ -30,5 +30,9 @@ try {
  if(Test-Path -LiteralPath "$PSScriptRoot\bridge_gpu_test.cpp") {
   & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\bridge_gpu_test.obj" "/Fe:$labOutput\bridge_gpu_test.exe" "$PSScriptRoot\bridge_gpu_test.cpp" "$labOutput\SteamFrameH264Hook.lib" d3d11.lib
   if($LASTEXITCODE){throw 'Bridge GPU test compilation failed'}
+ }
+ if(Test-Path -LiteralPath "$PSScriptRoot\mode_switch_gpu_test.cpp") {
+  & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\mode_switch_gpu_test.obj" "/Fe:$labOutput\mode_switch_gpu_test.exe" "$PSScriptRoot\mode_switch_gpu_test.cpp" "$labOutput\SteamFrameH264Hook.lib" d3d11.lib
+  if($LASTEXITCODE){throw 'Mode switch GPU test compilation failed'}
  }
 } finally {$env:PATH=$labOldPath;$env:INCLUDE=$labOldInclude;$env:LIB=$labOldLib}

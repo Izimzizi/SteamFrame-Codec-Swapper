@@ -22,6 +22,16 @@ typedef struct HookTrialConfig {
 } HookTrialConfig;
 typedef struct HookTrialIdentity { uint32_t size,version,codec,fps,average_bps,peak_bps,rate_control,preset,vbv_frames; } HookTrialIdentity;
 HOOK_API int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity*);
+// Live codec switching: with the driver's own SDK 11.1 API provided, every session also opens a stock HEVC encoder beside
+// the H.264 one, and the mode picks which of the two encodes each frame.
+typedef struct HookSwitchInfo {
+ uint32_t size,version,mode,sessions,stock_sessions;
+ uint32_t last_stock_status;
+ uint64_t switches,stock_encodes,stock_locks,stock_errors;
+} HookSwitchInfo;
+HOOK_API int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory);
+HOOK_API int HOOK_CALL HookSetLegacyMode(uint32_t mode);
+HOOK_API int HOOK_CALL HookGetLegacySwitchInfo(HookSwitchInfo*);
 typedef struct HookBridgeStats {
  uint32_t size,version;
  uint64_t tables,opens,initializes,encodes,locks,bytes,errors,reconfigures;
