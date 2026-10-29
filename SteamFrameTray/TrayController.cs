@@ -82,8 +82,8 @@ public sealed class TrayController
     }
 
     /// <summary>
-    /// Applies the saved encoder options (rate control, preset, VBV) to a live H.264 session: the hook queues them and a stream reset
-    /// (the same nudge a bitrate change makes) rebuilds the encoder with them. False means they are used the next time H.264 is armed.
+    /// Applies the saved encoder options (rate control, preset, VBV) to a live H.264 session: the hook queues them and the supervisor
+    /// restarts the Frame's stream so SteamVR builds a new encoder with them. False means they are used the next time H.264 is armed.
     /// </summary>
     public async Task<bool> ApplyEncoderOptionsAsync(CancellationToken cancellationToken = default)
     {
@@ -95,15 +95,6 @@ public sealed class TrayController
             if (!(status.Live && status.RateLive && status.ActiveCodec == "H.264" && status.State == "ready")) return false;
             var result = await _codec.SetEncoderAsync(_preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames, new Progress<CodecServiceStatus>(), cancellationToken);
             Publish(Map(result));
-            if (_live is { SteamVrRunning: true })
-            {
-                _ownWriteUntil = DateTime.UtcNow.AddSeconds(10);
-                try { await _live.ApplyAsync(TargetMbps); }
-                catch (Exception error) when (error is IOException or InvalidOperationException)
-                {
-                    throw new InvalidOperationException($"The encoder options were queued, but SteamVR's stream could not be reset ({error.Message}). They apply the next time the stream restarts.", error);
-                }
-            }
             return true;
         }
         finally { _gate.Release(); }

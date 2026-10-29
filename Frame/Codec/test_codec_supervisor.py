@@ -440,12 +440,14 @@ class LiveEncoderTests(LiveRateTests):
  def test_new_options_are_queued_on_the_resident_hook_with_the_current_rate(self):
   instance=self.make()
   done=Mock(returncode=0,stdout='{"code":0}',stderr='')
-  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.subprocess,'run',return_value=done) as run:
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(instance,'restream') as restream,patch.object(service.subprocess,'run',return_value=done) as run:
    instance.set_encoder('cbr',4,2,'op')
   args=run.call_args.args[0]
   self.assertEqual(args[1],'7');self.assertEqual(args[3:],['configure','500000000','500000000','0','72','2','cbr','4','2'])
   self.assertEqual((instance.rate_control,instance.preset,instance.vbv),('cbr',4,2))
-  self.assertEqual(update.call_args.kwargs['last_result'],{'ok':True})
+  # The Frame's stream is restarted (stopped first) so SteamVR builds a new encoder with the queued options.
+  restream.assert_called_once()
+  self.assertEqual(restream.call_args.args[2],'op');self.assertTrue(restream.call_args.kwargs['stop'])
  def test_a_refused_or_unavailable_change_leaves_the_options_alone(self):
   hookless=self.make(live=False)
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(hookless,'update'),patch.object(service.subprocess,'run') as run:
@@ -455,3 +457,13 @@ class LiveEncoderTests(LiveRateTests):
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(failing,'update'),patch.object(service.subprocess,'run',return_value=refused):
    with self.assertRaisesRegex(RuntimeError,'refused'):failing.set_encoder('cbr',4,2)
   self.assertEqual((failing.rate_control,failing.preset,failing.vbv),('vbr',2,2))
+ def test_restarting_the_stream_stops_it_first_and_reports_the_operation(self):
+  instance=self.make();instance.verify_seconds=20;calls=[]
+  instance.cef=lambda which:calls.append('cef '+which)
+  with patch.object(instance,'update') as update,patch.object(instance,'ensure_frame',side_effect=lambda:calls.append('frame')),patch.object(instance,'verify_stream',side_effect=lambda *a:calls.append('verify')),patch.object(service.time,'sleep'):
+   instance.restream('msg','done','op',stop=True)
+  self.assertEqual(calls,['cef stop','frame','cef start','verify'])
+  self.assertEqual(update.call_args.kwargs['last_result'],{'ok':True})
+  with patch.object(instance,'update') as update,patch.object(instance,'ensure_frame',side_effect=RuntimeError('boom')),patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   instance.restream('msg','done','op2',stop=True)
+  self.assertFalse(update.call_args.kwargs['last_result']['ok']);self.assertEqual(update.call_args.kwargs['state'],'waiting')

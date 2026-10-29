@@ -340,14 +340,14 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Encoder_options_are_queued_on_an_armed_H264_session_and_the_stream_is_nudged()
+    public async Task Encoder_options_are_sent_to_an_armed_H264_session_without_touching_SteamVR()
     {
         var rig = new Rig();
         rig.Prefs.KeepH264 = true; rig.Prefs.HookRateControl = "cbr"; rig.Prefs.HookPreset = 4; rig.Prefs.HookVbvFrames = 2;
         rig.Codec.Status = LiveRate(target: 300);
         await rig.Controller.RefreshAsync();
         Assert.True(await rig.Controller.ApplyEncoderOptionsAsync());
-        Assert.Equal([("cbr", 4, 2)], rig.Codec.Encoders); Assert.Equal([300], rig.Live.Applied);
+        Assert.Equal([("cbr", 4, 2)], rig.Codec.Encoders); Assert.Empty(rig.Live.Applied);
     }
 
     [Fact]

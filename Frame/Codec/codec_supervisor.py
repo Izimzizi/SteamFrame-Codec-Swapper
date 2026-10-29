@@ -373,7 +373,9 @@ class Supervisor:
   if p.returncode:raise RuntimeError('The hook refused the encoder options ('+((p.stdout or '')+' '+(p.stderr or '')).strip()[:160]+').')
   self.rate_control=rate_control;self.preset=preset;self.vbv=vbv
   self.log('encoder options queued: '+rate_control+', P'+str(preset)+', VBV '+str(vbv))
-  self.update(operation_id=operation_id,last_result={'ok':True},rate_control=rate_control,preset=preset,vbv_frames=vbv)
+  self.update(rate_control=rate_control,preset=preset,vbv_frames=vbv)
+  # SteamVR keeps one encoder session across stream resets of its own, so restart the Frame's stream: the new session uses the queued options.
+  self.restream('Applying the new encoder options; the stream restarts for a moment.','H.264 running with the new encoder options.',operation_id,stop=True)
  def verify_stream(self,target,fps):
   deadline=time.monotonic()+self.verify_seconds;ready=False;seen='no receiver reading'
   while time.monotonic()<deadline:
@@ -476,16 +478,22 @@ class Supervisor:
   self.applied=None;self.stopping=True
   self.update(keep=False)
   self.recover()
- def restream(self):
-  """The Frame came back while a hooked SteamVR is still running."""
-  target=self.applied
-  self.update(state='switching',active_codec='Unknown',message='The Frame returned; reconnecting the stream.')
+ def restream(self,message='The Frame returned; reconnecting the stream.',done='H.264 reconnected after the Frame returned.',operation_id='',stop=False):
+  """Start the Frame's stream again against the hooked SteamVR that is still running (stop=True ends it first, so SteamVR builds a new encoder)."""
+  target=self.applied;self.verify_seconds=20
+  self.update(state='switching',active_codec='Unknown',message=message,operation_id=operation_id,last_result=None)
   try:
    rate=self.status['fps']
+   if stop:
+    try:self.cef('stop')
+    except Exception:pass
+    time.sleep(1)
    self.ensure_frame();self.cef('start');self.verify_stream(target,rate)
-   self.update(state='ready',active_codec='H.264',message='H.264 reconnected after the Frame returned.',last_result={'ok':True})
-  except Exception:
-   self.update(state='waiting',active_codec='Unknown',message='The stream could not be reconnected; H.264 is re-applied the next time SteamVR starts.')
+   self.update(state='ready',active_codec='H.264',message=done,last_result={'ok':True})
+  except Exception as error:
+   self.log('stream restart failed: '+str(error)[:300])
+   self.update(state='waiting',active_codec='Unknown',message='The stream could not be reconnected; H.264 is re-applied the next time SteamVR starts.',
+    last_result={'ok':False,'error':'The stream did not come back: '+str(error)[:160]} if operation_id else None)
  def resume_session(self):
   """Arm while SteamVR is closed (or after the app or PC restarted): adopt what is there and restart nothing the user is using."""
   target=self.config['target_mbps']
