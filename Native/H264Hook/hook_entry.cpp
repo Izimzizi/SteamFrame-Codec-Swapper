@@ -1,7 +1,9 @@
 #define HOOK_BUILD
 #include <windows.h>
 #include <intrin.h>
+#include <cstdio>
 #include <cstring>
+#include <string>
 #include "nvEncodeAPI11.h"
 #include "legacy_api_bridge.h"
 #include "MinHook.h"
@@ -11,6 +13,8 @@ static void* target=nullptr;
 using Create=NVENCSTATUS(NVENCAPI*)(NV_ENCODE_API_FUNCTION_LIST*);
 static Create original=nullptr;
 static bool installed=false;
+// True when SteamVR loaded this DLL as an external driver at start-up (as opposed to the supervisor injecting it).
+static bool resident=false;
 static HookTrialConfig budget{sizeof(HookTrialConfig),5,100000000,115000000,0,120,0,2,1};
 
 static NVENCSTATUS NVENCAPI intercept(NV_ENCODE_API_FUNCTION_LIST* table){
@@ -27,10 +31,8 @@ static NVENCSTATUS NVENCAPI intercept(NV_ENCODE_API_FUNCTION_LIST* table){
  return original(table);
 }
 
-extern "C" __declspec(dllexport) DWORD WINAPI HookInstallTrial(void* argument){
- const auto requested=argument?*static_cast<HookTrialConfig*>(argument):HookTrialConfig{sizeof(HookTrialConfig),5,100000000,115000000,0,120,0,2,1};
- if(requested.size!=sizeof(HookTrialConfig)||requested.version!=5)return 19;
- if(installed)return memcmp(&requested,&budget,sizeof(budget))?19:0;
+static DWORD install(const HookTrialConfig& requested,bool pin_rate){
+ if(installed)return 0;
  wchar_t name[MAX_PATH]{};GetModuleFileNameW(nullptr,name,MAX_PATH);
  const auto* base=wcsrchr(name,L'\\');base=base?base+1:name;
  if(_wcsicmp(base,L"vrserver.exe"))return 10;
@@ -39,7 +41,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookInstallTrial(void* argument){
  driver=GetModuleHandleW(L"driver_vrlink.dll");if(!driver)return 11;
  if(HookConfigureLegacyEncoder(requested.rate_control,requested.preset,requested.vbv_frames))return 19;
  if(HookConfigureLegacyBudget(requested.average_bps,requested.peak_bps,requested.fixed_target))return 19;
- if(HookConfigureLegacyRate(requested.fps))return 19;
+ // A resident driver cannot know the Frame's refresh rate yet: each session takes the rate SteamVR starts it with.
+ if(pin_rate&&HookConfigureLegacyRate(requested.fps))return 19;
  budget=requested;
  // Populate the real modern API before detouring its factory (no recursion).
  NV_ENCODE_API_FUNCTION_LIST prepare{};prepare.version=NV_ENCODE_API_FUNCTION_LIST_VER;
@@ -50,6 +53,19 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookInstallTrial(void* argument){
  if(MH_CreateHook(target,reinterpret_cast<void*>(intercept),reinterpret_cast<void**>(&original))!=MH_OK)return 16;
  if(MH_EnableHook(target)!=MH_OK){MH_RemoveHook(target);return 17;}
  installed=true;return 0;
+}
+
+extern "C" __declspec(dllexport) DWORD WINAPI HookInstallTrial(void* argument){
+ const auto requested=argument?*static_cast<HookTrialConfig*>(argument):HookTrialConfig{sizeof(HookTrialConfig),5,100000000,115000000,0,120,0,2,1};
+ if(requested.size!=sizeof(HookTrialConfig)||requested.version!=5)return 19;
+ if(installed){
+  if(!resident)return memcmp(&requested,&budget,sizeof(budget))?19:0;
+  // The driver is already in place with its own defaults: take over only the encoder options.
+  if(HookQueueLegacyEncoder(requested.rate_control,requested.preset,requested.vbv_frames))return 19;
+  budget.rate_control=requested.rate_control;budget.preset=requested.preset;budget.vbv_frames=requested.vbv_frames;
+  return 0;
+ }
+ return install(requested,true);
 }
 // Queues new encoder options on the resident hook; they apply when SteamVR next opens an encoder session.
 extern "C" __declspec(dllexport) DWORD WINAPI HookReconfigure(void* argument){
@@ -85,4 +101,58 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookReadTrialStats(void* output){
 }
 extern "C" __declspec(dllexport) DWORD WINAPI HookReadTrialIdentity(void* output){
  return HookGetLegacyIdentity(static_cast<HookTrialIdentity*>(output))?1:0;
+}
+
+// ---- SteamVR driver entry -------------------------------------------------------------------------------------------
+// Registered once as an external driver, this makes SteamVR load the DLL when vrserver starts, before the Frame connects and
+// SteamVR first asks for an encoder. It reports no devices. The codec starts as stock HEVC; the supervisor (or nothing at all)
+// decides when to switch.
+static FILE* driver_log=nullptr;
+static std::string data_folder(){
+ char base[MAX_PATH]{};
+ if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return {};
+ const std::string directory=std::string(base)+"\\SteamFrameTray";CreateDirectoryA(directory.c_str(),nullptr);
+ return directory;
+}
+static void driver_note(const char* text){
+ if(!driver_log){
+  const auto directory=data_folder();if(directory.empty())return;
+  driver_log=fopen((directory+"\\driver.log").c_str(),"a");if(!driver_log)return;
+ }
+ SYSTEMTIME time;GetLocalTime(&time);
+ fprintf(driver_log,"%02d:%02d:%02d.%03d pid %lu %s\n",time.wHour,time.wMinute,time.wSecond,time.wMilliseconds,GetCurrentProcessId(),text);
+ fflush(driver_log);
+}
+// An optional lower H.264 size limit: a text file "<width>x<height>" (or just the width) in the tray's data folder.
+static void read_h264_limit(){
+ const auto directory=data_folder();if(directory.empty())return;
+ FILE* file=fopen((directory+"\\h264-limit.txt").c_str(),"r");if(!file)return;
+ unsigned width=0,height=0;const int count=fscanf(file,"%ux%u",&width,&height);fclose(file);
+ if(count>=1&&HookConfigureH264Limit(width,count>=2?height:0)==0){
+  char note[96];snprintf(note,sizeof(note),"H.264 size limit %ux%u from h264-limit.txt",width,count>=2?height:0);driver_note(note);
+ }
+}
+namespace {
+struct Provider{
+ virtual int Init(void*){
+  read_h264_limit();
+  const HookTrialConfig defaults{sizeof(HookTrialConfig),5,500000000,500000000,0,90,0,2,2};
+  const auto code=install(defaults,false);
+  if(!code){resident=true;HookSetDefaultLegacyMode(1);}
+  char note[96];snprintf(note,sizeof(note),"driver Init: hook %s (code %lu), starting as stock HEVC",code?"not installed":"installed",code);driver_note(note);
+  return 0; // never fail SteamVR's start over this
+ }
+ virtual void Cleanup(){driver_note("driver Cleanup");}
+ virtual const char* const* GetInterfaceVersions(){static const char* const none[]={nullptr};return none;}
+ virtual void RunFrame(){}
+ virtual bool ShouldBlockStandbyMode(){return false;}
+ virtual void EnterStandby(){}
+ virtual void LeaveStandby(){}
+};
+Provider provider;
+}
+extern "C" __declspec(dllexport) void* HmdDriverFactory(const char* name,int* code){
+ if(name&&!strcmp(name,"IServerTrackedDeviceProvider_004"))return &provider;
+ if(code)*code=105; // VRInitError_Init_InterfaceNotFound
+ return nullptr;
 }

@@ -32,6 +32,12 @@ std::mutex mutex;
 uint32_t requested_average=100000000,requested_peak=115000000;
 bool requested_fixed=false;
 uint32_t requested_fps=120;
+// An explicitly configured rate is kept; otherwise each session takes the rate SteamVR initializes it with.
+bool fps_pinned=false;
+// What this GPU's H.264 encoder accepts (read from the first session), and an optional lower limit chosen by the user.
+uint32_t h264_hardware_width=0,h264_hardware_height=0,h264_user_width=0,h264_user_height=0;
+uint32_t width_limit(){auto limit=h264_hardware_width?h264_hardware_width:4096u;if(h264_user_width&&h264_user_width<limit)limit=h264_user_width;return limit;}
+uint32_t height_limit(){auto limit=h264_hardware_height?h264_hardware_height:4096u;if(h264_user_height&&h264_user_height<limit)limit=h264_user_height;return limit;}
 uint32_t requested_rate_control=0,requested_preset=2,requested_vbv_frames=1;
 // Encoder options queued while a session is open; the next session picks them up.
 bool pending_encoder=false;
@@ -82,6 +88,12 @@ NVENCSTATUS NVENCAPI open(NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS* source,void** ou
  {std::lock_guard<std::mutex> lock(mutex);stats.last_status=status;
   if(status==NV_ENC_SUCCESS){
    if(pending_encoder){requested_rate_control=pending_rate_control;requested_preset=pending_preset;requested_vbv_frames=pending_vbv_frames;pending_encoder=false;}
+   if(!h264_hardware_width){
+    // The H.264 encoder's own size limits, so what is advertised to SteamVR never exceeds what this GPU can encode.
+    NV_ENC_CAPS_PARAM query{};query.version=NV_ENC_CAPS_PARAM_VER;int value=0;
+    query.capsToQuery=NV_ENC_CAPS_WIDTH_MAX;if(api.nvEncGetEncodeCaps(*output,NV_ENC_CODEC_H264_GUID,&query,&value)==NV_ENC_SUCCESS&&value>0)h264_hardware_width=uint32_t(value);
+    query.capsToQuery=NV_ENC_CAPS_HEIGHT_MAX;if(api.nvEncGetEncodeCaps(*output,NV_ENC_CODEC_H264_GUID,&query,&value)==NV_ENC_SUCCESS&&value>0)h264_hardware_height=uint32_t(value);
+   }
    State state{};
    if(StockReady()){const auto stock_status=StockOpen(source,&state.stock);if(stock_status){state.stock=nullptr;++switch_info.stock_errors;switch_info.last_stock_status=uint32_t(stock_status);}}
    sessions.emplace(*output,std::move(state));++stats.opens;
@@ -98,10 +110,11 @@ NVENCSTATUS NVENCAPI caps(void* encoder,GUID codec,NV_ENC_CAPS_PARAM* source,int
  const auto result=api.nvEncGetEncodeCaps(encoder,codec,&copy,output);
  if(result==NV_ENC_SUCCESS&&output&&(copy.capsToQuery==NV_ENC_CAPS_SUPPORT_10BIT_ENCODE||
     copy.capsToQuery==NV_ENC_CAPS_NUM_MAX_BFRAMES||copy.capsToQuery==NV_ENC_CAPS_SUPPORT_LOOKAHEAD))*output=0;
- // SteamVR initializes at the advertised maximum before choosing the packed
- // stream layout. Bound that allocation to the paired H.264 decoder.
- if(result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_WIDTH_MAX)*output=std::min(*output,1024);
- if(result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_HEIGHT_MAX)*output=std::min(*output,4096);
+   // SteamVR initializes at the advertised maximum before choosing the packed
+ // stream layout, so advertise no more than the H.264 encoder can take. There is no other clamp: the width SteamVR
+ // chooses is the width that is encoded (an optional lower limit can be configured).
+ if(result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_WIDTH_MAX)*output=int(std::min(uint32_t(*output),width_limit()));
+ if(result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_HEIGHT_MAX)*output=int(std::min(uint32_t(*output),height_limit()));
  return result;
 }
 NVENCSTATUS preset_common(void* encoder,GUID codec,GUID preset,NV_ENC_TUNING_INFO tuning,NV_ENC_PRESET_CONFIG* source,bool extended){
@@ -128,9 +141,13 @@ bool session_baseline(void* encoder,NV_ENC_CONFIG& output){
  return true;
 }
 bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config){
- if(source.version!=old_init||!source.encodeConfig||source.encodeConfig->version!=old_config||
-    !source.frameRateDen||uint64_t(source.frameRateNum)!=uint64_t(source.frameRateDen)*requested_fps||
-    source.encodeWidth<128||source.encodeHeight<128||source.encodeWidth>1024u||source.encodeHeight>4096u)return false;
+ if(source.version!=old_init||!source.encodeConfig||source.encodeConfig->version!=old_config||!source.frameRateDen)return false;
+ if(!fps_pinned){
+  const auto fps=uint32_t(source.frameRateNum/source.frameRateDen);
+  if(uint64_t(source.frameRateNum)==uint64_t(source.frameRateDen)*fps&&(fps==72||fps==80||fps==90||fps==120))requested_fps=fps;
+ }
+ if(uint64_t(source.frameRateNum)!=uint64_t(source.frameRateDen)*requested_fps||
+    source.encodeWidth<128||source.encodeHeight<128||source.encodeWidth>width_limit()||source.encodeHeight>height_limit())return false;
  NV_ENC_CONFIG baseline{};
  if(!session_baseline(encoder,baseline))return false;
  init=source;config=baseline;
@@ -451,7 +468,19 @@ extern "C" int HOOK_CALL HookConfigureLegacyRate(uint32_t fps){
  if(fps!=72&&fps!=80&&fps!=90&&fps!=120)return -1;
  std::lock_guard<std::mutex> lock(mutex);
  if(!sessions.empty())return -2;
- requested_fps=fps;return 0;
+ requested_fps=fps;fps_pinned=true;return 0;
+}
+// Optional lower limit on the H.264 encoder's width and height (0 keeps what the GPU reports).
+extern "C" int HOOK_CALL HookConfigureH264Limit(uint32_t width,uint32_t height){
+ if((width&&width<128)||(height&&height<128)||width>8192||height>8192)return -1;
+ std::lock_guard<std::mutex> lock(mutex);
+ if(!sessions.empty())return -2;
+ h264_user_width=width;h264_user_height=height;return 0;
+}
+// The codec used until something asks otherwise; a resident driver starts as stock.
+extern "C" int HOOK_CALL HookSetDefaultLegacyMode(uint32_t mode){
+ if(mode>1)return -1;
+ std::lock_guard<std::mutex> lock(mutex);active_mode=int(mode);return 0;
 }
 
 extern "C" int HOOK_CALL HookConfigureLegacyEncoder(uint32_t rate_control,uint32_t preset,uint32_t vbv_frames){

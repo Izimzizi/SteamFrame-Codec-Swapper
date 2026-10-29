@@ -35,4 +35,9 @@ try {
   & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\mode_switch_gpu_test.obj" "/Fe:$labOutput\mode_switch_gpu_test.exe" "$PSScriptRoot\mode_switch_gpu_test.cpp" "$labOutput\SteamFrameH264Hook.lib" d3d11.lib
   if($LASTEXITCODE){throw 'Mode switch GPU test compilation failed'}
  }
+ # The same DLL doubles as a SteamVR external driver: driver.vrdrivermanifest + bin\win64\driver_steamframe.dll.
+ $labDriver = Join-Path $labOutput 'Driver'
+ New-Item -ItemType Directory -Path (Join-Path $labDriver 'bin\win64') -Force | Out-Null
+ Copy-Item -LiteralPath "$labOutput\SteamFrameH264Hook.dll" -Destination (Join-Path $labDriver 'bin\win64\driver_steamframe.dll') -Force
+ Set-Content -LiteralPath (Join-Path $labDriver 'driver.vrdrivermanifest') -Encoding ASCII -Value '{"alwaysActivate": true, "name": "steamframe", "directory": "", "resourceOnly": false, "hmd_presence": []}'
 } finally {$env:PATH=$labOldPath;$env:INCLUDE=$labOldInclude;$env:LIB=$labOldLib}

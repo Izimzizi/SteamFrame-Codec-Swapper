@@ -11,6 +11,8 @@ HOOK_API int HOOK_CALL HookCreateLegacyFunctionTable(void* sdk11_table, uint32_t
 HOOK_API int HOOK_CALL HookConfigureLegacyBudget(uint32_t average_bps, uint32_t peak_bps,
                                             uint32_t fixed_target);
 HOOK_API int HOOK_CALL HookConfigureLegacyRate(uint32_t fps);
+HOOK_API int HOOK_CALL HookConfigureH264Limit(uint32_t width,uint32_t height);
+HOOK_API int HOOK_CALL HookSetDefaultLegacyMode(uint32_t mode);
 // Experiment: rate control (0 VBR, 1 CBR), NVENC preset (1 = P1 ... 7 = P7) and VBV buffer size in frames of the
 // average bitrate (1..16). Immutable while a session is open.
 HOOK_API int HOOK_CALL HookConfigureLegacyEncoder(uint32_t rate_control, uint32_t preset, uint32_t vbv_frames);

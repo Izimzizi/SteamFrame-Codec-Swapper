@@ -22,7 +22,9 @@ int main(int argc,char** argv){
  const bool cbr=argc>4&&std::string(argv[4])=="cbr";
  const uint32_t preset_number=argc>5?uint32_t(std::stoul(argv[5])):2;
  const uint32_t vbv_frames=argc>6?uint32_t(std::stoul(argv[6])):1;
- const uint32_t width=fixed?1024:512,height=fixed?4096:512;
+ // BRIDGE_WIDTH/BRIDGE_HEIGHT try other sizes, such as widths above 1024 (the bridge has no clamp of its own).
+ const char* size_width=getenv("BRIDGE_WIDTH");const char* size_height=getenv("BRIDGE_HEIGHT");
+ const uint32_t width=size_width?uint32_t(std::stoul(size_width)):fixed?1024:512,height=size_height?uint32_t(std::stoul(size_height)):fixed?4096:512;
  NV_ENCODE_API_FUNCTION_LIST api{};api.version=NV_ENCODE_API_FUNCTION_LIST_VER;void* encoder=nullptr;
  NV_ENC_OUTPUT_PTR output=nullptr;NV_ENC_REGISTERED_PTR registered=nullptr;HANDLE event=nullptr;bool event_registered=false;
  try{
