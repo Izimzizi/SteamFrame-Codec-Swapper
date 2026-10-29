@@ -20,10 +20,10 @@ public sealed class TrayApp : ApplicationContext
     private readonly NotifyIcon _icon = new() { Visible = true };
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 2000 };
     private readonly ToolStripMenuItem _status = new() { Enabled = false, AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 24), TextAlign = ContentAlignment.MiddleLeft };
-    private readonly ToolStripMenuItem _toggle = new();
+    private readonly ToolStripMenuItem _useH264 = new("H.264");
+    private readonly ToolStripMenuItem _useDefault = new("Default (HEVC)");
     private readonly MenuBitrateSlider _menuSlider;
     private readonly ToolStripMenuItem _rateMenu = new("Encoder experiment");
-    private readonly ToolStripMenuItem _liveCodecMenu = new("Live codec switch (experiment)");
     private readonly ToolStripLabel _bitrateLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
     private readonly ToolStripMenuItem _statsItem = new("Stream stats window");
     private readonly ToolStripMenuItem _startup = new("Start with Windows");
@@ -58,7 +58,7 @@ public sealed class TrayApp : ApplicationContext
         Render(_controller.Current);
         _icon.MouseDoubleClick += async (_, e) =>
         {
-            if (e.Button == MouseButtons.Left && _toggle.Enabled) await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : ArmAsync());
+            if (e.Button == MouseButtons.Left && _useH264.Enabled) await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : ArmAsync());
         };
         _poll.Tick += async (_, _) => { try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
@@ -79,14 +79,15 @@ public sealed class TrayApp : ApplicationContext
         catch (Exception error) { Balloon("SteamFrame Tray", error.Message, ToolTipIcon.Error); }
         if (!autostart && !_setup.IsConfigured()) ShowSetup();
         else if (!autostart && !_controller.Current.IsArmed && _controller.Current.State != TrayState.Error)
-            Balloon("SteamFrame Tray", "Right-click the icon to arm H.264.", ToolTipIcon.Info);
+            Balloon("SteamFrame Tray", "Right-click the icon to choose H.264.", ToolTipIcon.Info);
     }
 
     private void BuildMenu()
     {
         var menu = new ContextMenuStrip();
         BuildRateMenu();
-        _toggle.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : ArmAsync());
+        _useH264.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? Task.CompletedTask : ArmAsync());
+        _useDefault.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : Task.CompletedTask);
         _statsItem.Click += (_, _) => ToggleStats();
         _record.Click += (_, _) => ToggleRecording();
         _startup.Click += (_, _) => { try { StartupRegistration.Set(!StartupRegistration.IsEnabled); } catch (Exception error) { Balloon("Start with Windows", error.Message, ToolTipIcon.Error); } };
@@ -94,7 +95,7 @@ public sealed class TrayApp : ApplicationContext
         _forgetPassword.Click += async (_, _) => await RunAsync(() =>
         {
             _controller.ForgetPassword();
-            Balloon("Frame password", "The stored password was removed. You will be asked for it the next time you arm.", ToolTipIcon.Info);
+            Balloon("Frame password", "The stored password was removed. You will be asked for it the next time you choose H.264.", ToolTipIcon.Info);
             return Task.CompletedTask;
         });
         _password.DropDownItems.AddRange([_setPassword, _forgetPassword]);
@@ -112,7 +113,7 @@ public sealed class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _toggle, _bitrateLabel, _menuSlider, _rateMenu, _liveCodecMenu, new ToolStripSeparator(), _statsItem, _record, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
@@ -143,9 +144,9 @@ public sealed class TrayApp : ApplicationContext
                     try
                     {
                         if (await _controller.ApplyEncoderOptionsAsync()) Balloon("Encoder experiment", $"{summary} is applied to the running encoder.", ToolTipIcon.Info);
-                        else Balloon("Encoder experiment", $"{summary} is used the next time you arm H.264.", ToolTipIcon.Info);
+                        else Balloon("Encoder experiment", $"{summary} is used the next time you switch to H.264.", ToolTipIcon.Info);
                     }
-                    catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder experiment", $"Saved ({summary}) for the next arm. {error.Message}", ToolTipIcon.Warning); }
+                    catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder experiment", $"Saved ({summary}) for the next switch to H.264. {error.Message}", ToolTipIcon.Warning); }
                 };
                 items.Add((item, selected));
                 group.DropDownItems.Add(item);
@@ -161,23 +162,9 @@ public sealed class TrayApp : ApplicationContext
             Group("VBV buffer", [..new[] { 1, 2, 4, 8, 16 }.Select<int, (string, Func<bool>, Action)>(v =>
                 ($"{v} frame{(v == 1 ? "" : "s")}" + (v == 2 ? " (default)" : ""), () => _preferences.HookVbvFrames == v, () => _preferences.HookVbvFrames = v))]),
         ]);
-        var stockItem = new ToolStripMenuItem("Switch to SteamVR's own HEVC now");
-        var h264Item = new ToolStripMenuItem("Switch to H.264 now");
-        async Task Switch(bool stock)
-        {
-            try
-            {
-                if (await _controller.SwitchCodecLiveAsync(stock)) Balloon("Live codec switch", stock ? "Streaming SteamVR's own HEVC." : "Streaming H.264.", ToolTipIcon.Info);
-                else Balloon("Live codec switch", "Not available now: arm H.264 and start SteamVR with the hook first.", ToolTipIcon.Warning);
-            }
-            catch (Exception error) when (error is not OperationCanceledException) { Balloon("Live codec switch", error.Message, ToolTipIcon.Warning); }
-        }
-        stockItem.Click += async (_, _) => await RunAsync(() => Switch(true));
-        h264Item.Click += async (_, _) => await RunAsync(() => Switch(false));
-        _liveCodecMenu.DropDownItems.AddRange([stockItem, h264Item]);
     }
 
-    /// <summary>Registers the hook as a SteamVR driver: loaded at every SteamVR start, streaming stock HEVC until H.264 is armed.</summary>
+    /// <summary>Registers the hook as a SteamVR driver: loaded at every SteamVR start, streaming HEVC until H.264 is chosen.</summary>
     private void BuildDriverMenu()
     {
         var state = new ToolStripMenuItem { Enabled = false };
@@ -217,7 +204,7 @@ public sealed class TrayApp : ApplicationContext
         {
             case ChangeOutcome.AppliedLive: Balloon("Bitrate changed", _controller.Current.Message, ToolTipIcon.Info); break;
             case ChangeOutcome.Reapplied when _controller.Current.State is TrayState.Armed or TrayState.Waiting: Balloon("H.264 re-applied", _controller.Current.Message, ToolTipIcon.Info); break;
-            case ChangeOutcome.Declined: Balloon("Saved", "The new setting is used the next time you arm H.264.", ToolTipIcon.Info); break;
+            case ChangeOutcome.Declined: Balloon("Saved", "The new setting is used the next time you switch to H.264.", ToolTipIcon.Info); break;
         }
     }
 
@@ -225,11 +212,11 @@ public sealed class TrayApp : ApplicationContext
         Task.FromResult(PromptDialog.Ask("Frame password", "Enter the Frame user password. It is kept in Windows Credential Manager (encrypted for this Windows account) so H.264 can come back after SteamVR or the PC restarts, and is stored only once the Frame accepts it.", true));
 
     private static Task<bool> ConfirmArmRestart() => Task.FromResult(MessageBox.Show(
-        "SteamVR is running. Arming H.264 restarts SteamVR once (your session will be interrupted). Restart SteamVR now?\n\nClose SteamVR and choose No to arm without a restart: it will wait for SteamVR to start.",
+        "SteamVR is running. Switching to H.264 restarts SteamVR once (your session will be interrupted). Restart SteamVR now?\n\nClose SteamVR and choose No to arm without a restart: it will wait for SteamVR to start.",
         "Restart SteamVR?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2, 0) == DialogResult.Yes);
 
     private static Task<bool> ConfirmRestart() => Task.FromResult(MessageBox.Show(
-        "This change needs SteamVR to restart (your session will be interrupted). Restart SteamVR now?\n\nChoose No to use the new setting the next time you arm H.264.",
+        "This change needs SteamVR to restart (your session will be interrupted). Restart SteamVR now?\n\nChoose No to use the new setting the next time you switch to H.264.",
         "Restart SteamVR?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2, 0) == DialogResult.Yes);
 
     private void ShowSetup()
@@ -241,16 +228,16 @@ public sealed class TrayApp : ApplicationContext
 
     private async Task ArmAsync()
     {
-        if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then arm H.264.", ToolTipIcon.Info); return; }
+        if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then choose H.264.", ToolTipIcon.Info); return; }
         await _controller.ArmAsync(AskPassword, ConfirmPatch, ConfirmArmRestart);
         if (_controller.Current.State is TrayState.Armed or TrayState.Waiting)
-            Balloon("H.264 armed", _controller.Current.Message, ToolTipIcon.Info);
+            Balloon("H.264", _controller.Current.Message, ToolTipIcon.Info);
     }
 
     private Task<bool> ConfirmPatch(BitratePatchStatus status)
     {
         var answer = MessageBox.Show($"Bitrates above {TrayController.PatchFreeMaxMbps} Mbps need a small patch to SteamVR's Steam Link driver (driver_vrlink.dll). A verified backup of the original is kept and the patch can be removed from this menu.\n\n" +
-            (status.VrServerRunning ? "SteamVR is running; close it first, then arm again.\n\n" : "") + "Install the patch now?",
+            (status.VrServerRunning ? "SteamVR is running; close it first, then choose H.264 again.\n\n" : "") + "Install the patch now?",
             "Bitrate patch", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1, 0);
         return Task.FromResult(answer == DialogResult.Yes);
     }
@@ -263,7 +250,7 @@ public sealed class TrayApp : ApplicationContext
         var text = PromptDialog.Ask("Frame password", "Enter the Frame user password to store in Windows Credential Manager.", true);
         if (string.IsNullOrEmpty(text)) return;
         _controller.SavePassword(text);
-        Balloon("Frame password", "Stored. It is checked against the Frame the next time you arm.", ToolTipIcon.Info);
+        Balloon("Frame password", "Stored. It is checked against the Frame the next time you choose H.264.", ToolTipIcon.Info);
     }
 
     private async Task RefreshPatchMenuAsync()
@@ -380,8 +367,9 @@ public sealed class TrayApp : ApplicationContext
         _icon.Text = Truncate("SteamFrame: " + snapshot.Message, 127);
         _status.Text = snapshot.Message;
         _status.ToolTipText = snapshot.Message;
-        _toggle.Text = snapshot.IsArmed ? "Disarm (back to SteamVR defaults)" : "Arm H.264";
-        _toggle.Enabled = snapshot.State is not (TrayState.Arming or TrayState.Disarming);
+        _useH264.Checked = snapshot.IsArmed;
+        _useDefault.Checked = !snapshot.IsArmed;
+        _useH264.Enabled = _useDefault.Enabled = snapshot.State is not (TrayState.Arming or TrayState.Disarming);
         _menuSlider.SetValue(snapshot.TargetMbps);
     }
 

@@ -76,7 +76,7 @@ public sealed class SetupForm : Form
         if (next is not null && _steps.Items.Count > 0) _steps.Items[_report.Steps.ToList().IndexOf(next)].Selected = true;
         _action.Visible = next is { Id: "hostkey" or "password" or "key" or "login" } && next.State is StepState.NeedsAction;
         _action.Text = next?.Id switch { "hostkey" => "Review host key…", "password" or "login" => "Enter Frame password…", "key" => "Choose key file…", _ => "" };
-        if (next is null) _detail.Text = "Everything is ready. Close this window and arm H.264 from the tray menu.";
+        if (next is null) _detail.Text = "Everything is ready. Close this window and choose H.264 from the tray menu.";
         else ShowDetail();
     }
 

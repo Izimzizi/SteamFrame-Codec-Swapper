@@ -40,7 +40,7 @@ public sealed class TrayController
     public TrayController(ICodecService codec, ICredentialVault vault, IDriverPatch patch, FramePreferences preferences, Func<Task> save, ILiveBitrate? live = null, Func<bool>? driverInstalled = null)
     {
         _driverInstalled = driverInstalled; _codec = codec; _vault = vault; _patch = patch; _preferences = preferences; _save = save; _live = live;
-        Current = new(TrayState.Disarmed, "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps);
+        Current = new(TrayState.Disarmed, "Default (HEVC): SteamVR uses its own codec and bitrate.", TargetMbps);
     }
 
     public event Action<TraySnapshot>? Changed;
@@ -297,7 +297,7 @@ public sealed class TrayController
                 Publish(Map(status));
                 return false;
             }
-            Publish(new(TrayState.Arming, "Arming H.264…", TargetMbps));
+            Publish(new(TrayState.Arming, "Switching to H.264…", TargetMbps));
             await EnsureBitratePatchAsync(request.TargetMbps, confirmPatch);
             var progress = new Progress<CodecServiceStatus>(s => Publish(Map(s)));
             CodecServiceStatus result;
@@ -341,7 +341,7 @@ public sealed class TrayController
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            Publish(new(TrayState.Disarming, "Restoring SteamVR's own codec and bitrate…", TargetMbps));
+            Publish(new(TrayState.Disarming, "Switching back to Default (HEVC)…", TargetMbps));
             var progress = new Progress<CodecServiceStatus>(s => Publish(new(TrayState.Disarming, s.Message, TargetMbps)));
             var status = await _codec.ReadStatusAsync(cancellationToken);
             if (status.Live) await _codec.CloseAsync(progress, cancellationToken);
@@ -358,7 +358,7 @@ public sealed class TrayController
             _preferences.KeepH264 = false;
             await _save();
             _wasLive = false;
-            Publish(new(TrayState.Disarmed, "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps));
+            Publish(new(TrayState.Disarmed, "Default (HEVC): SteamVR uses its own codec and bitrate.", TargetMbps));
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception error)
@@ -382,7 +382,7 @@ public sealed class TrayController
         if (state.IsPatched || !state.IsSupported) return;
         if (!await confirmPatch(state)) throw new InvalidOperationException($"Bitrates above {PatchFreeMaxMbps} Mbps need the bitrate patch. Choose {PatchFreeMaxMbps} or lower, or allow the patch.");
         if (!state.CanApply) throw new InvalidOperationException(state.VrServerRunning
-            ? "Close SteamVR, then arm again so the bitrate patch can be installed."
+            ? "Close SteamVR, then choose H.264 again so the bitrate patch can be installed."
             : state.Message);
         var applied = await _patch.ApplyAsync();
         if (!applied.IsPatched) throw new InvalidOperationException("The bitrate patch could not be verified after installing it. " + applied.Message);
@@ -406,17 +406,17 @@ public sealed class TrayController
         var target = status.TargetMbps is >= MinimumMbps and <= MaximumMbps ? status.TargetMbps : TargetMbps;
         if (!status.Live)
             return new(status.State == "error" ? TrayState.Error : TrayState.Disarmed,
-                status.State == "error" ? status.Message : "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps);
+                status.State == "error" ? status.Message : "Default (HEVC): SteamVR uses its own codec and bitrate.", TargetMbps);
         if (!status.Keep && status.ActiveCodec != "H.264")
-            return new(TrayState.Disarmed, $"A codec session is running ({status.ActiveCodec}); H.264 is not armed.", TargetMbps);
+            return new(TrayState.Disarmed, $"A codec session is running ({status.ActiveCodec}); H.264 is not selected.", TargetMbps);
         return status.State switch
         {
             "starting" or "switching" => new(TrayState.Arming, status.Message, target),
-            "waiting" => new(TrayState.Waiting, $"Armed: H.264 {target} Mbps, waiting for SteamVR to start.", target),
-            "ready" when status.ActiveCodec == "HEVC" => new(TrayState.Armed, $"Armed, streaming SteamVR's own HEVC (live switch). H.264 {target} Mbps comes back when you switch or restart SteamVR.", target),
-            "ready" => new(TrayState.Armed, $"Armed: H.264 {target} Mbps." + (status.AutomaticBandwidth ? " SteamVR's Automatic bandwidth is on and may lower it." : ""), target),
+            "waiting" => new(TrayState.Waiting, $"H.264 selected ({target} Mbps); it starts with SteamVR.", target),
+            "ready" when status.ActiveCodec == "HEVC" => new(TrayState.Armed, $"Default (HEVC): H.264 is selected but the stream is on HEVC right now.", target),
+            "ready" => new(TrayState.Armed, $"Streaming H.264, {target} Mbps." + (status.AutomaticBandwidth ? " SteamVR's Automatic bandwidth is on and may lower it." : ""), target),
             "error" => new(TrayState.Error, status.Message, target),
-            _ => new(TrayState.Disarmed, "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps)
+            _ => new(TrayState.Disarmed, "Default (HEVC): SteamVR uses its own codec and bitrate.", TargetMbps)
         };
     }
 
