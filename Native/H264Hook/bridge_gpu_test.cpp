@@ -98,8 +98,16 @@ int main(int argc,char** argv){
    if(i==30||i==60||i==90){NV_ENC_RECONFIGURE_PARAMS change{};change.version=NV_ENC_RECONFIGURE_PARAMS_VER;change.reInitEncodeParams=init;
     change.reInitEncodeParams.frameRateNum=i==30?65u:i==60?300u:fps;
     const auto unchanged=change;
+    // Options queued mid-session are adopted by the next reconfigure: switch at frame 60, switch back at frame 90.
+    if(i==60&&HookQueueLegacyEncoder(cbr?0:1,4,8))throw std::runtime_error("Queue failed");
+    if(i==90&&HookQueueLegacyEncoder(cbr?1:0,preset_number,vbv_frames))throw std::runtime_error("Queue back failed");
     check(api.nvEncReconfigureEncoder(encoder,&change),"legacy measured-throughput reconfigure");
     if(memcmp(&change,&unchanged,sizeof(change)))throw std::runtime_error("Caller reconfigure changed");
+    if(i==60||i==90){
+     HookTrialIdentity now{sizeof(now),1};
+     const uint32_t want_rc=i==60?(cbr?0u:1u):(cbr?1u:0u),want_preset=i==60?4u:preset_number,want_vbv=i==60?8u:vbv_frames;
+     if(HookGetLegacyIdentity(&now)||now.rate_control!=want_rc||now.preset!=want_preset||now.vbv_frames!=want_vbv)throw std::runtime_error("The running encoder did not adopt the queued options (rejected and rolled back)");
+    }
    }
   }
   file.close();check(api.nvEncDestroyBitstreamBuffer(encoder,output),"destroy output");output=nullptr;

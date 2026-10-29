@@ -137,7 +137,7 @@ public sealed class TrayApp : ApplicationContext
                     var summary = $"{_preferences.HookRateControl.ToUpperInvariant()}, P{_preferences.HookPreset}, VBV {_preferences.HookVbvFrames} frame(s)";
                     try
                     {
-                        if (await _controller.ApplyEncoderOptionsAsync()) Balloon("Encoder experiment", $"{summary} is applied; the stream restarts for a moment.", ToolTipIcon.Info);
+                        if (await _controller.ApplyEncoderOptionsAsync()) Balloon("Encoder experiment", $"{summary} is applied to the running encoder.", ToolTipIcon.Info);
                         else Balloon("Encoder experiment", $"{summary} is used the next time you arm H.264.", ToolTipIcon.Info);
                     }
                     catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder experiment", $"Saved ({summary}) for the next arm. {error.Message}", ToolTipIcon.Warning); }

@@ -440,14 +440,13 @@ class LiveEncoderTests(LiveRateTests):
  def test_new_options_are_queued_on_the_resident_hook_with_the_current_rate(self):
   instance=self.make()
   done=Mock(returncode=0,stdout='{"code":0}',stderr='')
-  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(instance,'restream') as restream,patch.object(instance,'hook_counter',return_value=1),patch.object(instance,'hook_identity',return_value='x'),patch.object(service.subprocess,'run',return_value=done) as run:
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(instance,'hook_identity',side_effect=['vbr, P2, VBV 2','cbr, P4, VBV 2']),patch.object(service.time,'sleep'),patch.object(service.subprocess,'run',return_value=done) as run:
    instance.set_encoder('cbr',4,2,'op')
   args=run.call_args.args[0]
   self.assertEqual(args[1],'7');self.assertEqual(args[3:],['configure','500000000','500000000','0','72','2','cbr','4','2'])
   self.assertEqual((instance.rate_control,instance.preset,instance.vbv),('cbr',4,2))
-  # The Frame's stream is restarted (stopped first) so SteamVR builds a new encoder with the queued options.
-  restream.assert_called_once()
-  self.assertEqual(restream.call_args.args[2],'op');self.assertTrue(restream.call_args.kwargs['stop'])
+  # Applied only once the hook reports the new options (SteamVR's next encoder update adopted them).
+  self.assertEqual(update.call_args.kwargs,{'operation_id':'op','last_result':{'ok':True}})
  def test_a_refused_or_unavailable_change_leaves_the_options_alone(self):
   hookless=self.make(live=False)
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(hookless,'update'),patch.object(service.subprocess,'run') as run:
@@ -467,3 +466,7 @@ class LiveEncoderTests(LiveRateTests):
   with patch.object(instance,'update') as update,patch.object(instance,'ensure_frame',side_effect=RuntimeError('boom')),patch.object(instance,'log'),patch.object(service.time,'sleep'):
    instance.restream('msg','done','op2',stop=True)
   self.assertFalse(update.call_args.kwargs['last_result']['ok']);self.assertEqual(update.call_args.kwargs['state'],'waiting')
+ def test_options_the_hook_never_adopts_are_reported(self):
+  instance=self.make();done=Mock(returncode=0,stdout='{"code":0}',stderr='');clock=iter([0,1,2,3,4,5,6,7,8,9,10,11,12,13])
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(instance,'hook_identity',return_value='vbr, P2, VBV 2'),patch.object(service.time,'sleep'),patch.object(service.time,'monotonic',side_effect=lambda:next(clock)),patch.object(service.subprocess,'run',return_value=done):
+   with self.assertRaisesRegex(RuntimeError,'has not applied'):instance.set_encoder('cbr',4,2,'op')

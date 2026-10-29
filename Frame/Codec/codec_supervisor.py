@@ -393,11 +393,16 @@ class Supervisor:
   self.rate_control=rate_control;self.preset=preset;self.vbv=vbv
   self.log('encoder options queued: '+rate_control+', P'+str(preset)+', VBV '+str(vbv))
   self.update(rate_control=rate_control,preset=preset,vbv_frames=vbv)
-  # SteamVR keeps one encoder session across stream resets of its own, so restart the Frame's stream: the new session uses the queued options.
-  opens=self.hook_counter('opens')
-  self.restream('Applying the new encoder options; the stream restarts for a moment.','H.264 running with the new encoder options.',operation_id,stop=True)
-  # Evidence for the log: the options only apply if SteamVR opened a new encoder session during the restart.
-  self.log('encoder sessions opened: '+str(opens)+' -> '+str(self.hook_counter('opens'))+'; hook identity '+self.hook_identity())
+  # SteamVR reconfigures its encoder before every frame; the hook adopts the queued options there, so the hook's identity
+  # changing is the proof that the running encoder has them.
+  deadline=time.monotonic()+6;seen='unreadable'
+  while True:
+   seen=self.hook_identity()
+   if seen==rate_control+', P'+str(preset)+', VBV '+str(vbv):
+    self.log('encoder options applied in the running encoder: '+seen);self.update(operation_id=operation_id,last_result={'ok':True});return
+   if time.monotonic()>=deadline:break
+   time.sleep(.5)
+  raise RuntimeError('SteamVR has not applied the new options yet (the hook reports '+seen+'). They apply on its next encoder update.')
  def verify_stream(self,target,fps):
   deadline=time.monotonic()+self.verify_seconds;ready=False;seen='no receiver reading'
   while time.monotonic()<deadline:

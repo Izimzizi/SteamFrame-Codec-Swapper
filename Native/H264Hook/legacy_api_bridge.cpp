@@ -186,8 +186,25 @@ NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source
      uint64_t(requested.frameRateNum)<=uint64_t(requested.frameRateDen)*1000;}
  if(!valid)return reject(NV_ENC_ERR_INVALID_PARAM);
  requested.frameRateNum=requested_fps;requested.frameRateDen=1;
+ // Encoder options queued while this session runs are adopted here: the host reconfigures before every frame, so the
+ // new rate control, VBV and preset reach the running encoder without a new session.
+ bool adopted=false;uint32_t old_rate_control=0,old_preset=0,old_vbv=0;
+ {std::lock_guard<std::mutex> lock(mutex);
+  if(pending_encoder){
+   old_rate_control=requested_rate_control;old_preset=requested_preset;old_vbv=requested_vbv_frames;
+   requested_rate_control=pending_rate_control;requested_preset=pending_preset;requested_vbv_frames=pending_vbv_frames;pending_encoder=false;adopted=true;
+   auto found=sessions.find(encoder);if(found!=sessions.end()&&old_preset!=requested_preset)found->second.baseline_ready=false;
+  }}
  if(!configure(encoder,requested,copy.reInitEncodeParams,config))return reject(NV_ENC_ERR_INVALID_PARAM);
- const auto status=api.nvEncReconfigureEncoder(encoder,&copy);
+ auto status=api.nvEncReconfigureEncoder(encoder,&copy);
+ if(adopted&&status!=NV_ENC_SUCCESS){
+  // The encoder refused the new options (a preset cannot always change in place): keep running on the old ones.
+  {std::lock_guard<std::mutex> lock(mutex);requested_rate_control=old_rate_control;requested_preset=old_preset;requested_vbv_frames=old_vbv;
+   auto found=sessions.find(encoder);if(found!=sessions.end())found->second.baseline_ready=false;}
+  copy=NV_ENC_RECONFIGURE_PARAMS{};config=NV_ENC_CONFIG{};
+  if(!upgrade(source,copy,old_reconfigure,NV_ENC_RECONFIGURE_PARAMS_VER)||!configure(encoder,requested,copy.reInitEncodeParams,config))return reject(NV_ENC_ERR_INVALID_PARAM);
+  status=api.nvEncReconfigureEncoder(encoder,&copy);
+ }
  {std::lock_guard<std::mutex> lock(mutex);++stats.reconfigures;stats.last_status=status;
   if(status!=NV_ENC_SUCCESS)++stats.errors;
   else {stats.width=copy.reInitEncodeParams.encodeWidth;stats.height=copy.reInitEncodeParams.encodeHeight;
