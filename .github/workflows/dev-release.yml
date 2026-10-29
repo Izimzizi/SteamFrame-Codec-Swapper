@@ -1,12 +1,17 @@
 name: Dev release
 
-# Builds the package from a commit and publishes it as a GitHub pre-release.
-# Run it from the Actions tab: choose the commit (any ref), a tag name and optional notes.
+# Builds the package and publishes it as a GitHub pre-release.
+# Automatic: push a tag named dev-* (for example `git tag dev-2026-10-29 && git push origin dev-2026-10-29`).
+# An annotated tag's message becomes the release notes: `git tag -a dev-2026-10-29 -m "notes"`.
+# Manual (Actions tab): build any older commit, branch or tag under a new tag name.
 on:
+  push:
+    tags:
+      - 'dev-*'
   workflow_dispatch:
     inputs:
       ref:
-        description: Commit, branch or tag to build
+        description: Commit, branch or tag to build (a short commit id is fine)
         default: main
         required: true
       tag:
@@ -14,7 +19,6 @@ on:
         required: true
       notes:
         description: Release notes (markdown)
-        default: Dev build for testing. Extract the whole zip and run SteamFrameTray.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.
         required: false
 
 permissions:
@@ -23,12 +27,24 @@ permissions:
 jobs:
   package:
     runs-on: windows-latest
+    env:
+      BUILD_REF: ${{ inputs.ref || github.sha }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      INPUT_NOTES: ${{ inputs.notes }}
     steps:
+      # Full history so a short commit id or an older branch resolves; the build ref is checked out by hand.
       - name: Check out the source to build
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
           path: src
+          fetch-depth: 0
+      - name: Select the commit to build
+        shell: pwsh
+        working-directory: src
+        run: |
+          git checkout --detach $env:BUILD_REF
+          if ($LASTEXITCODE -ne 0) { throw "Cannot check out $env:BUILD_REF" }
+          git log -1 --oneline
       - name: Check out this workflow's helper scripts
         uses: actions/checkout@v4
         with:
@@ -41,7 +57,9 @@ jobs:
         working-directory: src
         run: |
           dotnet test Tests/CoreTests -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
           dotnet test Tests/TrayTests -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Tray tests failed' }
       - name: Assemble the Python runtime
         shell: pwsh
         run: |
@@ -58,9 +76,14 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          NOTES: ${{ inputs.notes }}
         working-directory: src
         run: |
           $sha = git rev-parse HEAD
-          Set-Content -Path "$env:RUNNER_TEMP/notes.md" -Value "$env:NOTES`n`nBuilt from commit $sha."
-          gh release create "${{ inputs.tag }}" "$env:GITHUB_WORKSPACE/out/SteamFrameTray.zip" --repo "${{ github.repository }}" --target $sha --prerelease --title "${{ inputs.tag }}" --notes-file "$env:RUNNER_TEMP/notes.md"
+          $notes = $env:INPUT_NOTES
+          if (-not $notes) {
+            # An annotated tag carries its message; a lightweight tag yields the commit message, which is fine too.
+            $notes = (git tag -l --format='%(contents)' $env:RELEASE_TAG | Out-String).Trim()
+          }
+          if (-not $notes) { $notes = 'Dev build for testing. Extract the whole zip and run SteamFrameTray.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.' }
+          Set-Content -Path "$env:RUNNER_TEMP/notes.md" -Value "$notes`n`nBuilt from commit $sha."
+          gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE/out/SteamFrameTray.zip" --repo "${{ github.repository }}" --target $sha --prerelease --title $env:RELEASE_TAG --notes-file "$env:RUNNER_TEMP/notes.md"
