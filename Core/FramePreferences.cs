@@ -28,8 +28,8 @@ public sealed class FramePreferences
     public string HookRateControl { get; set; } = "vbr";
     /// <summary>Experiment: the hook's NVENC preset, 1 (P1) to 7 (P7); the default is P2.</summary>
     public int HookPreset { get; set; } = 2;
-    /// <summary>Experiment: the hook's VBV buffer in frames of the average bitrate, 1 (the default) to 16.</summary>
-    public int HookVbvFrames { get; set; } = 1;
+    /// <summary>Experiment: the hook's VBV buffer in frames of the average bitrate, 2 (the default, about 99% of the target in tests) to 16, 1 being the old behaviour.</summary>
+    public int HookVbvFrames { get; set; } = 2;
     /// <summary>Keep H.264 applied across SteamVR restarts; the Frame password is then kept in Windows Credential Manager.</summary>
     public bool KeepH264 { get; set; }
     public int BitrateSetupVersion { get; set; }

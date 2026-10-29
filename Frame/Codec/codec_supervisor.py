@@ -111,7 +111,7 @@ class Supervisor:
  def __init__(self,directory,config):
   validate_target(config['target_mbps'])
   self.resume=config.get('resume') is True;self.restore_only=config.get('restore_only') is True
-  self.rate_control=config.get('rate_control','vbr');self.preset=config.get('preset',2);self.vbv=config.get('vbv_frames',1)
+  self.rate_control=config.get('rate_control','vbr');self.preset=config.get('preset',2);self.vbv=config.get('vbv_frames',2)
   validate_encoder_options(self.rate_control,self.preset,self.vbv)
   if config.get('protocol_version')!=1 or not valid_host(config.get('ssh_host')):raise ValueError('Use the paired Frame address')
   self.login='steamos@'+config['ssh_host']
@@ -336,6 +336,9 @@ class Supervisor:
   validate_target(target)
   if not self.rate_available():raise RuntimeError('A live bitrate change is not available; apply the bitrate again.')
   applied=codec_host_values(target)
+  # The slider is the user's own bitrate choice: when the session ends it must stay, not go back to the value SteamVR had at arm time.
+  original=self.host_state.get('original')
+  if isinstance(original,dict):original['targetBandwidth']=applied['targetBandwidth'];original['recommendedBandwidthMbit']=applied['recommendedBandwidthMbit']
   if self.pid:
    self.host_state['previous']=self.host_state.get('applied');self.host_state['applied']=applied;atomic_json(self.host_path,self.host_state)
   else:

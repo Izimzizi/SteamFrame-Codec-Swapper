@@ -148,7 +148,7 @@ public sealed class TrayApp : ApplicationContext
             Group("Preset", [..new[] { 1, 2, 4, 6, 7 }.Select<int, (string, Func<bool>, Action)>(p =>
                 ($"P{p}" + (p == 2 ? " (default)" : ""), () => _preferences.HookPreset == p, () => _preferences.HookPreset = p))]),
             Group("VBV buffer", [..new[] { 1, 2, 4, 8, 16 }.Select<int, (string, Func<bool>, Action)>(v =>
-                ($"{v} frame{(v == 1 ? "" : "s")}" + (v == 1 ? " (default)" : ""), () => _preferences.HookVbvFrames == v, () => _preferences.HookVbvFrames = v))]),
+                ($"{v} frame{(v == 1 ? "" : "s")}" + (v == 2 ? " (default)" : ""), () => _preferences.HookVbvFrames == v, () => _preferences.HookVbvFrames = v))]),
         ]);
     }
 

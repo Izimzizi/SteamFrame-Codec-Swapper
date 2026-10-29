@@ -2,7 +2,7 @@
 
 `SteamFrameH264Hook.dll` is injected into `vrserver.exe` by `hook_control.exe`. It intercepts the public NVENC factory only for SteamVR's VRLink driver (`hook_entry.cpp`) and translates the driver's HEVC-facing SDK 11.1 function table (`legacy_api_bridge.cpp`) into an H.264 encoder session, so the Frame receives H.264 up to 500 Mbps. The tray starts and removes it through the supervisor (`Frame/Codec/codec_supervisor.py`); you normally never run it by hand.
 
-The hook produces H.264 only. Two encoder options are an experiment and take effect the next time H.264 is armed: the rate control (VBR, the default, or CBR where the peak equals the average) the NVENC preset (P1 to P7, default P2) and the VBV buffer size (1 to 16 frames of the average bitrate, default 1). The tray sets them from its "Encoder experiment" menu and logs them in the run header.
+The hook produces H.264 only. Two encoder options are an experiment and take effect the next time H.264 is armed: the rate control (VBR, the default, or CBR where the peak equals the average) the NVENC preset (P1 to P7, default P2) and the VBV buffer size (1 to 16 frames of the average bitrate, default 2: one frame undershoots the target by about a quarter). The tray sets them from its "Encoder experiment" menu and logs them in the run header.
 
 ## Build
 

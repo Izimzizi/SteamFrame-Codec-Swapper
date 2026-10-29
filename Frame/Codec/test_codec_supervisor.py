@@ -372,6 +372,14 @@ class LiveRateTests(unittest.TestCase):
   self.assertEqual(instance.host_state['previous'],before);self.assertEqual(instance.applied,450)
   self.assertEqual(json.loads(instance.host_path.read_text())['applied']['targetBandwidth'],450.0)
   self.assertEqual(update.call_args.kwargs,{'target_mbps':450,'operation_id':'op','last_result':{'ok':True}})
+ def test_a_bitrate_chosen_during_the_session_is_kept_when_settings_are_restored(self):
+  instance=self.make()
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'):
+   instance.set_rate(200,'op')
+  original=instance.host_state['original']
+  self.assertEqual((original['targetBandwidth'],original['recommendedBandwidthMbit']),(200.0,200))
+  self.assertTrue(original['automaticBandwidth'])  # everything else still goes back to the user's own value
+  self.assertEqual(json.loads(instance.host_path.read_text())['original']['targetBandwidth'],200.0)
  def test_closed_steamvr_gets_the_values_written_for_the_next_start(self):
   instance=self.make(pid=0)
   with patch.object(instance,'update'),patch.object(instance,'save_host_settings') as save:
