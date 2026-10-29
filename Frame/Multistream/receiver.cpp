@@ -1,6 +1,6 @@
 // Standalone prototype. It does not replace Valve's VRLink decoder or protocol.
 #define FRAME_DECODE_EMBEDDED
-#include "../AV1/hardware_decode.cpp"
+#include "../Codec/hardware_decode.cpp"
 #include "protocol.h"
 #include "datagrams.h"
 #include "frame_pairer.h"

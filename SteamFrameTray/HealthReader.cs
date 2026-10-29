@@ -1,4 +1,4 @@
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace SteamFrameTray;
 

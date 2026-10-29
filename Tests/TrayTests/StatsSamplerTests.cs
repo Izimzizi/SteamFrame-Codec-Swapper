@@ -1,5 +1,5 @@
 using SteamFrameTray;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace TrayTests;
 

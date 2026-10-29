@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Buffers.Binary;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
-namespace SteamLinkVRSettings.Tests;
+namespace SteamFrame.Tests;
 
 // Former console harness; xUnit runs it through a [Fact] so it shows in Test Explorer and dotnet test.
 internal static class PatcherHarness

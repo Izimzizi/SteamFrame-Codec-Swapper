@@ -2,17 +2,12 @@
 
 Build on Windows x64 with `powershell -ExecutionPolicy Bypass -File Native/build.ps1`.
 
-For normal-play diagnostics or recovery, build `HevcTune` against the app currently
-in use with `Native/HevcTune/Build-ForApp.ps1 -AppDirectory <app-output-directory>`.
-This copies and verifies that app's exact helper and writes a matching-build receipt.
-Do not restore normal play with an old experiment's `HevcTune.exe`: it can install
-its historical helper into a fresh SteamVR process and cause the current app's
-update warning to return. Use the app's **Reconnect Frame** action for routine
-recovery. Frozen experiment binaries are retained only for reproducing their trials.
+The H.264 hook that the tray installs is a separate project in `Native/H264Hook`.
+
 Visual Studio C++ Build Tools, Windows SDK, CMake and Ninja are required. The script
 discovers Visual Studio and its bundled CMake/Ninja; optional parameters override the
 Visual Studio or SDK installation root. Output: `Native/build/SteamFrameEncoderProbe.dll`.
-The app packages it at `Native/SteamFrameEncoderProbe.dll` beside its executable.
+The tray packages it at `Native/SteamFrameEncoderProbe.dll` beside its executable.
 
 Compatibility is discovered from the driver instead of a whole-file hash allowlist.
 Read-only inspection validates a bounded x64 DLL with NVENC loader markers. At Start,

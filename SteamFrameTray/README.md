@@ -1,13 +1,13 @@
 # SteamFrame Tray
 
 A small notification-area app that keeps H.264 applied for the Steam Frame while it is **armed**.
-Refresh rate, foveated width and everything else stay under SteamVR's control.
+The tray only writes the bitrate (and the 1024 stream width H.264 needs). Refresh rate, multiple links, Automatic bandwidth and everything else stay under SteamVR's control; if Automatic bandwidth is on the tray says so, since SteamVR may then lower the bitrate.
 
-- **Arm H.264**: starts the paired codec supervisor in keep mode. H.264 comes back by itself after every
+- **Arm H.264**: starts the paired codec supervisor in keep mode. With SteamVR closed it waits ("armed, waiting for SteamVR") and never launches SteamVR; with SteamVR running it asks before restarting it once. H.264 comes back by itself after every
   SteamVR restart. The Frame password is stored in Windows Credential Manager (only after the Frame accepts it).
 - **Double-click the icon** (left button) arms or disarms; a single click does nothing.
 - **Disarm**: restores stock HEVC and the original SteamVR streaming settings (bitrate, bandwidth mode, stream width).
-- **Bitrate** (menu item or left-click on the icon): a slider/number box, 25-500 Mbps. SteamVR's own slider is
+- **Bitrate**: a slider inside the menu (applies when you let go), 25-500 Mbps. The tray never keeps a connection to SteamVR open, so it follows SteamVR's slider from its settings file. SteamVR's own slider is
   the source of truth: the tray follows it, and a change made here is applied live (no SteamVR restart) in every
   mode, armed H.264 or stock HEVC; with SteamVR closed it is written into SteamVR's settings file. Above 232 Mbps
   the bitrate patch for SteamVR's Steam Link driver is required; the Bitrate patch menu installs or removes it
@@ -16,7 +16,8 @@ Refresh rate, foveated width and everything else stay under SteamVR's control.
 - **Stream stats window** (menu): encoded Mbps with a 60-second average beside it, FPS, the rate the encoder was configured with, dropped frames (sender held back: total and last 60 s), verified active codec, 60 s graph.
   Stock HEVC monitoring injects the existing read-only probe into vrserver only while this window is open.
 - **Start with Windows**: re-arms at login if it was armed when it last ran.
-- **Exit while armed** disarms first: H.264 is kept only while the tray runs and is armed.
+- **Encoder experiment** (menu): VBR or CBR and the NVENC preset for the next arm (default VBR, P2). Logged in the stats log header.
+- **Exit** disarms and ends the supervisor. If the Frame cannot be reached, the supervisor notices the tray is gone and keeps retrying the restore for 10 minutes. Signing out or shutting Windows down does the same.
 
 ## First-time setup
 
@@ -36,6 +37,6 @@ Windows' optional "OpenSSH Client" feature is required (the check says so if it 
 "Open logs folder" is in the menu too.
 
 The tray keeps all its files in `%LOCALAPPDATA%\SteamFrameTray` (settings, pinned host key, SSH key, session and logs)
-and does not use the full app's `SteamLinkVRSettings` folder. Do not run the tray and the full app at the same time.
+and does not touch the earlier app's `SteamLinkVRSettings` folder.
 
 Build: `dotnet build SteamFrameTray -c Release`. Package (with `CodecLab`): `.\Package-Tray.ps1 -CodecLabSource <a CodecLab folder with runtime\, Assets\ and Backend\>`.

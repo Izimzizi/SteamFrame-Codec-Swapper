@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 public sealed class AdvancedControlsTests
 {

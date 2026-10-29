@@ -1,7 +1,7 @@
 using System.Text;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
-namespace SteamLinkVRSettings.Tests;
+namespace SteamFrame.Tests;
 
 /// <summary>The driver's own link statistics: estimate, capacity histogram, held frames and bitrate changes.</summary>
 public class LinkStatisticsTests(ITestOutputHelper output)

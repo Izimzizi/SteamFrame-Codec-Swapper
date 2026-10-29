@@ -1,4 +1,4 @@
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace SteamFrameTray;
 
@@ -12,7 +12,7 @@ public sealed class SetupForm : Form
     private readonly Label _detail = new() { Dock = DockStyle.Fill, AutoSize = false };
     private readonly Button _recheck = new() { Text = "Check again", AutoSize = true };
     private readonly Button _action = new() { Text = "", AutoSize = true, Visible = false };
-    private readonly Button _close = new() { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
+    private readonly Button _close = new() { Text = "Close", AutoSize = true };
     private SetupReport? _report;
     private bool _checking;
 
@@ -40,6 +40,7 @@ public sealed class SetupForm : Form
         middle.Panel2.Controls.Add(_detail);
         Controls.Add(middle); Controls.Add(top); Controls.Add(bottom);
         AcceptButton = _recheck; CancelButton = _close;
+        _close.Click += (_, _) => Close();
         _recheck.Click += async (_, _) => await RunAsync(null);
         _action.Click += async (_, _) => await ActAsync();
         Shown += async (_, _) => await RunAsync(null);

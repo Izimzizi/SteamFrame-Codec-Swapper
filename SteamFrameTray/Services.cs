@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace SteamFrameTray;
 
@@ -9,8 +9,11 @@ public interface ICodecService
 {
     string SessionDirectory { get; }
     Task<CodecServiceStatus> ReadStatusAsync(CancellationToken cancellationToken = default);
-    Task<CodecServiceStatus> SwitchAsync(CodecSwitchRequest request, FramePreferences preferences, string? password,
-        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, bool keep, bool resume);
+    Task<CodecServiceStatus> StartAsync(CodecStartRequest request, FramePreferences preferences, string? password,
+        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, bool resume);
+    Task RestoreLeftoversAsync(FramePreferences preferences, string? password, CancellationToken cancellationToken);
+    /// <summary>Asks a live session to close without waiting (Windows is ending the session).</summary>
+    void RequestCloseNoWait();
     Task<CodecServiceStatus> CloseAsync(IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken);
     Task<CodecServiceStatus> SetRateAsync(int targetMbps, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken);
 }
@@ -46,20 +49,20 @@ public sealed class CodecServiceAdapter(CodecController controller) : ICodecServ
 {
     public string SessionDirectory => controller.SessionDirectory;
     public Task<CodecServiceStatus> ReadStatusAsync(CancellationToken cancellationToken = default) => controller.ReadStatusAsync(cancellationToken);
-    public Task<CodecServiceStatus> SwitchAsync(CodecSwitchRequest request, FramePreferences preferences, string? password,
-        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, bool keep, bool resume) =>
-        controller.SwitchAsync(request, preferences, password, progress, cancellationToken, keep, resume);
+    public Task<CodecServiceStatus> StartAsync(CodecStartRequest request, FramePreferences preferences, string? password,
+        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, bool resume) =>
+        controller.StartAsync(request, preferences, password, progress, cancellationToken, resume);
+    public Task RestoreLeftoversAsync(FramePreferences preferences, string? password, CancellationToken cancellationToken) =>
+        controller.RestoreLeftoversAsync(preferences, password, cancellationToken);
+    public void RequestCloseNoWait() => controller.RequestCloseNoWait();
     public Task<CodecServiceStatus> CloseAsync(IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken) =>
         controller.CloseAsync(progress, cancellationToken);
     public Task<CodecServiceStatus> SetRateAsync(int targetMbps, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken) =>
         controller.SetRateAsync(targetMbps, progress, cancellationToken);
 }
 
-public sealed class LiveBitrate(SteamPaths paths) : ILiveBitrate, IDisposable
+public sealed class LiveBitrate(SteamPaths paths) : ILiveBitrate
 {
-    private readonly object _gate = new();
-    private IDisposable? _lease;
-
     public bool SteamVrRunning => OpenVrSettings.IsRunning;
 
     public Task ApplyAsync(int targetMbps) => Task.Run(() =>
@@ -70,41 +73,16 @@ public sealed class LiveBitrate(SteamPaths paths) : ILiveBitrate, IDisposable
     });
 
     /// <summary>
-    /// While SteamVR runs the value comes from SteamVR itself over one retained background connection (the settings file
-    /// can lag behind a slider move); while it is closed it comes from the settings file. One source at a time.
+    /// SteamVR's slider value, read from its settings file. No connection to SteamVR is kept open, so the tray
+    /// is never attached to it when it exits.
     /// </summary>
-    public Task<double?> ReadTargetAsync() => Task.Run<double?>(() =>
-    {
-        lock (_gate)
-        {
-            if (!OpenVrSettings.IsRunning) { DropLease(); return ReadFileTarget(paths.Config); }
-            try
-            {
-                _lease ??= OpenVrSettings.RetainConnection(paths);
-                return OpenVrSettings.Read(paths).Target;
-            }
-            catch (Exception error) when (error is IOException or InvalidOperationException)
-            {
-                DropLease();
-                return null;
-            }
-        }
-    });
+    public Task<double?> ReadTargetAsync() => Task.Run<double?>(() => ReadFileTarget(paths.Config));
 
     public Task WriteFileAsync(int targetMbps) => Task.Run(() =>
     {
         if (OpenVrSettings.IsRunning) throw new InvalidOperationException("SteamVR is running; change the bitrate through it instead.");
         WriteFileTarget(paths.Config, targetMbps);
     });
-
-    public void Dispose() { lock (_gate) DropLease(); }
-
-    private void DropLease()
-    {
-        var lease = _lease;
-        _lease = null;
-        try { lease?.Dispose(); } catch (Exception error) when (error is IOException or InvalidOperationException) { /* SteamVR already ended the connection */ }
-    }
 
     public static double? ReadFileTarget(string path)
     {

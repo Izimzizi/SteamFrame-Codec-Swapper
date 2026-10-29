@@ -1,4 +1,4 @@
-namespace SteamLinkVRSettings.Tests;
+namespace SteamFrame.Tests;
 
 public class PatcherTests
 {
@@ -8,19 +8,19 @@ public class PatcherTests
         var fixture = Environment.GetEnvironmentVariable("SLVR_PATCHER_CURRENT_FIXTURE");
         if (string.IsNullOrWhiteSpace(fixture) || !File.Exists(fixture)) Assert.Skip("Set SLVR_PATCHER_CURRENT_FIXTURE to test the current driver on isolated copies.");
         var original = await File.ReadAllBytesAsync(fixture);
-        Assert.Equal(SteamLinkVRSettings.Frame.BitratePatcher.SupportedCurrentOriginalSha256,
+        Assert.Equal(SteamFrame.Core.BitratePatcher.SupportedCurrentOriginalSha256,
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(original)).ToLowerInvariant());
         var directory = Path.Combine(Path.GetTempPath(), "frame-patch-onboarding-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
             var path = Path.Combine(directory, "driver_vrlink.dll"); await File.WriteAllBytesAsync(path, original);
-            var patcher = new SteamLinkVRSettings.Frame.BitratePatcher(SteamLinkVRSettings.Frame.PatchManifest.LoadSupported(), () => false);
+            var patcher = new SteamFrame.Core.BitratePatcher(SteamFrame.Core.PatchManifest.LoadSupported(), () => false);
             var before = await patcher.InspectAsync(path);
-            Assert.Equal(SteamLinkVRSettings.Frame.BitratePatchState.Original, before.State); Assert.False(before.IsPatched); Assert.True(before.CanApply);
+            Assert.Equal(SteamFrame.Core.BitratePatchState.Original, before.State); Assert.False(before.IsPatched); Assert.True(before.CanApply);
             var after = await patcher.ApplyAsync(path);
-            Assert.True(after.IsPatched); Assert.Equal(SteamLinkVRSettings.Frame.BitrateBackupState.VerifiedOriginal, after.BackupState);
-            Assert.Equal(SteamLinkVRSettings.Frame.BitratePatcher.SupportedCurrentPatchedSha256, after.Sha256);
+            Assert.True(after.IsPatched); Assert.Equal(SteamFrame.Core.BitrateBackupState.VerifiedOriginal, after.BackupState);
+            Assert.Equal(SteamFrame.Core.BitratePatcher.SupportedCurrentPatchedSha256, after.Sha256);
             Assert.Equal(original, await File.ReadAllBytesAsync(after.BackupPath));
             var restored = await patcher.RestoreAsync(path);
             Assert.False(restored.IsPatched); Assert.Equal(original, await File.ReadAllBytesAsync(path));

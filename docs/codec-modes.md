@@ -227,7 +227,7 @@ latency, image quality or thermal stability. These were the earlier synthetic TC
 runs. The prototype now captures a SteamVR game's stereo mirror textures and carries
 pose, projection and gaze validity metadata. It does not replace VRLink's receiver;
 the app's regular H.264 mode remains single stream.
-Build and run instructions are in the [Frame tools README](../Frame/AV1/README.md#h264-multistream-prototype).
+Build and run instructions are in the [Frame tools README](../Frame/Codec/README.md#h264-multistream-prototype).
 
 ### Game integration and pacing follow-up
 
@@ -277,14 +277,14 @@ transport overhead, with no interface drops/errors. The compositor reported one
 dropped frame and 266 presentation timeouts; this is not a clean smoothness pass.
 The app's budget setting therefore must not be described as verified 400 Mbps of
 game video. This separate run is saved in
-`artifacts/AV1Lab/steamvr-soak-h264400-usb3-noise-20261013.json`.
+`artifacts/H264Hook/steamvr-soak-h264400-usb3-noise-20261013.json`.
 
 ## Source and licenses
 
 `CodecLab/Assets/decoder-source.zip` contains the corresponding source for the
 bundled GPL-2.0-only Iris decoder module. The codec package includes its source
 provenance, port changes, license and build instructions. The PC adapter and
-supervisor source are in `Native/AV1Lab` and `Frame/AV1` in this repository.
+supervisor source are in `Native/H264Hook` and `Frame/Codec` in this repository.
 The bundled CPython runtime has its own license under `CodecLab/runtime`.
 
 Valve's original VRLink binary and Qualcomm firmware are not distributed. The

@@ -7,10 +7,10 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../SteamLinkVRSettings/Frame/CompositorTiming.cs" Link="CompositorTiming.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/CaptureFile.cs" Link="CaptureFile.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/OpenVrSettings.cs" Link="OpenVrSettings.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/RuntimeProcessState.cs" Link="RuntimeProcessState.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/SteamPaths.cs" Link="SteamPaths.cs" />
+    <Compile Include="../../Core/CompositorTiming.cs" Link="CompositorTiming.cs" />
+    <Compile Include="../../Core/CaptureFile.cs" Link="CaptureFile.cs" />
+    <Compile Include="../../Core/OpenVrSettings.cs" Link="OpenVrSettings.cs" />
+    <Compile Include="../../Core/RuntimeProcessState.cs" Link="RuntimeProcessState.cs" />
+    <Compile Include="../../Core/SteamPaths.cs" Link="SteamPaths.cs" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
-namespace SteamLinkVRSettings.Tests;
+namespace SteamFrame.Tests;
 
 public class UsbDongleConnectionTests
 {

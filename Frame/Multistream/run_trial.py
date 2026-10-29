@@ -16,15 +16,15 @@ import threading
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'Frame' / 'AV1'))
+sys.path.insert(0, str(ROOT / 'Frame' / 'Codec'))
 import h264_multistream_trial as paired
 
 REMOTE = '/tmp/steam-frame-multistream-20261013'
 
 
 def stage():
-    paired.remote(f"import pathlib; p=pathlib.Path({REMOTE!r}); (p/'Frame/Multistream').mkdir(parents=True,exist_ok=True); (p/'Frame/AV1').mkdir(exist_ok=True)")
-    files = ['Frame/AV1/hardware_decode.cpp', 'Frame/AV1/hardware_decode_test.cpp']
+    paired.remote(f"import pathlib; p=pathlib.Path({REMOTE!r}); (p/'Frame/Multistream').mkdir(parents=True,exist_ok=True); (p/'Frame/Codec').mkdir(exist_ok=True)")
+    files = ['Frame/Codec/hardware_decode.cpp', 'Frame/Codec/hardware_decode_test.cpp']
     files += ['Frame/Multistream/' + name for name in (
         'protocol.h', 'projection_math.h', 'datagrams.h', 'frame_pairer.h', 'contract_test.cpp', 'presentation.h', 'receiver.cpp')]
     for name in files:
@@ -33,7 +33,7 @@ def stage():
 import subprocess,json,pathlib
 root=pathlib.Path(%r)
 base=['g++','-std=c++17','-O2','-Wall','-Wextra','-pthread']
-targets=[('Frame/AV1/hardware_decode_test.cpp','decode_test',[]),
+targets=[('Frame/Codec/hardware_decode_test.cpp','decode_test',[]),
  ('Frame/Multistream/contract_test.cpp','contract_test',[]),
  ('Frame/Multistream/receiver.cpp','receiver',['-I/opt/steamvr/tools/hellovr_vulkan_linux/src/openvr/headers','-L/opt/steamvr/bin/linuxarm64','-Wl,-rpath,/opt/steamvr/bin/linuxarm64','-lopenvr_api','-lEGL','-lGL'])]
 results=[]

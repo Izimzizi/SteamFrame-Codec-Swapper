@@ -1,12 +1,12 @@
 using SteamFrameTray;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace TrayTests;
 
 public sealed class BitrateSyncTests
 {
-    private static CodecServiceStatus Live(string state = "ready", int target = 300, bool fixedRate = false, bool rateLive = true) =>
-        new() { Live = true, State = state, ActiveCodec = "H.264", Keep = true, TargetMbps = target, FixedBitrate = fixedRate, RateLive = rateLive, Message = state };
+    private static CodecServiceStatus Live(string state = "ready", int target = 300, bool rateLive = true) =>
+        new() { Live = true, State = state, ActiveCodec = "H.264", Keep = true, TargetMbps = target, RateLive = rateLive, Message = state };
 
     private static TrayController Make(out FakeCodec codec, out FakeLive live, out FramePreferences prefs)
     {
@@ -83,13 +83,10 @@ public sealed class BitrateSyncTests
     }
 
     [Fact]
-    public async Task SteamVR_moves_are_ignored_for_fixed_or_non_live_sessions()
+    public async Task SteamVR_moves_are_ignored_for_non_live_sessions()
     {
         var controller = Make(out var codec, out var live, out var prefs);
-        codec.Status = Live(fixedRate: true);
         live.Target = 300; await controller.RefreshAsync();
-        live.Target = 360; await controller.RefreshAsync();
-        Assert.Empty(codec.Rates); Assert.Equal(300, prefs.CodecTargetMbps);
 
         codec.Status = Live(rateLive: false);
         live.Target = 380; await controller.RefreshAsync();

@@ -14,7 +14,7 @@ import time
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SESSION = pathlib.Path(os.environ.get('LOCALAPPDATA', '.')) / 'SteamLinkVRSettings/CodecSession'
+SESSION = pathlib.Path(os.environ.get('LOCALAPPDATA', '.')) / 'SteamFrameTray/CodecSession'
 
 
 def owner_created(pid):

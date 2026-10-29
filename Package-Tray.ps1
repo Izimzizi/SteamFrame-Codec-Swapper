@@ -2,7 +2,7 @@ param(
     # A CodecLab folder that supplies runtime\ (isolated Python), Assets\ and Backend\ (the PC hook binaries).
     [string]$CodecLabSource = (Join-Path $PSScriptRoot 'artifacts\CodecLab'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\SteamFrameTray'),
-    # Rebuild the PC hook binaries from Native\AV1Lab instead of taking them from CodecLabSource.
+    # Rebuild the PC hook binaries from Native\H264Hook instead of taking them from CodecLabSource.
     [switch]$BuildBackend,
     # Bundle the .NET runtime so users need nothing installed (larger download). Pass -SelfContained:$false for a small build.
     [bool]$SelfContained = $true,
@@ -32,23 +32,23 @@ try {
     New-Item -ItemType Directory -Path $lab, (Join-Path $lab 'Backend') | Out-Null
     Copy-Item -LiteralPath (Join-Path $source 'runtime') -Destination $lab -Recurse
     Copy-Item -LiteralPath (Join-Path $source 'Assets') -Destination $lab -Recurse
-    foreach ($helper in @('codec_supervisor.py', 'root_session.py', 'frame_rate_remote.py', 'frame_cef_stdio.py', 'start_stream.js', 'stop_stream.js')) {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Frame\AV1\$helper") -Destination $lab
+    foreach ($helper in @('codec_supervisor.py', 'root_session.py', 'frame_cef_stdio.py', 'start_stream.js', 'stop_stream.js')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Frame\Codec\$helper") -Destination $lab
     }
     if ($BuildBackend) {
         $scratch = Join-Path ([IO.Path]::GetTempPath()) ('av1lab-' + [guid]::NewGuid().ToString('N'))
         try {
-            & (Join-Path $PSScriptRoot 'Native\AV1Lab\build.ps1') -OutputDirectory $scratch
-            foreach ($file in @('SteamFrameAV1Backend.dll', 'trial_control.exe')) { Copy-Item -LiteralPath (Join-Path $scratch $file) -Destination (Join-Path $lab 'Backend') }
+            & (Join-Path $PSScriptRoot 'Native\H264Hook\build.ps1') -OutputDirectory $scratch
+            foreach ($file in @('SteamFrameH264Hook.dll', 'hook_control.exe')) { Copy-Item -LiteralPath (Join-Path $scratch $file) -Destination (Join-Path $lab 'Backend') }
         } finally { if (Test-Path -LiteralPath $scratch) { Remove-Item -LiteralPath $scratch -Recurse -Force } }
     } else {
-        foreach ($file in @('SteamFrameAV1Backend.dll', 'trial_control.exe')) {
+        foreach ($file in @('SteamFrameH264Hook.dll', 'hook_control.exe')) {
             $path = Join-Path $source "Backend\$file"
             if (-not (Test-Path -LiteralPath $path)) { throw "Backend\$file is missing from the CodecLab source; pass -BuildBackend to compile it." }
             Copy-Item -LiteralPath $path -Destination (Join-Path $lab 'Backend')
         }
     }
-    foreach ($file in @('SteamFrameTray.exe', 'CodecLab\codec_supervisor.py', 'CodecLab\runtime\python.exe', 'CodecLab\Backend\trial_control.exe', 'CodecLab\Backend\SteamFrameAV1Backend.dll', 'Native\SteamFrameEncoderProbe.dll')) {
+    foreach ($file in @('SteamFrameTray.exe', 'CodecLab\codec_supervisor.py', 'CodecLab\runtime\python.exe', 'CodecLab\Backend\hook_control.exe', 'CodecLab\Backend\SteamFrameH264Hook.dll', 'Native\SteamFrameEncoderProbe.dll')) {
         if (-not (Test-Path -LiteralPath (Join-Path $out $file))) { throw "Package is incomplete: $file is missing." }
     }
     if ($Zip) {

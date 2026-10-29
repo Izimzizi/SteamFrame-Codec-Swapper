@@ -8,14 +8,13 @@
     <UseAppHost>true</UseAppHost>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../../SteamLinkVRSettings/Frame/EncoderSnapshot.cs" Link="EncoderSnapshot.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/EncoderProbe.cs" Link="EncoderProbe.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/EncoderProbe.Av1.cs" Link="EncoderProbe.Av1.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/StreamCodecStatus.cs" Link="StreamCodecStatus.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/PairedCodecIdentity.cs" Link="PairedCodecIdentity.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/RateTracker.cs" Link="RateTracker.cs" />
-    <Compile Include="../../../SteamLinkVRSettings/Frame/FoveationOffsets.cs" Link="FoveationOffsets.cs" />
+    <Compile Include="../../../Core/EncoderSnapshot.cs" Link="EncoderSnapshot.cs" />
+    <Compile Include="../../../Core/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
+    <Compile Include="../../../Core/EncoderProbe.cs" Link="EncoderProbe.cs" />
+    <Compile Include="../../../Core/StreamCodecStatus.cs" Link="StreamCodecStatus.cs" />
+    <Compile Include="../../../Core/PairedCodecIdentity.cs" Link="PairedCodecIdentity.cs" />
+    <Compile Include="../../../Core/RateTracker.cs" Link="RateTracker.cs" />
+    <Compile Include="../../../Core/FoveationOffsets.cs" Link="FoveationOffsets.cs" />
     <Content Include="../../build/SteamFrameEncoderProbe.dll" Link="Native/SteamFrameEncoderProbe.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

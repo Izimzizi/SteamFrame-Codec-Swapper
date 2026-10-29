@@ -7,13 +7,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../SteamLinkVRSettings/Frame/BitratePatcher.cs" Link="BitratePatcher.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/DriverCompatibility.cs" Link="DriverCompatibility.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/RuntimeProcessState.cs" Link="RuntimeProcessState.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/PatchManifest.cs" Link="PatchManifest.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/AdaptivePatchScanner.cs" Link="AdaptivePatchScanner.cs" />
-    <EmbeddedResource Include="../../SteamLinkVRSettings/Assets/bitrate-patch.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch.json" />
-    <EmbeddedResource Include="../../SteamLinkVRSettings/Assets/bitrate-patch-stable.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch-stable.json" />
+    <Compile Include="../../Core/BitratePatcher.cs" Link="BitratePatcher.cs" />
+    <Compile Include="../../Core/DriverCompatibility.cs" Link="DriverCompatibility.cs" />
+    <Compile Include="../../Core/RuntimeProcessState.cs" Link="RuntimeProcessState.cs" />
+    <Compile Include="../../Core/PatchManifest.cs" Link="PatchManifest.cs" />
+    <Compile Include="../../Core/AdaptivePatchScanner.cs" Link="AdaptivePatchScanner.cs" />
+    <EmbeddedResource Include="../../Core/Assets/bitrate-patch.json" LogicalName="SteamFrame.Assets.bitrate-patch.json" />
+    <EmbeddedResource Include="../../Core/Assets/bitrate-patch-stable.json" LogicalName="SteamFrame.Assets.bitrate-patch-stable.json" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

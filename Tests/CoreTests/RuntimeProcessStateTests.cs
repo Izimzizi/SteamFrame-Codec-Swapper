@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 public class RuntimeProcessStateTests
 {

@@ -540,7 +540,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartProbe(void*) {
     std::lock_guard<std::mutex> control(controlMutex);
     if (installed.load()) return 0;
     if (GetModuleHandleW(L"SteamFrameQuality.dll")) return 1011;
-    if (GetModuleHandleW(L"SteamFrameAV1Backend.dll")) return 1016;
+    if (GetModuleHandleW(L"SteamFrameH264Hook.dll")) return 1016;
     if (!initialized) {
         if (!retainedDriver && !GetModuleHandleExW(0, L"driver_vrlink.dll", &retainedDriver)) return 1001;
         wchar_t path[32768]{};

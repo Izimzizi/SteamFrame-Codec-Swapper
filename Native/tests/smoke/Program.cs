@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Diagnostics;
 using System.Reflection;
 using Microsoft.Win32.SafeHandles;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 if (args.Length == 1 && args[0] == "--loader-baseline")
 {

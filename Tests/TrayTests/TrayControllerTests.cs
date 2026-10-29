@@ -1,5 +1,5 @@
 using SteamFrameTray;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace TrayTests;
 
@@ -11,13 +11,22 @@ internal sealed class FakeCodec : ICodecService
     public CodecServiceStatus? AfterClose { get; set; }
     public Exception? SwitchError { get; set; }
     public List<string> Calls { get; } = [];
-    public List<(CodecSwitchRequest Request, string? Password, bool Keep, bool Resume)> Switches { get; } = [];
-    public Task<CodecServiceStatus> ReadStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(Status);
-    public Task<CodecServiceStatus> SwitchAsync(CodecSwitchRequest request, FramePreferences preferences, string? password,
-        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, bool keep, bool resume)
+    public List<(CodecStartRequest Request, string? Password, bool Resume)> Switches { get; } = [];
+    public int Restores { get; private set; }
+    public int NoWaitCloses { get; private set; }
+    public string? RestorePassword { get; private set; }
+    public void RequestCloseNoWait() => NoWaitCloses++;
+    public Task RestoreLeftoversAsync(FramePreferences preferences, string? password, CancellationToken cancellationToken)
     {
-        Calls.Add("switch");
-        Switches.Add((request, password, keep, resume));
+        Calls.Add("restore"); Restores++; RestorePassword = password;
+        return Task.CompletedTask;
+    }
+    public Task<CodecServiceStatus> ReadStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(Status);
+    public Task<CodecServiceStatus> StartAsync(CodecStartRequest request, FramePreferences preferences, string? password,
+        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, bool resume)
+    {
+        Calls.Add("start");
+        Switches.Add((request, password, resume));
         if (SwitchError is not null) throw SwitchError;
         if (AfterSwitch is not null) Status = AfterSwitch;
         return Task.FromResult(Status);
@@ -80,8 +89,8 @@ internal sealed class FakePatch : IDriverPatch
 
 public sealed class TrayControllerTests
 {
-    private static CodecServiceStatus Live(string state = "ready", string codec = "H.264", bool keep = true, int target = 300, bool fixedRate = false) =>
-        new() { Live = true, State = state, ActiveCodec = codec, Keep = keep, TargetMbps = target, FixedBitrate = fixedRate, Message = state };
+    private static CodecServiceStatus Live(string state = "ready", string codec = "H.264", bool keep = true, int target = 300) =>
+        new() { Live = true, State = state, ActiveCodec = codec, Keep = keep, TargetMbps = target, Message = state };
 
     private sealed class Rig
     {
@@ -97,22 +106,51 @@ public sealed class TrayControllerTests
         public Rig() => Controller = new(Codec, Vault, Patch, Prefs, () => { Saves++; return Task.CompletedTask; }, Live);
         public Task<ChangeOutcome> Change(int mbps, string? typed = null, bool allowPatch = true) =>
             Controller.ChangeTargetAsync(mbps, () => Task.FromResult(typed), _ => Task.FromResult(allowPatch), () => { RestartPrompts++; return Task.FromResult(AllowRestart); });
-        public Task<bool> Arm(string? typed = null, bool allowPatch = true) =>
-            Controller.ArmAsync(() => Task.FromResult(typed), _ => Task.FromResult(allowPatch));
+        public Task<bool> Arm(string? typed = null, bool allowPatch = true, bool allowRestart = true) =>
+            Controller.ArmAsync(() => Task.FromResult(typed), _ => Task.FromResult(allowPatch), () => { RestartPrompts++; return Task.FromResult(allowRestart); });
         public Task Disarm(string? typed = null) => Controller.DisarmAsync(() => Task.FromResult(typed));
     }
 
     [Fact]
-    public async Task Arming_with_a_stored_password_starts_a_kept_H264_session_and_leaves_refresh_to_SteamVR()
+    public async Task Arming_with_a_stored_password_starts_a_kept_H264_session_that_restarts_a_running_SteamVR_once()
     {
         var rig = new Rig { };
         rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live();
         Assert.True(await rig.Arm());
         var call = Assert.Single(rig.Codec.Switches);
-        Assert.Equal(StreamCodec.H264, call.Request.Codec); Assert.Equal(300, call.Request.TargetMbps); Assert.Equal(0, call.Request.Fps);
-        Assert.Equal("pw", call.Password); Assert.True(call.Keep); Assert.False(call.Resume);
+        Assert.Equal(300, call.Request.TargetMbps); Assert.Equal("vbr", call.Request.RateControl); Assert.Equal(2, call.Request.Preset);
+        Assert.Equal("pw", call.Password); Assert.False(call.Resume); Assert.Equal(1, rig.RestartPrompts);
         Assert.True(rig.Prefs.KeepH264); Assert.Equal(TrayState.Armed, rig.Controller.Current.State);
         Assert.Equal(0, rig.Vault.Saves);
+    }
+
+    [Fact]
+    public async Task Arming_with_SteamVR_closed_waits_for_it_without_asking_or_launching_it()
+    {
+        var rig = new Rig();
+        rig.Live.SteamVrRunning = false; rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live("waiting");
+        Assert.True(await rig.Arm());
+        var call = Assert.Single(rig.Codec.Switches);
+        Assert.True(call.Resume); Assert.Equal(0, rig.RestartPrompts); Assert.Equal(TrayState.Waiting, rig.Controller.Current.State);
+    }
+
+    [Fact]
+    public async Task Declining_the_SteamVR_restart_arms_nothing()
+    {
+        var rig = new Rig();
+        rig.Vault.Stored = "pw";
+        Assert.False(await rig.Arm(allowRestart: false));
+        Assert.Empty(rig.Codec.Switches); Assert.False(rig.Prefs.KeepH264);
+    }
+
+    [Fact]
+    public async Task The_experiment_options_travel_with_the_start_request()
+    {
+        var rig = new Rig();
+        rig.Vault.Stored = "pw"; rig.Prefs.HookRateControl = "cbr"; rig.Prefs.HookPreset = 4; rig.Codec.AfterSwitch = Live();
+        await rig.Arm();
+        var request = Assert.Single(rig.Codec.Switches).Request;
+        Assert.Equal("cbr", request.RateControl); Assert.Equal(4, request.Preset);
     }
 
     [Fact]
@@ -167,26 +205,26 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Arming_again_on_a_live_kept_session_sends_a_switch_without_a_password_and_is_idempotent_when_unchanged()
+    public async Task Arming_again_on_a_live_session_with_another_bitrate_ends_it_and_starts_a_fresh_one_and_is_idempotent_when_unchanged()
     {
         var rig = new Rig();
         rig.Codec.Status = Live(target: 300);
         Assert.True(await rig.Arm());
         Assert.Empty(rig.Codec.Switches);
 
-        rig.Prefs.CodecTargetMbps = 400; rig.Codec.AfterSwitch = Live(target: 400);
+        rig.Vault.Stored = "pw"; rig.Prefs.CodecTargetMbps = 400; rig.Codec.AfterSwitch = Live(target: 400);
         Assert.True(await rig.Arm());
         var call = Assert.Single(rig.Codec.Switches);
-        Assert.Null(call.Password); Assert.Equal(400, call.Request.TargetMbps); Assert.True(call.Keep);
+        Assert.Equal(400, call.Request.TargetMbps);
     }
 
     [Fact]
     public async Task A_live_session_that_does_not_survive_SteamVR_restarts_is_closed_first()
     {
         var rig = new Rig();
-        rig.Vault.Stored = "pw"; rig.Codec.Status = Live(keep: false, codec: "AV1"); rig.Codec.AfterSwitch = Live();
+        rig.Vault.Stored = "pw"; rig.Codec.Status = Live(keep: false, codec: "HEVC"); rig.Codec.AfterSwitch = Live();
         await rig.Arm();
-        Assert.Equal(["close", "switch"], rig.Codec.Calls);
+        Assert.Equal(["close", "start"], rig.Codec.Calls);
     }
 
     [Fact]
@@ -199,17 +237,15 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Disarming_after_a_crash_restores_the_leftover_settings_through_a_stock_session()
+    public async Task Disarming_after_a_crash_restores_the_leftover_settings_through_a_restore_session()
     {
         var rig = new Rig();
         Directory.CreateDirectory(rig.Codec.SessionDirectory);
         await File.WriteAllTextAsync(Path.Combine(rig.Codec.SessionDirectory, "host-original.json"), """{"original":{"targetBandwidth":100},"applied":{"targetBandwidth":400.0}}""");
         rig.Vault.Stored = "pw"; rig.Prefs.KeepH264 = true;
-        rig.Codec.AfterSwitch = new() { Live = true, State = "ready", ActiveCodec = "HEVC", Message = "ready" };
         await rig.Disarm();
-        var call = Assert.Single(rig.Codec.Switches);
-        Assert.Equal(StreamCodec.Hevc, call.Request.Codec); Assert.False(call.Keep); Assert.Equal("pw", call.Password);
-        Assert.Equal(["switch", "close"], rig.Codec.Calls); Assert.False(rig.Prefs.KeepH264);
+        Assert.Equal(1, rig.Codec.Restores); Assert.Equal("pw", rig.Codec.RestorePassword); Assert.Empty(rig.Codec.Switches);
+        Assert.Equal(["restore"], rig.Codec.Calls); Assert.False(rig.Prefs.KeepH264);
     }
 
     [Fact]
@@ -237,7 +273,7 @@ public sealed class TrayControllerTests
         rig.Prefs.KeepH264 = true; rig.Vault.Stored = "pw"; rig.Codec.Status = CodecServiceStatus.NotStarted; rig.Codec.AfterSwitch = Live("waiting");
         await rig.Controller.StartAsync();
         var call = Assert.Single(rig.Codec.Switches);
-        Assert.True(call.Keep); Assert.True(call.Resume); Assert.Equal("pw", call.Password); Assert.Equal(TrayState.Waiting, rig.Controller.Current.State);
+        Assert.True(call.Resume); Assert.Equal("pw", call.Password); Assert.Equal(TrayState.Waiting, rig.Controller.Current.State);
     }
 
     [Fact]
@@ -322,15 +358,22 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task A_fixed_session_left_by_an_older_version_is_re_applied_without_the_fixed_mode()
+    public async Task Automatic_bandwidth_is_reported_but_never_changed_by_the_tray()
     {
         var rig = new Rig();
-        rig.Vault.Stored = "pw"; rig.Prefs.KeepH264 = true; rig.Prefs.CodecFixedBitrate = true;
-        rig.Codec.Status = LiveRate() with { FixedBitrate = true }; rig.Codec.AfterSwitch = Live(target: 450);
+        rig.Codec.Status = Live() with { AutomaticBandwidth = true };
         await rig.Controller.RefreshAsync();
-        Assert.Equal(ChangeOutcome.Reapplied, await rig.Change(450));
-        Assert.Empty(rig.Codec.Rates);
-        Assert.False(Assert.Single(rig.Codec.Switches).Request.FixedBitrate);
+        Assert.Contains("Automatic bandwidth", rig.Controller.Current.Message);
+        Assert.Empty(rig.Live.FileWrites); Assert.Empty(rig.Live.Applied);
+    }
+
+    [Fact]
+    public void Session_end_asks_the_supervisor_to_close_without_waiting_and_keeps_the_armed_wish()
+    {
+        var rig = new Rig();
+        rig.Prefs.KeepH264 = true;
+        rig.Controller.RequestCloseNoWait();
+        Assert.Equal(1, rig.Codec.NoWaitCloses); Assert.True(rig.Prefs.KeepH264);
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
-namespace SteamLinkVRSettings.Tests;
+namespace SteamFrame.Tests;
 
 public sealed class BranchCompatibilityTests
 {

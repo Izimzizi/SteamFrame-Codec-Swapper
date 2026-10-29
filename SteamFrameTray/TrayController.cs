@@ -1,5 +1,5 @@
 using System.Text.Json;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 namespace SteamFrameTray;
 
@@ -15,8 +15,9 @@ public sealed record TraySnapshot(TrayState State, string Message, int TargetMbp
 }
 
 /// <summary>
-/// Arm = keep H.264 applied across SteamVR restarts at the chosen bitrate. Disarm = stock HEVC and the
-/// original SteamVR streaming settings. Refresh rate and foveated width are left to SteamVR.
+/// Arm = keep H.264 applied across SteamVR restarts at the chosen bitrate (waiting for SteamVR when it is closed).
+/// Disarm = stock HEVC and the original SteamVR streaming settings. Refresh rate, multi-link and automatic bandwidth
+/// are left to SteamVR.
 /// </summary>
 public sealed class TrayController
 {
@@ -33,6 +34,7 @@ public sealed class TrayController
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _wasLive;
     private int? _lastSteamVr;
+    private DateTime _ownWriteUntil;
 
     public TrayController(ICodecService codec, ICredentialVault vault, IDriverPatch patch, FramePreferences preferences, Func<Task> save, ILiveBitrate? live = null)
     {
@@ -60,15 +62,17 @@ public sealed class TrayController
 
     /// <summary>
     /// Changes the bitrate. A running session takes it live (no SteamVR restart); a session that cannot
-    /// (an older supervisor, or a session left by a version with Fixed bitrate) is re-applied after the user agrees to the restart.
+    /// (an older supervisor, or one whose hook is not live) is re-applied after the user agrees to the restart.
     /// </summary>
     public async Task<ChangeOutcome> ChangeTargetAsync(int mbps, Func<Task<string?>> requestPassword, Func<BitratePatchStatus, Task<bool>> confirmPatch,
         Func<Task<bool>> confirmRestart, CancellationToken cancellationToken = default)
     {
         await SetTargetAsync(mbps);
+        // SteamVR flushes its settings file later than a live write, so a reading right after our own change is stale.
+        _ownWriteUntil = DateTime.UtcNow.AddSeconds(10);
         if (!Current.IsArmed) return await ChangeDisarmedAsync(mbps, confirmPatch, cancellationToken);
         var status = await _codec.ReadStatusAsync(cancellationToken);
-        if (status.Live && status.RateLive && !status.FixedBitrate && status.State is "ready" or "waiting")
+        if (status.Live && status.RateLive && status.State is "ready" or "waiting")
         {
             await EnsureBitratePatchAsync(mbps, confirmPatch);
             await ChangeRateLiveAsync(mbps, cancellationToken);
@@ -108,7 +112,7 @@ public sealed class TrayController
     /// </summary>
     private async Task FollowSteamVrAsync(CodecServiceStatus status, CancellationToken cancellationToken)
     {
-        if (_live is null) return;
+        if (_live is null || DateTime.UtcNow < _ownWriteUntil) return;
         double? read;
         try { read = await _live.ReadTargetAsync(); }
         catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { return; }
@@ -122,7 +126,7 @@ public sealed class TrayController
         if (_gate.CurrentCount == 0) { _lastSteamVr = previous; return; }
         if (Current.IsArmed)
         {
-            if (!(status.Live && status.RateLive && !status.FixedBitrate && status.State is "ready" or "waiting")) return;
+            if (!(status.Live && status.RateLive && status.State is "ready" or "waiting")) return;
             try { await _codec.SetRateAsync(mbps, new Progress<CodecServiceStatus>(), cancellationToken); }
             catch (Exception error) when (error is not OperationCanceledException) { return; }
             _preferences.CodecTargetMbps = mbps;
@@ -140,7 +144,8 @@ public sealed class TrayController
     {
         // The saved choice is applied the next time H.264 is armed if the user would rather not restart SteamVR now.
         if (_live?.SteamVrRunning != false && !await confirmRestart()) return ChangeOutcome.Declined;
-        await ArmAsync(requestPassword, confirmPatch, cancellationToken);
+        // The restart was just agreed to, so arming does not ask again.
+        await ArmAsync(requestPassword, confirmPatch, null, cancellationToken);
         return ChangeOutcome.Reapplied;
     }
 
@@ -200,7 +205,7 @@ public sealed class TrayController
         try
         {
             Publish(new(TrayState.Arming, "Resuming H.264…", TargetMbps));
-            var result = await _codec.SwitchAsync(Request(), _preferences, password, new Progress<CodecServiceStatus>(s => Publish(Map(s))), cancellationToken, keep: true, resume: true);
+            var result = await _codec.StartAsync(Request(), _preferences, password, new Progress<CodecServiceStatus>(s => Publish(Map(s))), cancellationToken, resume: true);
             _wasLive = true;
             Publish(Map(result));
         }
@@ -231,7 +236,12 @@ public sealed class TrayController
         await FollowSteamVrAsync(status, cancellationToken);
     }
 
-    public async Task<bool> ArmAsync(Func<Task<string?>> requestPassword, Func<BitratePatchStatus, Task<bool>> confirmPatch, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Arms H.264. With SteamVR closed it waits ("armed, waiting for SteamVR") and never launches it; with SteamVR running it
+    /// restarts SteamVR once, after confirmRestart (null means already agreed) says yes.
+    /// </summary>
+    public async Task<bool> ArmAsync(Func<Task<string?>> requestPassword, Func<BitratePatchStatus, Task<bool>> confirmPatch,
+        Func<Task<bool>>? confirmRestart = null, CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken);
         string? typed = null;
@@ -239,25 +249,27 @@ public sealed class TrayController
         {
             var request = Request();
             request.Validate();
+            var status = await _codec.ReadStatusAsync(cancellationToken);
+            var steamVrRunning = _live?.SteamVrRunning ?? false;
+            var alreadyApplied = status.Live && status.Keep && status.ActiveCodec == "H.264" && status.TargetMbps == request.TargetMbps && status.State is "ready" or "waiting";
+            if (!alreadyApplied && steamVrRunning && confirmRestart is not null && !await confirmRestart())
+            {
+                Publish(Map(status));
+                return false;
+            }
             Publish(new(TrayState.Arming, "Arming H.264…", TargetMbps));
             await EnsureBitratePatchAsync(request.TargetMbps, confirmPatch);
             var progress = new Progress<CodecServiceStatus>(s => Publish(Map(s)));
-            var status = await _codec.ReadStatusAsync(cancellationToken);
-            if (status.Live && !status.Keep)
-            {
-                // A session left over from a mode that does not survive SteamVR restarts.
-                await _codec.CloseAsync(progress, cancellationToken);
-                status = await _codec.ReadStatusAsync(cancellationToken);
-            }
             CodecServiceStatus result;
-            if (status.Live)
-            {
-                if (status.ActiveCodec == "H.264" && status.TargetMbps == request.TargetMbps && status.FixedBitrate == request.FixedBitrate && status.State is "ready" or "waiting")
-                    result = status;
-                else result = await _codec.SwitchAsync(request, _preferences, null, progress, cancellationToken, keep: true, resume: false);
-            }
+            if (alreadyApplied) result = status;
             else
             {
+                if (status.Live)
+                {
+                    // A session that cannot take this change live: end it, then start a fresh one.
+                    await _codec.CloseAsync(progress, cancellationToken);
+                    steamVrRunning = _live?.SteamVrRunning ?? false;
+                }
                 var password = _vault.Load();
                 if (string.IsNullOrEmpty(password))
                 {
@@ -265,12 +277,10 @@ public sealed class TrayController
                     if (string.IsNullOrEmpty(typed)) { Publish(Map(await _codec.ReadStatusAsync(cancellationToken))); return false; }
                     password = typed;
                 }
-                result = await _codec.SwitchAsync(request, _preferences, password, progress, cancellationToken, keep: true, resume: false);
+                result = await _codec.StartAsync(request, _preferences, password, progress, cancellationToken, resume: !steamVrRunning);
             }
             // The password is stored only after the Frame accepted it.
             if (typed is not null) _vault.Save(typed);
-            _preferences.RequestedCodec = StreamCodec.H264;
-            _preferences.CodecFps = 0;
             _preferences.KeepH264 = true;
             await _save();
             _wasLive = true;
@@ -298,13 +308,12 @@ public sealed class TrayController
             else if (HostSettingsPending())
             {
                 // No supervisor is running but it left its settings applied (for example after a crash or reboot):
-                // a stock session adopts the leftovers and restores the saved originals.
+                // a short restore session puts the saved originals back.
                 var password = _vault.Load();
                 if (string.IsNullOrEmpty(password)) password = await requestPassword();
                 if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("The Frame password is needed to restore the stock settings.");
-                await _codec.SwitchAsync(new CodecSwitchRequest(StreamCodec.Hevc, 100, 0), _preferences, password, progress, cancellationToken, keep: false, resume: false);
+                await _codec.RestoreLeftoversAsync(_preferences, password, cancellationToken);
                 password = null;
-                if ((await _codec.ReadStatusAsync(cancellationToken)).Live) await _codec.CloseAsync(progress, cancellationToken);
             }
             _preferences.KeepH264 = false;
             await _save();
@@ -320,7 +329,10 @@ public sealed class TrayController
         finally { _gate.Release(); }
     }
 
-    private CodecSwitchRequest Request() => new(StreamCodec.H264, TargetMbps, 0, false);
+    private CodecStartRequest Request() => new(TargetMbps, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames);
+
+    /// <summary>Windows is ending the session: ask a live supervisor to restore now (it also notices the tray disappearing).</summary>
+    public void RequestCloseNoWait() => _codec.RequestCloseNoWait();
 
     private async Task EnsureBitratePatchAsync(int mbps, Func<BitratePatchStatus, Task<bool>> confirmPatch)
     {
@@ -361,7 +373,7 @@ public sealed class TrayController
         {
             "starting" or "switching" => new(TrayState.Arming, status.Message, target),
             "waiting" => new(TrayState.Waiting, $"Armed: H.264 {target} Mbps, waiting for SteamVR to start.", target),
-            "ready" => new(TrayState.Armed, $"Armed: H.264 {target} Mbps" + "" + ".", target),
+            "ready" => new(TrayState.Armed, $"Armed: H.264 {target} Mbps." + (status.AutomaticBandwidth ? " SteamVR's Automatic bandwidth is on and may lower it." : ""), target),
             "error" => new(TrayState.Error, status.Message, target),
             _ => new(TrayState.Disarmed, "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps)
         };

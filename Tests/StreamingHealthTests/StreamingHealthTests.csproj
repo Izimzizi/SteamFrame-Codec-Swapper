@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../SteamLinkVRSettings/Frame/StreamingHealth.cs" Link="StreamingHealth.cs" />
-    <Compile Include="../../SteamLinkVRSettings/Frame/CaptureFile.cs" Link="CaptureFile.cs" />
+    <Compile Include="../../Core/StreamingHealth.cs" Link="StreamingHealth.cs" />
+    <Compile Include="../../Core/CaptureFile.cs" Link="CaptureFile.cs" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

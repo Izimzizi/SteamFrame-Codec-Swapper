@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 if (args.Length != 1) throw new ArgumentException("Pass the built native helper path.");
 var readExports = typeof(EncoderProbe).GetMethod("ReadExports", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -71,7 +71,7 @@ foreach (var offsets in new[] { (0, 13), (0, 24), (-20, 31), (12, -12) })
 }
 var before = Process.GetProcessesByName("vrserver").Select(p => p.Id).Order().ToArray();
 var helperBefore = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameEncoderProbe.dll", StringComparison.OrdinalIgnoreCase)));
-var av1Before = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameAV1Backend.dll", StringComparison.OrdinalIgnoreCase)));
+var av1Before = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameH264Hook.dll", StringComparison.OrdinalIgnoreCase)));
 var snapshot = await probe.GetSnapshotAsync();
 var after = Process.GetProcessesByName("vrserver").Select(p => p.Id).Order().ToArray();
 var helperAfter = Process.GetProcessesByName("vrserver").Any(p => p.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("SteamFrameEncoderProbe.dll", StringComparison.OrdinalIgnoreCase)));

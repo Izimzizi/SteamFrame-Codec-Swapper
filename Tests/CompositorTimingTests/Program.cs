@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 if (args.Length == 3 && args[0] == "--live")
 {

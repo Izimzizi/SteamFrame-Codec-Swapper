@@ -1,32 +1,27 @@
 using System.Buffers.Binary;
 using System.Text.Json;
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 public sealed class CodecControllerTests
 {
     [Theory]
-    [InlineData(StreamCodec.H264, 500, true)]
-    [InlineData(StreamCodec.H264, 501, false)]
-    [InlineData(StreamCodec.Av1, 200, true)]
-    [InlineData(StreamCodec.Av1, 201, false)]
-    [InlineData(StreamCodec.Hevc, 500, true)]
-    [InlineData(StreamCodec.H264, 24, false)]
-    public void Codec_specific_budgets_preserve_AV1_bounds(StreamCodec codec, int target, bool accepted)
+    [InlineData(500, "vbr", 2, true)]
+    [InlineData(501, "vbr", 2, false)]
+    [InlineData(24, "vbr", 2, false)]
+    [InlineData(300, "cbr", 4, true)]
+    [InlineData(300, "abr", 2, false)]
+    [InlineData(300, "vbr", 0, false)]
+    [InlineData(300, "vbr", 8, false)]
+    [InlineData(300, "vbr", 2, false, 0)]
+    [InlineData(300, "vbr", 2, false, 17)]
+    [InlineData(300, "cbr", 2, true, 4)]
+    public void Start_requests_accept_only_the_h264_bounds_and_the_encoder_options(int target, string rate, int preset, bool accepted, int vbv = 1)
     {
-        var request = new CodecSwitchRequest(codec, target, 90);
+        var request = new CodecStartRequest(target, rate, preset, vbv);
         if (accepted) request.Validate();
         else Assert.Throws<ArgumentOutOfRangeException>(() => request.Validate());
     }
-    [Fact]
-    public async Task Older_companion_rejects_high_H264_before_publishing_request()
-    {
-        using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264", maximumH264: null);
-        var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
-        Assert.Equal(200, (await controller.ReadStatusAsync()).MaximumH264Mbps);
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SwitchAsync(new(StreamCodec.H264, 300, 90), new(), null));
-        Assert.Contains("updated runtime", error.Message);
-        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
-    }
+
     [Fact]
     public async Task Status_requires_fresh_heartbeat_and_matching_owner_creation()
     {
@@ -67,24 +62,13 @@ public sealed class CodecControllerTests
     }
 
     [Fact]
-    public async Task Existing_session_switches_without_authentication_and_matches_its_operation_id()
+    public async Task A_live_session_cannot_be_started_again_and_nothing_is_published()
     {
         using var lab = new CodecTestDirectory(); lab.Status();
         var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
-        var switchTask = controller.SwitchAsync(new(StreamCodec.H264, 100, 90), new(), "must-never-be-written");
-        var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
-        var json = request.RootElement;
-        Assert.Equal("H.264", json.GetProperty("codec").GetString());
-        Assert.Equal("switch", json.GetProperty("action").GetString());
-        Assert.Equal(100, json.GetProperty("target_mbps").GetInt32());
-        Assert.Equal(90, json.GetProperty("fps").GetInt32());
-        Assert.False(json.TryGetProperty("password", out _));
-        lab.Status(operation: Guid.NewGuid().ToString("D"), codec: "H.264", ok: true);
-        await Task.Delay(500); Assert.False(switchTask.IsCompleted); // An unrelated result is not completion.
-        lab.Status(operation: json.GetProperty("id").GetString(), codec: "H.264", ok: true);
-        var result = await switchTask;
-        Assert.Equal("H.264", result.ActiveCodec);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => controller.StartAsync(new(), new(), "must-never-be-written"));
+        Assert.Contains("already running", error.Message);
+        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
         Assert.DoesNotContain("must-never-be-written", string.Join("", Directory.GetFiles(lab.Root, "*", SearchOption.AllDirectories).Select(File.ReadAllText)));
     }
 
@@ -142,25 +126,19 @@ public sealed class CodecControllerTests
     }
 
     [Fact]
-    public async Task Stale_owner_gets_no_request_and_failed_operation_is_reported()
+    public async Task Stale_owner_gets_no_request()
     {
         using var lab = new CodecTestDirectory(); lab.Status(updated: 990);
         var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SwitchAsync(new(StreamCodec.Av1), new(), null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SetRateAsync(300));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.CloseAsync());
         Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
-        lab.Status();
-        var switching = controller.SwitchAsync(new(StreamCodec.Av1), new(), null);
-        var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
-        lab.Status(state: "error", operation: request.RootElement.GetProperty("id").GetString(), ok: false, error: "Decoder guard rejected this build.");
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => switching);
-        Assert.Contains("Decoder guard", error.Message);
     }
 
     [Fact]
     public async Task Closing_accepts_verified_rollback_receipt_after_owner_exits()
     {
-        using var lab = new CodecTestDirectory(); lab.Status(codec: "AV1");
+        using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264");
         bool alive = true;
         var controller = new CodecController(lab.Root, lab.Root, _ => alive ? 100 : null, () => 1000);
         var closing = controller.CloseAsync();
@@ -180,12 +158,16 @@ public sealed class CodecControllerTests
         File.WriteAllText(key, "test"); File.WriteAllText(hosts, "test");
         var paths = new SteamPaths(Path.Combine(lab.Root, "Steam"), Path.Combine(lab.Root, "Other Library", "SteamVR"));
         var controller = new CodecController(lab.Root, Path.Combine(lab.Root, "missing-runtime"), _ => null, () => 1000, paths);
-        await Assert.ThrowsAsync<FileNotFoundException>(() => controller.SwitchAsync(new(StreamCodec.Av1),
+        await Assert.ThrowsAsync<FileNotFoundException>(() => controller.StartAsync(new(300, "cbr", 3, 4),
             new() { SshHost = "10.35.78.1", SshKey = key, SshKnownHosts = hosts }, "private-test-password"));
         var config = File.ReadAllText(Assert.Single(Directory.GetFiles(lab.Root, "config-*.json")));
         Assert.DoesNotContain("password", config);
         using var document = JsonDocument.Parse(config);
-        Assert.Equal("AV1", document.RootElement.GetProperty("initial_codec").GetString());
+        Assert.Equal(300, document.RootElement.GetProperty("target_mbps").GetInt32());
+        Assert.Equal("cbr", document.RootElement.GetProperty("rate_control").GetString());
+        Assert.Equal(3, document.RootElement.GetProperty("preset").GetInt32());
+        Assert.Equal(4, document.RootElement.GetProperty("vbv_frames").GetInt32());
+        Assert.Equal(Environment.ProcessId, document.RootElement.GetProperty("tray_pid").GetInt32());
         Assert.Equal(1, document.RootElement.GetProperty("protocol_version").GetInt32());
         Assert.Equal(paths.SteamRoot, document.RootElement.GetProperty("steam_root").GetString());
         Assert.Equal(paths.SteamVrRoot, document.RootElement.GetProperty("steamvr_root").GetString());
@@ -237,44 +219,23 @@ public sealed class CodecControllerTests
     [InlineData(2u, "H.264")]
     public void Shared_backend_identity_distinguishes_av1_and_h264(uint id, string expected)
     {
-        var bytes = new byte[24];
-        uint[] fields = [24, 1, id, 90, 100_000_000, 100_000_000];
+        var bytes = new byte[36];
+        uint[] fields = [36, 1, id, 90, 100_000_000, 100_000_000, 1, 4, 3];
         for (var i = 0; i < fields.Length; i++) BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(i * 4), fields[i]);
         var identity = PairedCodecIdentity.Read(bytes);
-        Assert.Equal(expected, identity.Codec); Assert.Equal(90u, identity.Fps);
+        Assert.Equal(expected, identity.Codec); Assert.Equal(90u, identity.Fps); Assert.True(identity.Cbr); Assert.Equal(4u, identity.Preset); Assert.Equal(3u, identity.VbvFrames);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8), 3);
         Assert.Throws<InvalidDataException>(() => PairedCodecIdentity.Read(bytes));
-        Assert.Throws<InvalidDataException>(() => PairedCodecIdentity.Read(new byte[24]));
+        Assert.Throws<InvalidDataException>(() => PairedCodecIdentity.Read(new byte[36]));
     }
 
     [Fact]
-    public void Requests_reject_invalid_codec_bitrate_and_refresh()
+    public async Task Resuming_or_restoring_is_refused_while_a_session_is_live()
     {
-        foreach (var codec in Enum.GetValues<StreamCodec>()) new CodecSwitchRequest(codec, 100, 90).Validate();
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CodecSwitchRequest((StreamCodec)99).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CodecSwitchRequest(StreamCodec.Av1, 201).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CodecSwitchRequest(StreamCodec.H264, 100, 91).Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CodecSwitchRequest(StreamCodec.H264, 100, 144).Validate());
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(72)]
-    [InlineData(80)]
-    [InlineData(90)]
-    [InlineData(120)]
-    public void Refresh_rate_is_the_users_choice_or_kept_as_it_is(int fps)
-    {
-        foreach (var codec in Enum.GetValues<StreamCodec>()) new CodecSwitchRequest(codec, 100, fps).Validate();
-    }
-
-    [Fact]
-    public async Task Keeping_a_codec_is_only_offered_for_H264_and_needs_a_kept_session_to_resume()
-    {
-        var controller = new CodecController(Path.GetTempPath(), Path.GetTempPath(), _ => null, () => 1000);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SwitchAsync(new(StreamCodec.Av1, 100, 90), new(), "pw", keep: true));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SwitchAsync(new(StreamCodec.Hevc, 100, 90), new(), "pw", keep: true));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SwitchAsync(new(StreamCodec.H264, 100, 90), new(), "pw", resume: true));
+        using var lab = new CodecTestDirectory(); lab.Status();
+        var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.StartAsync(new(), new(), "pw", resume: true));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.RestoreLeftoversAsync(new(), "pw"));
     }
 
     [Fact]
@@ -284,11 +245,11 @@ public sealed class CodecControllerTests
         lab.Status(state: "waiting", codec: "Unknown");
         var path = Path.Combine(lab.Root, "status.json");
         var node = JsonSerializer.Deserialize<System.Text.Json.Nodes.JsonObject>(File.ReadAllText(path))!;
-        node["keep"] = true; node["refresh_kept"] = true; node["fps"] = 72;
+        node["keep"] = true; node["automatic_bandwidth"] = true;
         File.WriteAllText(path, node.ToJsonString());
         var status = await new CodecController(lab.Root, lab.Root, _ => 100, () => 1000).ReadStatusAsync();
         Assert.True(status.Live); Assert.False(status.Busy); Assert.Equal("waiting", status.State);
-        Assert.True(status.Keep); Assert.True(status.RefreshKept); Assert.Equal(72, status.Fps);
+        Assert.True(status.Keep); Assert.True(status.AutomaticBandwidth);
     }
 
     [Fact]

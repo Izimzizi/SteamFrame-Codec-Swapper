@@ -1,4 +1,4 @@
-using SteamLinkVRSettings.Frame;
+using SteamFrame.Core;
 
 public sealed class EncoderControlsTests
 {
