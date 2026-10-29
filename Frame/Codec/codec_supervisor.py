@@ -327,9 +327,8 @@ class Supervisor:
    message='Reconnecting SteamVR and the Frame with matching codecs.')
   self.experimental=True
   self.phase='stopping stream'
-  try:self.cef('stop')
-  except Exception:pass
-  self.stop_server();time.sleep(2)
+  self.stop_frame_stream()
+  self.stop_server();time.sleep(2);self.wait_decoder_idle()
   recovered=self.action('rollback')['inventory']
   if recovered['current_driver']!='qcom-iris' or recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
   self.phase='host settings';self.save_host_settings(target)
@@ -360,6 +359,18 @@ class Supervisor:
    self.save_host_settings(target)
   if self.applied:self.applied=target
   self.update(target_mbps=target,operation_id=operation_id,last_result={'ok':True})
+ def stop_frame_stream(self):
+  try:self.cef('stop')
+  except Exception as error:self.log('Frame stream stop failed: '+str(error)[:200])
+ def wait_decoder_idle(self,seconds=20):
+  """The Frame client may only be swapped once nothing holds its hardware decoder; the stop takes a moment to reach it."""
+  deadline=time.monotonic()+seconds;users=None
+  while time.monotonic()<deadline:
+   try:users=self.action('inventory').get('open_decoder_users')
+   except Exception:return
+   if not users:return
+   time.sleep(1)
+  self.log('the Frame decoder is still open after '+str(seconds)+' s: '+json.dumps(users)[:300])
  def hook_counter(self,name):
   try:return self.stats()[name]
   except Exception:return '?'
@@ -408,8 +419,7 @@ class Supervisor:
   restart=False leaves SteamVR closed, e.g. after the user quit it."""
   if self.experimental:
    self.stop_server()
-   try:self.cef('stop')
-   except Exception:pass
+   self.stop_frame_stream()
   restored=self.action('rollback')['inventory']
   if restored['current_driver']!='qcom-iris' or restored['client_trial_active']:raise RuntimeError('Stock codec restoration could not be confirmed.')
   if self.experimental:
@@ -459,8 +469,7 @@ class Supervisor:
   if inventory['client_sha256']==CLIENT_H264_SHA:self.frame_mounted=True;return
   if inventory['client_sha256']!=CLIENT_STOCK_SHA or inventory['current_driver']!='qcom-iris':
    raise RuntimeError('The Frame client changed; keep mode cannot continue safely.')
-  try:self.cef('stop')
-  except Exception:pass
+  self.stop_frame_stream();self.wait_decoder_idle()
   if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
   self.frame_mounted=True
  def reapply(self):

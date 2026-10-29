@@ -117,7 +117,8 @@ def rollback():
 def client_h264():
  global client_active,client_codec
  if (video_path()/'driver').resolve().name!='qcom-iris':raise RuntimeError('Matching hardware decoder must be active')
- if opens():raise RuntimeError('Stop stream before client trial')
+ busy=opens()
+ if busy:raise RuntimeError('Stop stream before client trial (decoder held by '+', '.join(sorted({u['comm'] for u in busy}))+')')
  source=RUN/'client-h264.bin'
  if digest(CLIENT)!=CLIENT_STOCK_SHA or digest(source)!=CLIENT_H264_SHA:raise RuntimeError('Client fingerprint changed')
  result=run(['mount','--bind',str(source),str(CLIENT)])

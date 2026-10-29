@@ -209,7 +209,7 @@ class KeepModeTests(unittest.TestCase):
    return {'inventory':{'client_sha256':service.CLIENT_STOCK_SHA,'current_driver':'qcom-iris'},'client-h264':{'mounted':True}}[name]
   with patch.object(instance,'action',side_effect=action),patch.object(instance,'cef'):
    instance.ensure_frame()
-  self.assertEqual(actions,['inventory','client-h264']);self.assertTrue(instance.frame_mounted)
+  self.assertEqual(actions,['inventory','inventory','client-h264']  # the second inventory waits for the decoder to be idle);self.assertTrue(instance.frame_mounted)
  def test_ensure_frame_leaves_a_mounted_client_alone_and_refuses_unknown_clients(self):
   instance=self.make()
   with patch.object(instance,'action',return_value={'client_sha256':service.CLIENT_H264_SHA,'current_driver':'qcom-iris'}) as action:
