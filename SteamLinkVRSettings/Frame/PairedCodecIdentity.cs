@@ -17,7 +17,7 @@ public sealed record PairedCodecIdentity(string Codec, uint Fps, uint AverageBit
         var fps = BinaryPrimitives.ReadUInt32LittleEndian(bytes[12..]);
         var average = BinaryPrimitives.ReadUInt32LittleEndian(bytes[16..]);
         var peak = BinaryPrimitives.ReadUInt32LittleEndian(bytes[20..]);
-        if (fps is not (90 or 120) || average is < 1_000_000 or > 500_000_000 || peak < average || peak > 500_000_000)
+        if (fps is not (72 or 80 or 90 or 120) || average is < 1_000_000 or > 500_000_000 || peak < average || peak > 500_000_000)
             throw new InvalidDataException("The paired codec identity settings are invalid.");
         return new(codec, fps, average, peak);
     }

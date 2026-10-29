@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AssemblyName>SteamFrameTray</AssemblyName>
+    <RootNamespace>SteamFrameTray</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <ProbeDll Condition="'$(ProbeDll)' == ''">$(MSBuildThisFileDirectory)../Native/build/SteamFrameEncoderProbe.dll</ProbeDll>
+    <!-- The supervised codec runtime (runtime/, Assets/, scripts, Backend/); assembled by Package-Tray.ps1. -->
+    <CodecLabSource Condition="'$(CodecLabSource)' == ''">$(MSBuildThisFileDirectory)../artifacts/CodecLab</CodecLabSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- UI-free code shared with the full app; nothing here depends on WinUI. -->
+    <Compile Include="../SteamLinkVRSettings/Frame/CodecController.cs" Link="Shared/CodecController.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/FrameCredentialStore.cs" Link="Shared/FrameCredentialStore.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/FrameAddress.cs" Link="Shared/FrameAddress.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/FramePreferences.cs" Link="Shared/FramePreferences.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="Shared/AdvancedEncoding.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/EncoderSnapshot.cs" Link="Shared/EncoderSnapshot.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/EncoderProbe.cs" Link="Shared/EncoderProbe.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/EncoderProbe.Av1.cs" Link="Shared/EncoderProbe.Av1.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/StreamCodecStatus.cs" Link="Shared/StreamCodecStatus.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/PairedCodecIdentity.cs" Link="Shared/PairedCodecIdentity.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/FoveationOffsets.cs" Link="Shared/FoveationOffsets.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/RateTracker.cs" Link="Shared/RateTracker.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/StreamingHealth.cs" Link="Shared/StreamingHealth.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/CompositorTiming.cs" Link="Shared/CompositorTiming.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/CaptureFile.cs" Link="Shared/CaptureFile.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/SteamPaths.cs" Link="Shared/SteamPaths.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/RuntimeProcessState.cs" Link="Shared/RuntimeProcessState.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/OpenVrSettings.cs" Link="Shared/OpenVrSettings.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/BitratePatcher.cs" Link="Shared/BitratePatcher.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/PatchManifest.cs" Link="Shared/PatchManifest.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/DriverCompatibility.cs" Link="Shared/DriverCompatibility.cs" />
+    <Compile Include="../SteamLinkVRSettings/Frame/AdaptivePatchScanner.cs" Link="Shared/AdaptivePatchScanner.cs" />
+    <EmbeddedResource Include="../SteamLinkVRSettings/Assets/bitrate-patch.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch.json" />
+    <EmbeddedResource Include="../SteamLinkVRSettings/Assets/bitrate-patch-stable.json" LogicalName="SteamLinkVRSettings.Assets.bitrate-patch-stable.json" />
+    <Content Include="$(ProbeDll)" Link="Native/SteamFrameEncoderProbe.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(ProbeDll)')" />
+    <Content Include="$(CodecLabSource)/**" Link="CodecLab/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CodecLabSource)')" />
+  </ItemGroup>
+  <Target Name="WarnMissingCodecLab" BeforeTargets="Build" Condition="!Exists('$(CodecLabSource)')">
+    <Warning Text="CodecLab was not found at $(CodecLabSource). Run Package-Tray.ps1, or copy a CodecLab folder beside SteamFrameTray.exe." />
+  </Target>
+</Project>

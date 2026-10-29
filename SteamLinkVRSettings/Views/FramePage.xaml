@@ -284,10 +284,18 @@
                             </Grid.ColumnDefinitions>
                             <controls:NoWheelNumberBox x:Name="BitrateInput" Minimum="25" Maximum="500" SmallChange="5" LargeChange="25" Value="100" SpinButtonPlacementMode="Compact" Header="Video bitrate target (Mbps)" ValueChanged="Bandwidth_ValueChanged" />
                             <controls:NoWheelComboBox x:Name="CodecRefreshInput" Grid.Column="1" Header="Display refresh rate" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="CodecRefresh_Changed">
-                                <ComboBoxItem Content="90 Hz" />
-                                <ComboBoxItem Content="120 Hz" />
+                                <ComboBoxItem Content="90 Hz" Tag="90" />
+                                <ComboBoxItem Content="120 Hz" Tag="120" />
+                                <ComboBoxItem Content="72 Hz" Tag="72" />
+                                <ComboBoxItem Content="80 Hz" Tag="80" />
+                                <ComboBoxItem Content="Keep current" Tag="0" />
                             </controls:NoWheelComboBox>
                         </Grid>
+                        <CheckBox x:Name="FixedBitrateInput" Content="Fixed bitrate (H.264)" Checked="FixedBitrate_Changed" Unchecked="FixedBitrate_Changed" />
+                        <TextBlock Style="{StaticResource Hint}" x:Name="FixedBitrateHint" Text="Pins the encoder to the target instead of letting SteamVR lower it after link problems. Use it to test whether your link can carry more; it can stall the stream if the link cannot." />
+                        <CheckBox x:Name="KeepH264Input" Content="Keep H.264 across SteamVR restarts" Checked="KeepH264_Changed" Unchecked="KeepH264_Changed" />
+                        <TextBlock Style="{StaticResource Hint}" x:Name="KeepH264Hint" TextWrapping="Wrap" Text="H.264 stays applied when SteamVR or the Frame restarts, until you switch back to HEVC, and switching back needs no password prompt. To do that, the Frame user password is kept in Windows Credential Manager, encrypted for your Windows account. Forget it at any time." />
+                        <HyperlinkButton x:Name="ForgetPasswordButton" Content="Forget the stored Frame password" Click="ForgetPassword_Click" HorizontalAlignment="Left" Padding="0" Visibility="Collapsed" />
                         <TextBlock Style="{StaticResource Hint}" x:Name="CodecModeHint" />
                         <TextBlock Style="{StaticResource Hint}" x:Name="RefreshReadback" Text="Active display Hz has not been verified." />
                         <TextBlock Style="{StaticResource Hint}" Text="Changing Hz also changes the Frame's display mode and requires paired headset SSH. SteamVR reconnects if needed, which may close the running game." />

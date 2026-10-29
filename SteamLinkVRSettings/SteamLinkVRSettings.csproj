@@ -4,8 +4,8 @@
     <Version>1.8.2</Version>
     <Title>SteamFrame Advanced Options</Title>
     <Product>SteamFrame Advanced Options</Product>
-    <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
-    <WindowsSdkPackageVersion>10.0.22621.52</WindowsSdkPackageVersion>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
     <RootNamespace>SteamLinkVRSettings</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64</Platforms>

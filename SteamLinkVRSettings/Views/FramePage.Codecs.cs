@@ -7,12 +7,29 @@ namespace SteamLinkVRSettings.Views;
 public sealed partial class FramePage
 {
     private readonly CodecController _codecController = new();
+    private readonly FrameCredentialStore _credentials = new();
+    private bool _passwordStored;
     private CodecServiceStatus _codecService = CodecServiceStatus.NotStarted;
     private bool _codecSwitching;
     private bool _syncingCodec = true;
     private bool _codecEdited;
     private bool _refreshEdited;
     private StreamCodec SelectedCodec => (StreamCodec)Math.Clamp(CodecSelectionInput.SelectedIndex, 0, 2);
+    /// <summary>The refresh choice as a rate: 0 keeps the display rate as it is.</summary>
+    private int RefreshChoice => CodecRefreshInput.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var hz) ? hz : 90;
+    /// <summary>The 90/120 Hz view that the benchmark and saved presets use.</summary>
+    private int LegacyRefreshHz => RefreshChoice is 90 or 120 ? RefreshChoice : 90;
+    private void SelectRefresh(int hz)
+    {
+        foreach (var item in CodecRefreshInput.Items.OfType<ComboBoxItem>())
+            if (item.Tag is string tag && tag == hz.ToString()) { CodecRefreshInput.SelectedItem = item; return; }
+        CodecRefreshInput.SelectedIndex = 0;
+    }
+    private bool StoredPasswordExists()
+    {
+        try { return _credentials.Exists; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+    }
 
     private bool CodecHooksPaused(CodecServiceStatus status) => _codecSwitching || status.State is "starting" or "switching" || !status.Live && !status.CanStart;
     private async Task EnsureCodecStableAsync()
@@ -24,11 +41,68 @@ public sealed partial class FramePage
         _syncingCodec = true;
         CodecSelectionInput.SelectedIndex = Enum.IsDefined(_preferences.RequestedCodec) ? (int)_preferences.RequestedCodec : 0;
         if (SelectedCodec != StreamCodec.Hevc) BitrateInput.Value = Math.Clamp(_preferences.CodecTargetMbps, 25, CodecSwitchRequest.MaximumMbpsFor(SelectedCodec));
-        CodecRefreshInput.SelectedIndex = _preferences.CodecFps == 120 ? 1 : 0;
+        SelectRefresh(_preferences.CodecFps);
+        FixedBitrateInput.IsChecked = _preferences.CodecFixedBitrate;
+        KeepH264Input.IsChecked = _preferences.KeepH264;
+        _passwordStored = StoredPasswordExists();
         _syncingCodec = false;
         RenderCodecService(_codecService);
     }
     private void CodecSelection_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCodec || ApplyButton is null) return;
+        _codecEdited = true; _bandwidthEdited = true; _basicEditRevision++;
+        RefreshCodecButtons(); UpdateStreamEditStatus();
+    }
+    private void KeepH264_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingCodec || ApplyButton is null) return;
+        _codecEdited = true; _bandwidthEdited = true; _basicEditRevision++;
+        RefreshCodecButtons(); UpdateStreamEditStatus();
+    }
+    private async void ForgetPassword_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _credentials.Delete(); _passwordStored = false;
+            _preferences.KeepH264 = false; await _preferences.SaveAsync();
+            _syncingCodec = true;
+            try { KeepH264Input.IsChecked = false; }
+            finally { _syncingCodec = false; }
+            ShowStatus(_codecService.Live && _codecService.Keep
+                ? "The stored Frame password was removed. The running session continues until you switch back to HEVC, but it will not resume after a restart."
+                : "The stored Frame password was removed.", false);
+            RefreshCodecButtons();
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException)
+        {
+            ShowStatus("The stored Frame password could not be removed: " + error.Message, true);
+        }
+    }
+    /// <summary>After the app or PC restarted, take the kept H.264 session up again without touching SteamVR.</summary>
+    private async Task TryResumeKeptSessionAsync()
+    {
+        if (!_preferences.KeepH264 || _preferences.RequestedCodec != StreamCodec.H264 || _codecSwitching) return;
+        string? password = null;
+        try
+        {
+            password = _credentials.Load();
+            if (string.IsNullOrEmpty(password)) return;
+            var status = await _codecController.ReadStatusAsync();
+            if (status.Live || !status.CanStart) return;
+            var fps = _preferences.CodecFps is 0 or 72 or 80 or 90 or 120 ? _preferences.CodecFps : 90;
+            var request = new CodecSwitchRequest(StreamCodec.H264, Math.Clamp(_preferences.CodecTargetMbps, 25, 500), fps, _preferences.CodecFixedBitrate);
+            ReadConnectionInputs();
+            _codecSwitching = true; RefreshCodecButtons();
+            RenderCodecService(await _codecController.SwitchAsync(request, _preferences, password, new Progress<CodecServiceStatus>(RenderCodecService), keep: true, resume: true));
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            ShowStatus("The kept H.264 session could not resume: " + error.Message, true);
+        }
+        finally { password = null; _codecSwitching = false; RefreshCodecButtons(); }
+    }
+    private void FixedBitrate_Changed(object sender, RoutedEventArgs e)
     {
         if (_syncingCodec || ApplyButton is null) return;
         _codecEdited = true; _bandwidthEdited = true; _basicEditRevision++;
@@ -51,7 +125,9 @@ public sealed partial class FramePage
             {
                 CodecSelectionInput.SelectedIndex = status.ActiveCodec switch { "AV1" => 1, "H.264" => 2, _ => 0 };
                 BitrateInput.Maximum = CodecSwitchRequest.MaximumMbpsFor(SelectedCodec);
-                BitrateInput.Value = status.TargetMbps; CodecRefreshInput.SelectedIndex = status.Fps == 120 ? 1 : 0;
+                BitrateInput.Value = status.TargetMbps; SelectRefresh(status.RefreshKept ? 0 : status.Fps);
+                FixedBitrateInput.IsChecked = status.FixedBitrate;
+                if (SelectedCodec == StreamCodec.H264) KeepH264Input.IsChecked = status.Keep;
             }
             finally { _syncingCodec = _syncingBandwidth = false; }
         }
@@ -64,7 +140,8 @@ public sealed partial class FramePage
         var idle = !_actionPending && !_codecSwitching && !_sweepRunning && !CodecHooksPaused(_codecService);
         var paired = SelectedCodec != StreamCodec.Hevc;
         var patchChange = _pendingPreset != null && _pendingPreset.BitratePatch != (_patch?.IsPatched == true);
-        var authenticationNeeded = paired && (_codecService.CanStart && !_codecService.Live || patchChange && _codecService.Live);
+        var keepWanted = SelectedCodec == StreamCodec.H264 && KeepH264Input.IsChecked == true;
+        var authenticationNeeded = paired && !_passwordStored && (_codecService.CanStart && !_codecService.Live || patchChange && _codecService.Live || keepWanted && !_codecService.Keep);
         CodecPasswordInput.Visibility = CodecAuthenticationHint.Visibility = authenticationNeeded ? Visibility.Visible : Visibility.Collapsed;
         if (!authenticationNeeded) CodecPasswordInput.Password = "";
         BitrateInput.Maximum = CodecSwitchRequest.MaximumMbpsFor(SelectedCodec);
@@ -78,6 +155,12 @@ public sealed partial class FramePage
         ApplyButton.IsEnabled = idle;
         CodecSelectionInput.IsEnabled = CodecPasswordInput.IsEnabled = BitrateInput.IsEnabled = idle;
         CodecRefreshInput.IsEnabled = idle;
+        FixedBitrateInput.Visibility = FixedBitrateHint.Visibility = SelectedCodec == StreamCodec.H264 ? Visibility.Visible : Visibility.Collapsed;
+        FixedBitrateInput.IsEnabled = idle;
+        KeepH264Input.Visibility = KeepH264Hint.Visibility = SelectedCodec == StreamCodec.H264 ? Visibility.Visible : Visibility.Collapsed;
+        KeepH264Input.IsEnabled = idle;
+        ForgetPasswordButton.Visibility = _passwordStored ? Visibility.Visible : Visibility.Collapsed;
+        ForgetPasswordButton.IsEnabled = idle;
         AutomaticInput.IsEnabled = idle && !paired;
         StartingBandwidthInput.IsEnabled = idle && !paired && AutomaticInput.IsOn;
         StreamWidthInput.IsEnabled = idle && !paired && !AutomaticWidthInput.IsOn;
@@ -113,20 +196,32 @@ public sealed partial class FramePage
     }
     private async Task<string> ApplySelectedCodecAsync(string? suppliedPassword = null)
     {
-        var request = new CodecSwitchRequest(SelectedCodec, checked((int)BitrateInput.Value), CodecRefreshInput.SelectedIndex == 1 ? 120 : 90);
+        var keep = SelectedCodec == StreamCodec.H264 && KeepH264Input.IsChecked == true;
+        var request = new CodecSwitchRequest(SelectedCodec, checked((int)BitrateInput.Value), RefreshChoice,
+            SelectedCodec == StreamCodec.H264 && FixedBitrateInput.IsChecked == true);
         request.Validate(); ReadConnectionInputs();
-        var password = suppliedPassword ?? CodecPasswordInput.Password; CodecPasswordInput.Password = "";
+        var typed = suppliedPassword ?? CodecPasswordInput.Password; CodecPasswordInput.Password = "";
+        var password = string.IsNullOrEmpty(typed) ? _credentials.Load() : typed;
         _codecSwitching = true; MarkCodecReconnect();
         try
         {
             var before = await _probe.GetSnapshotAsync();
             if (before.Installed && !before.PairedCodecTrialPresent) await _probe.StopAsync();
-            var status = await _codecController.SwitchAsync(request, _preferences, password, new Progress<CodecServiceStatus>(RenderCodecService));
-            _preferences.RequestedCodec = request.Codec; _preferences.CodecTargetMbps = request.TargetMbps; _preferences.CodecFps = request.Fps;
+            var running = await _codecController.ReadStatusAsync();
+            if (running.Live && running.Keep != keep)
+            {
+                // Keeping H.264 is decided when a session starts, so changing it restarts the session.
+                RenderCodecService(await _codecController.CloseAsync(new Progress<CodecServiceStatus>(RenderCodecService)));
+                for (var attempt = 0; attempt < 60 && !(await _codecController.ReadStatusAsync()).CanStart; attempt++) await Task.Delay(500);
+            }
+            var status = await _codecController.SwitchAsync(request, _preferences, password, new Progress<CodecServiceStatus>(RenderCodecService), keep: keep);
+            if (keep && !string.IsNullOrEmpty(typed)) { _credentials.Save(typed); _passwordStored = true; }
+            _preferences.RequestedCodec = request.Codec; _preferences.CodecTargetMbps = request.TargetMbps; _preferences.CodecFps = request.Fps; _preferences.CodecFixedBitrate = request.FixedBitrate;
+            _preferences.KeepH264 = keep;
             await _preferences.SaveAsync(); RenderCodecService(status); _configuredPid = 0;
             return $"{request.CodecName} connected. Reopen the game if it closed; Overview verifies fresh output.";
         }
-        finally { password = ""; _codecSwitching = false; }
+        finally { password = ""; typed = ""; _codecSwitching = false; }
     }
     private async Task EndCodecSessionAsync()
     {
@@ -134,7 +229,7 @@ public sealed partial class FramePage
         try
         {
             RenderCodecService(await _codecController.CloseAsync(new Progress<CodecServiceStatus>(RenderCodecService)));
-            _preferences.RequestedCodec = StreamCodec.Hevc; await _preferences.SaveAsync(); _configuredPid = 0;
+            _preferences.RequestedCodec = StreamCodec.Hevc; _preferences.KeepH264 = false; await _preferences.SaveAsync(); _configuredPid = 0;
         }
         finally { _codecSwitching = false; }
     }

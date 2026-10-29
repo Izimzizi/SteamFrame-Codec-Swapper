@@ -142,7 +142,7 @@ public sealed partial class FramePage
         return age.TotalSeconds < 5 ? "just now" : age.TotalMinutes < 1 ? $"{age.TotalSeconds:0} s ago" : $"{age.TotalMinutes:0} min ago";
     }
 
-    private int CurrentRefreshHz((double? Mbps, double? Fps) measured) => measured.Fps is double fps && fps >= 60 ? (int)Math.Round(fps) : CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+    private int CurrentRefreshHz((double? Mbps, double? Fps) measured) => measured.Fps is double fps && fps >= 60 ? (int)Math.Round(fps) : LegacyRefreshHz;
 
     private double? _lastVideoMbps;
 
@@ -697,7 +697,7 @@ public sealed partial class FramePage
         }
         run.Measuring = false;
         if (dropped) return null;
-        var stepHz = run.Fps.Count > 0 ? (int)Math.Round(run.Fps.Average()) : CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+        var stepHz = run.Fps.Count > 0 ? (int)Math.Round(run.Fps.Average()) : LegacyRefreshHz;
         return LinkCapacitySweep.Evaluate(target, BuildSample(run), stepHz);
     }
 
@@ -708,7 +708,7 @@ public sealed partial class FramePage
     private async Task<string> RecordSweepCeilingAsync(SweepRun run, SweepConclusion conclusion)
     {
         // What the PC delivered during the winning step, not a nominal refresh rate: a still scene can run well under 120.
-        var hz = run.Fps.Count > 0 ? (int)Math.Round(run.Fps.Average()) : CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+        var hz = run.Fps.Count > 0 ? (int)Math.Round(run.Fps.Average()) : LegacyRefreshHz;
         try
         {
             _preferences.SeedSweepHistory();

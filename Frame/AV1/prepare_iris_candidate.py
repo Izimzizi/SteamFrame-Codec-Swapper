@@ -9,7 +9,9 @@ import argparse,difflib,json,pathlib,re
 p=argparse.ArgumentParser()
 p.add_argument('upstream',type=pathlib.Path)
 p.add_argument('destination',type=pathlib.Path)
+p.add_argument('--release',default='6.18.0-ge66bc2ca6f8c',help='Exact kernel release the module will refuse to probe without')
 a=p.parse_args()
+if not re.fullmatch(r'[0-9A-Za-z.+_-]{1,64}',a.release):raise ValueError('Invalid kernel release')
 metadata=json.loads((a.upstream/'provenance.json').read_text())
 required={'iris_hfi_gen2_defines.h':'HFI_CODEC_DECODE_AV1','iris_hfi_gen2_command.c':'NUM_COMV_AV1','iris_vpu_buffer.c':'av1','iris_platform_gen2.c':'V4L2_PIX_FMT_AV1'}
 for file,token in required.items():
@@ -104,13 +106,13 @@ MODULE_PARM_DESC(arm_av1_lab, "Experimental decoder; disabled by default");
   after=after.replace(marker,guards+marker)
   match='\tcore = devm_kzalloc(&pdev->dev, sizeof(*core), GFP_KERNEL);'
   gate='''\t/* Fail closed: no automatic driver replacement or unsupported boards. */
-\tif (!arm_av1_lab || strcmp(init_utsname()->release, "6.18.0-ge66bc2ca6f8c") ||
+\tif (!arm_av1_lab || strcmp(init_utsname()->release, "RELEASE_PLACEHOLDER") ||
 \t    !of_device_is_compatible(dev->of_node, "qcom,sm8650-iris"))
 \t\treturn -EPERM;
 
 '''
   if after.count(match)!=1:raise RuntimeError('Upstream probe changed; review guard insertion')
-  after=after.replace(match,gate+match)
+  after=after.replace(match,gate.replace('RELEASE_PLACEHOLDER',a.release)+match)
   after=after.replace('MODULE_DEVICE_TABLE(of, iris_dt_match);','/* No modalias: explicit lab loading only. */')
   after=after.replace('.name = "qcom-iris"','.name = "steam-frame-av1-lab"')
  if source.name=='iris_vpu_common.c':

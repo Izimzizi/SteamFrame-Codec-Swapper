@@ -1,7 +1,7 @@
 """Template sent through paired SSH; selects and verifies Frame display rate."""
 import ctypes as c,json,time
 fps=__FPS__
-if fps not in (90,120):raise ValueError('Unsupported refresh rate')
+if fps not in (72,80,90,120):raise ValueError('Unsupported refresh rate')
 lib=c.CDLL('/opt/steamvr/bin/linuxarm64/libopenvr_api.so')
 lib.VR_InitInternal2.argtypes=[c.POINTER(c.c_int),c.c_int,c.c_char_p];lib.VR_InitInternal2.restype=c.c_uint32
 lib.VR_GetGenericInterface.argtypes=[c.c_char_p,c.POINTER(c.c_int)];lib.VR_GetGenericInterface.restype=c.c_void_p

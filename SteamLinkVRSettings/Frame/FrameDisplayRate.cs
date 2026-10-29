@@ -61,7 +61,7 @@ finally:lib.VR_ShutdownInternal()
 
     internal static string Script(int hz)
     {
-        if (hz is not (90 or 120)) throw new ArgumentOutOfRangeException(nameof(hz));
+        if (hz is not (72 or 80 or 90 or 120)) throw new ArgumentOutOfRangeException(nameof(hz));
         // The active PC-streaming application owns a per-app refresh preference.
         // Its vrlink.client override takes precedence over the global steamvr key.
         return "fps=" + hz + "\n" + """

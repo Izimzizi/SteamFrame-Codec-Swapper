@@ -14,7 +14,7 @@ public sealed class FramePreferences
     public string AdbPath { get; set; } = DiscoverAdb();
     public string AdbSerial { get; set; } = "";
     public string SshHost { get; set; } = "";
-    public string SshKey { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "steamos-devkit", "devkit_rsa");
+    public string SshKey { get; set; } = DiscoverDevkitKey();
     public string SshKnownHosts { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamLinkVRSettings", "ssh-known-hosts");
     public int GazeOffset { get; set; } = -4;
     public int PeripheralOffset { get; set; } = 8;
@@ -26,6 +26,10 @@ public sealed class FramePreferences
     public StreamCodec RequestedCodec { get; set; } = StreamCodec.Hevc;
     public int CodecTargetMbps { get; set; } = 100;
     public int CodecFps { get; set; } = 90;
+    /// <summary>Pins the paired H.264 encoder to the target instead of letting SteamVR lower it.</summary>
+    public bool CodecFixedBitrate { get; set; }
+    /// <summary>Keep H.264 applied across SteamVR restarts; the Frame password is then kept in Windows Credential Manager.</summary>
+    public bool KeepH264 { get; set; }
     public int BitrateSetupVersion { get; set; }
     /// <summary>Whether a finished sweep puts its measured ceiling on the stream straight away.</summary>
     public bool SweepApplyWhenDone { get; set; } = true;
@@ -67,6 +71,15 @@ public sealed class FramePreferences
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
+    /// <summary>Valve's SteamOS Devkit Client keeps its key in one of these folders, depending on its version.</summary>
+    public static IEnumerable<string> DevkitKeyCandidates()
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        yield return Path.Combine(local, "steamos-devkit", "steamos-devkit", "devkit_rsa");
+        yield return Path.Combine(local, "steamos-devkit", "devkit_rsa");
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh", "devkit_rsa");
+    }
+    public static string DiscoverDevkitKey() => DevkitKeyCandidates().FirstOrDefault(File.Exists) ?? DevkitKeyCandidates().Skip(1).First();
     private static string DiscoverAdb()
     {
         var candidate = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "platform-tools", "adb.exe");

@@ -118,6 +118,7 @@ public sealed partial class FramePage : Page
             if (BenchmarkRecoveryPending)
                 ShowStatus("An interrupted auto-tune test has settings to recover. Reconnect the Frame, then open Auto tune and choose Restore starting settings.", true);
             if (_disposed || lifetime.IsCancellationRequested || !ReferenceEquals(lifetime, _lifetime)) return;
+            _ = TryResumeKeptSessionAsync();
         }
         _timer.Start();
         await PollAsync();
@@ -355,7 +356,7 @@ public sealed partial class FramePage : Page
                     try
                     {
                         var activeHz = await ReadOpenVrAsync("display-hz", () => OpenVrSettings.ReadDisplayHz(_paths));
-                        var requestedHz = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+                        var requestedHz = RefreshChoice == 0 ? (int)Math.Round(activeHz) : RefreshChoice;
                         RefreshReadback.Text = $"Active PC headset display: {activeHz:0.##} Hz" + (FrameDisplayRate.Matches(activeHz, requestedHz) ? "" : $" · {requestedHz} Hz selected, not active");
                     }
                     catch (IOException) { RefreshReadback.Text = "Active display Hz unavailable; the selected value is only a request."; }
@@ -593,7 +594,7 @@ public sealed partial class FramePage : Page
         string ceilingNote;
         if (SelectedCodec != StreamCodec.Hevc)
         {
-            new CodecSwitchRequest(SelectedCodec, checked((int)BitrateInput.Value), CodecRefreshInput.SelectedIndex == 1 ? 120 : 90).Validate();
+            new CodecSwitchRequest(SelectedCodec, checked((int)BitrateInput.Value), RefreshChoice).Validate();
             ceilingNote = await CheckBitrateCeilingAsync(BitrateInput.Value);
         }
         else
@@ -609,8 +610,11 @@ public sealed partial class FramePage : Page
         {
             var current = await _codecController.ReadStatusAsync();
             var codecName = SelectedCodec == StreamCodec.Av1 ? "AV1" : "H.264";
-            var fps = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
-            var message = !presetNeedsReconnect && current.Live && current.State == "ready" && current.ActiveCodec == codecName && current.TargetMbps == BitrateInput.Value && current.Fps == fps
+            var fps = RefreshChoice;
+            var wantFixed = SelectedCodec == StreamCodec.H264 && FixedBitrateInput.IsChecked == true;
+            var wantKeep = SelectedCodec == StreamCodec.H264 && KeepH264Input.IsChecked == true;
+            var message = !presetNeedsReconnect && current.Live && current.State == "ready" && current.ActiveCodec == codecName && current.TargetMbps == BitrateInput.Value
+                && (fps == 0 ? current.RefreshKept : !current.RefreshKept && current.Fps == fps) && current.FixedBitrate == wantFixed && current.Keep == wantKeep
                 ? "The selected codec setup is already running." : await ApplySelectedCodecAsync(suppliedPassword);
             suppliedPassword = null;
             await ApplyPendingPresetAsync(paired: true);
@@ -637,7 +641,7 @@ public sealed partial class FramePage : Page
         var requestedWidth = (int)StreamWidthInput.Value;
         var requestedAutomaticWidth = AutomaticWidthInput.IsOn;
         var requestedStarting = (int)Math.Round(StartingBandwidthInput.Value);
-        var requestedFps = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+        var requestedFps = RefreshChoice;
         var requestedRefreshEdited = _refreshEdited;
         var requestedPolicy = new EncodingPolicy(_pendingPreset != null ? (EncoderRateControl)RateControlInput.SelectedIndex : _preferences.RateControl, _pendingPreset != null ? (EncoderMultiPass)MultiPassInput.SelectedIndex : _preferences.MultiPass);
         _ = requestedPolicy.Packed;
@@ -692,7 +696,7 @@ public sealed partial class FramePage : Page
         _preferences.RequestedCodec = StreamCodec.Hevc;
         _preferences.CodecTargetMbps = (int)requestedTarget;
         _preferences.CodecFps = requestedFps;
-        if (requestedRefreshEdited && _pendingPreset == null) await ApplyHevcRefreshAsync(requestedFps);
+        if (requestedRefreshEdited && requestedFps != 0 && _pendingPreset == null) await ApplyHevcRefreshAsync(requestedFps);
         await _preferences.SaveAsync();
         if (_basicEditRevision == requestRevision) _bandwidthEdited = false;
         if (_linkEditRevision == requestLinkRevision) _linkEdited = false;

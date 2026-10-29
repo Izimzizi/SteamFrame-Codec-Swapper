@@ -7,6 +7,9 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/iommu.h>
 #include <linux/sizes.h>
+#ifndef FRAME_RELEASE
+#define FRAME_RELEASE "6.18.0-ge66bc2ca6f8c"
+#endif
 static bool armed;
 module_param(armed,bool,0400);
 static int __init recover(void)
@@ -17,7 +20,7 @@ static int __init recover(void)
  struct iommu_domain *domain;
  phys_addr_t physical;
  int ret=-EPERM;
- if(!armed||strcmp(init_utsname()->release,"6.18.0-ge66bc2ca6f8c"))return -EPERM;
+ if(!armed||strcmp(init_utsname()->release,FRAME_RELEASE))return -EPERM;
  video=bus_find_device_by_name(&platform_bus_type,NULL,"aa00000.video-codec");
  if(!video)return -ENODEV;
  if(video->driver||!of_device_is_compatible(video->of_node,"qcom,sm8650-iris"))goto video_out;

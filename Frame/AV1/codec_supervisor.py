@@ -6,11 +6,18 @@ requests are fixed codec operations; this is not an arbitrary command broker.
 import argparse,base64,ctypes as c,json,os,pathlib,queue,re,subprocess,sys,threading,time,uuid
 
 MODES=('HEVC','AV1','H.264')
+RATES=(72,80,90,120)  # fps 0 means: leave the display refresh rate as it is
 # Stream settings a paired session changes. HEVC restores the values found before the session.
 HOST_KEYS=('targetBandwidth','recommendedBandwidthMbit','automaticBandwidth','allowMultipleLinks','automaticStreamFormatWidth','streamFormatWidth')
 SOFT_LIMIT=90*60
 # The Frame root helper exits two hours after authentication; restore well before that.
 ROOT_LIFETIME=7200;RESTORE_MARGIN=300
+# Keep mode swaps in a fresh administrator session well before the old one expires.
+RENEW_AFTER=100*60;RETRY_INTERVAL=15
+# The paired H.264 encoder's highest accepted bitrate; a non-fixed hook is installed at it so bitrate changes stay live.
+H264_MAXIMUM_MBPS=500
+CLIENT_STOCK_SHA='31addef0c9553d3770b5570487699e96d70271d4073cd6c03b080fdee6ae2153'
+CLIENT_H264_SHA='12a19ed7744ddb79e871bbb235ceb04b6d2c163eda06fbadd319c69f2294d831'
 kernel=c.WinDLL('kernel32',use_last_error=True)
 kernel.CreateToolhelp32Snapshot.argtypes=[c.c_uint32,c.c_uint32];kernel.CreateToolhelp32Snapshot.restype=c.c_void_p
 kernel.OpenProcess.argtypes=[c.c_uint32,c.c_int,c.c_uint32];kernel.OpenProcess.restype=c.c_void_p
@@ -55,12 +62,17 @@ def validate_request(value):
  identifier=str(uuid.UUID(value['id']))
  if identifier!=value['id']:raise ValueError('Noncanonical request ID')
  action=value.get('action')
- if action not in ('switch','close'):raise ValueError('Unknown codec action')
- if action=='switch':validate_mode(value.get('codec'),value.get('target_mbps'),value.get('fps'))
+ if action not in ('switch','close','rate'):raise ValueError('Unknown codec action')
+ if action=='switch':
+  validate_mode(value.get('codec'),value.get('target_mbps'),value.get('fps'))
+  if type(value.get('fixed_bitrate',False)) is not bool:raise ValueError('Invalid fixed bitrate option')
+ if action=='rate':
+  target=value.get('target_mbps')
+  if type(target) is not int or not 25<=target<=500:raise ValueError('Unsupported bitrate')
  return identifier,action
 def validate_mode(codec,target,fps):
  maximum=200 if codec=='AV1' else 500
- if codec not in MODES or type(target) is not int or not 25<=target<=maximum or type(fps) is not int or fps not in (90,120):
+ if codec not in MODES or type(target) is not int or not 25<=target<=maximum or type(fps) is not int or fps not in (0,*RATES):
   raise ValueError('Unsupported codec, bitrate or refresh rate')
 def creation_epoch():
  win=c.WinDLL('kernel32',use_last_error=True);win.GetCurrentProcess.restype=c.c_void_p
@@ -80,12 +92,16 @@ def atomic_json(path,value):
     if attempt==9:raise
     time.sleep(.02)
  finally:temporary.unlink(missing_ok=True)
+def valid_host(value):
+ """The Frame's address: its hostname or an IPv4 address. Nothing an ssh option or a port could hide in."""
+ return type(value) is str and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?',value) is not None and '..' not in value
 def host_values(driver):return {key:driver[key] for key in HOST_KEYS if key in driver}
 def host_original(current,saved):
  """The user's stream settings. A session that ended before restoring leaves its own values
  in SteamVR; reuse its saved originals only while SteamVR still holds exactly those values."""
+ # 'previous' is the values in force just before a live bitrate change, which may not have reached the file yet.
  if isinstance(saved,dict) and saved.get('protocol_version')==1 and isinstance(saved.get('original'),dict) and \
-    saved.get('applied') is not None and saved.get('applied')==current and set(saved['original'])<=set(HOST_KEYS):return dict(saved['original'])
+    saved.get('applied') is not None and current in (saved.get('applied'),saved.get('previous')) and set(saved['original'])<=set(HOST_KEYS):return dict(saved['original'])
  return dict(current)
 def codec_host_values(codec,target,original):
  width=original.get('streamFormatWidth',1536)
@@ -93,9 +109,17 @@ def codec_host_values(codec,target,original):
   'automaticStreamFormatWidth':False,'streamFormatWidth':1024 if codec=='H.264' else width if type(width) is int and 128<=width<=1536 else 1536}
 
 class Supervisor:
+ rate_managed=True  # False while the session leaves the refresh rate to the user
+ keep=False;resume=False;password=None;applied=None;frame_mounted=False
+ closing_message=None;next_attempt=0
+ live_rate=False  # the NVENC hook was installed uncapped, so SteamVR's own live bitrate drives the encoder
  def __init__(self,directory,config):
   validate_mode(config['initial_codec'],config['target_mbps'],config['fps'])
-  if config.get('protocol_version')!=1 or config.get('ssh_host')!='10.35.78.1':raise ValueError('Use the paired dedicated-dongle Frame')
+  self.keep=config.get('keep') is True;self.resume=config.get('resume') is True
+  if self.keep and config['initial_codec']!='H.264':raise ValueError('Keep mode supports H.264 only')
+  if self.resume and not self.keep:raise ValueError('Only keep mode can resume')
+  if config.get('protocol_version')!=1 or not valid_host(config.get('ssh_host')):raise ValueError('Use the paired Frame address')
+  self.login='steamos@'+config['ssh_host']
   self.directory=directory.resolve();self.directory.mkdir(parents=True,exist_ok=True)
   self.requests=self.directory/'requests';self.requests.mkdir(exist_ok=True)
   self.package=pathlib.Path(__file__).resolve().parent
@@ -111,19 +135,28 @@ class Supervisor:
   self.steam=pathlib.Path(config.get('steam_root',r'C:\Program Files (x86)\Steam')).resolve()
   self.vr=pathlib.Path(config.get('steamvr_root',str(self.steam/'steamapps/common/SteamVR'))).resolve()/'bin/win64'
   if not (self.steam/'steam.exe').is_file() or not (self.vr/'vrserver.exe').is_file():raise ValueError('SteamVR installation unavailable')
-  self.pid=0;self.watch=None;self.root=None;self.root_started=0;self.authenticated=False;self.root_replies=queue.Queue();self.stopping=False
+  self.pid=0;self.watch=None;self.root=None;self.root_started=0;self.authenticated=False;self.av1_supported=True;self.root_replies=queue.Queue();self.stopping=False
   # True while a non-HEVC codec is active or a switch may have left partial changes.
   self.experimental=False;self.restart_on_close=True
   self.mutex=threading.Lock()
   self.status={'protocol_version':1,'owner_pid':os.getpid(),'owner_created_epoch':creation_epoch(),'updated_epoch':time.time(),
    'state':'starting','active_codec':'Unknown','message':'Starting the paired codec session.','operation_id':'',
-   'last_result':None,'target_mbps':config['target_mbps'],'fps':config['fps'],'stream_pid':0,'maximum_h264_mbps':500}
+   'last_result':None,'target_mbps':config['target_mbps'],'fps':config['fps'],'stream_pid':0,'maximum_h264_mbps':500,'fixed_bitrate':False,'keep':self.keep,'refresh_kept':False,'rate_live':False}
   self.host_path=self.directory/'host-original.json';self.host_state=None
   self.phase='initialization'
   self.stop_heartbeat=threading.Event()
+ def rate_available(self):
+  """A bitrate-only change needs no restart: SteamVR is running with the uncapped hook (its own live
+  setting then drives the encoder), or SteamVR is closed and a kept session applies it at the next start."""
+  fixed=bool(self.status.get('fixed_bitrate'))
+  if self.pid and self.live_rate and not fixed and self.status.get('active_codec')=='H.264':return self.server_alive()
+  return bool(self.keep and self.applied and not self.applied[3] and not self.pid)
  def update(self,**values):
   with self.mutex:
-   self.status.update(values);self.status['updated_epoch']=time.time();atomic_json(self.directory/'status.json',self.status)
+   self.status.update(values);self.status['updated_epoch']=time.time()
+   try:self.status['rate_live']=self.rate_available()
+   except Exception:self.status['rate_live']=False
+   atomic_json(self.directory/'status.json',self.status)
  def heartbeat(self):
   while not self.stop_heartbeat.wait(1):
    try:self.update()
@@ -132,7 +165,7 @@ class Supervisor:
   p=subprocess.run(list(map(str,args)),input=input,capture_output=True,text=True,timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
   if p.returncode:raise RuntimeError('A paired codec command failed; check connection and installation.')
   return p.stdout.strip()
- def frame(self,script,timeout=12):return self.command([self.ssh,*self.options,'steamos@10.35.78.1','python3 -'],input=script,timeout=timeout)
+ def frame(self,script,timeout=12):return self.command([self.ssh,*self.options,self.login,'python3 -'],input=script,timeout=timeout)
  def cef(self,which):
   expression=(self.package/(which+'_stream.js')).read_text()
   script=(self.package/'frame_cef_stdio.py').read_text().replace('__EXPRESSION_BASE64__',base64.b64encode(expression.encode()).decode())
@@ -161,29 +194,59 @@ class Supervisor:
   response=self.root_receive()
   if not response.get('ok'):raise RuntimeError(response.get('error','Frame rejected codec operation.'))
   return response['result']
- def authenticate(self,password):
+ def start_root(self,password):
   self.phase='Frame staging and authentication'
-  self.command([self.ssh,*self.options,'steamos@10.35.78.1',
+  self.command([self.ssh,*self.options,self.login,
    'mkdir -p /tmp/steam-frame-av1-lab-20261011/iris-7.0-frame-candidate'])
   self.command([self.scp,*self.options,self.package/'root_session.py',
-   'steamos@10.35.78.1:/tmp/steam-frame-av1-lab-20261011/root_session.py'])
+   self.login+':/tmp/steam-frame-av1-lab-20261011/root_session.py'])
   self.command([self.scp,*self.options,self.package/'Assets/steam-frame-av1-lab.ko',
-   'steamos@10.35.78.1:/tmp/steam-frame-av1-lab-20261011/iris-7.0-frame-candidate/steam-frame-av1-lab.ko'])
+   self.login+':/tmp/steam-frame-av1-lab-20261011/iris-7.0-frame-candidate/steam-frame-av1-lab.ko'])
   self.root_started=time.monotonic()
-  self.root=subprocess.Popen([str(self.ssh),*self.options,'steamos@10.35.78.1',
+  self.root_replies=replies=queue.Queue()
+  self.root=root=subprocess.Popen([str(self.ssh),*self.options,self.login,
    "sudo -k -S -p '' /usr/bin/python3 /tmp/steam-frame-av1-lab-20261011/root_session.py"],
    stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
-  def replies():
-   for line in self.root.stdout:self.root_replies.put(line)
-   self.root_replies.put(None)
-  threading.Thread(target=replies,daemon=True).start()
-  self.root.stdin.write(password+'\n');self.root.stdin.flush();password=None
+  def pump():
+   for line in root.stdout:replies.put(line)
+   replies.put(None)
+  threading.Thread(target=pump,daemon=True).start()
+  root.stdin.write(password+'\n');root.stdin.flush();password=None
   if not self.root_receive(15).get('root_ready'):raise RuntimeError('Frame administrator authentication failed.')
+ def authenticate(self,password):
+  self.start_root(password)
   inventory=self.action('inventory')
-  if inventory['current_driver']!='qcom-iris' or inventory['client_sha256']!='31addef0c9553d3770b5570487699e96d70271d4073cd6c03b080fdee6ae2153':
+  mounted=inventory['client_sha256']==CLIENT_H264_SHA
+  if inventory['current_driver']!='qcom-iris' or inventory['client_sha256'] not in (CLIENT_STOCK_SHA,CLIENT_H264_SHA):
    raise RuntimeError('Another codec trial is active. Restore it before starting this session.')
-  self.action('prepare')
+  self.av1_supported=inventory.get('av1_supported',True)
+  # An H.264 client mount left by an earlier session is taken over, never rewritten while it may be running.
+  self.action('adopt' if mounted else 'prepare')
+  self.frame_mounted=mounted
   self.authenticated=True
+ def swap_root(self):
+  """Replace the administrator session before its two-hour limit without dropping the client mount."""
+  old=(self.root,self.root_replies,self.root_started)
+  try:
+   self.start_root(self.password)
+   if self.action('inventory')['client_sha256']!=CLIENT_H264_SHA:raise RuntimeError('The H.264 client mount is missing.')
+   self.action('adopt')
+  except Exception:
+   fresh=self.root
+   self.root,self.root_replies,self.root_started=old
+   if fresh is not None and fresh is not old[0]:
+    try:fresh.stdin.close();fresh.wait(timeout=20)
+    except Exception:pass
+   raise
+  try:
+   old[0].stdin.write('{"action":"detach"}\n');old[0].stdin.flush();old[0].stdin.close();old[0].wait(timeout=20)
+  except Exception:pass
+ def current_refresh(self):
+  rate=self.read_settings().get('steamvr',{}).get('preferredRefreshRate')
+  if type(rate) is float and rate.is_integer():rate=int(rate)
+  if type(rate) is not int or rate not in RATES:
+   raise RuntimeError('The SteamVR refresh rate is not one of '+', '.join(map(str,RATES))+' Hz. Choose a rate in the codec settings or set it in SteamVR.')
+  return rate
  def frame_rate(self,fps):
   script=(self.package/'frame_rate_remote.py').read_text().replace('__FPS__',str(fps))
   value=json.loads(self.frame(script))
@@ -196,35 +259,41 @@ class Supervisor:
   self.host_state={'protocol_version':1,'original':host_original(host_values(self.read_settings().get('driver_vrlink',{})),saved),'applied':None}
   atomic_json(self.host_path,self.host_state)
  def save_host_settings(self,codec,target,fps):
+  # fps None leaves SteamVR's refresh rate alone.
   if self.server_pid():raise RuntimeError('Stop SteamVR before writing codec settings.')
   path=self.steam/'config/steamvr.vrsettings';data=self.read_settings();driver=data.setdefault('driver_vrlink',{})
   original=self.host_state['original']
-  data.setdefault('steamvr',{})['preferredRefreshRate']=fps
+  if fps is not None:data.setdefault('steamvr',{})['preferredRefreshRate']=fps
   if codec=='HEVC':
    # Return the user's own stream settings, not the experimental session's.
    for key in HOST_KEYS:
     if key in original:driver[key]=original[key]
     else:driver.pop(key,None)
    atomic_json(path,data)
-   self.host_state['applied']=None;atomic_json(self.host_path,self.host_state)
+   self.host_state['applied']=None;self.host_state.pop('previous',None);atomic_json(self.host_path,self.host_state)
   else:
    applied=codec_host_values(codec,target,original)
    # Record the session's values first so an interrupted session can still be restored.
    self.host_state['applied']=applied;atomic_json(self.host_path,self.host_state)
    driver.update(applied);atomic_json(path,data)
- def start_server(self,codec,target,fps):
-  subprocess.Popen([str(self.steam/'steam.exe'),'-applaunch','250820'],creationflags=subprocess.CREATE_NO_WINDOW)
+ def start_server(self,codec,target,fps,fixed=False,launch=True):
+  if launch:subprocess.Popen([str(self.steam/'steam.exe'),'-applaunch','250820'],creationflags=subprocess.CREATE_NO_WINDOW)
   deadline=time.monotonic()+25
   while time.monotonic()<deadline:
    pid=self.server_pid()
    if pid:
-    if codec=='HEVC':self.pid=pid;self.watch=ProcessWatch(pid);return
-    # A non-fixed budget lets SteamVR's own rate updates lower the encoder below the
+    if codec=='HEVC':self.pid=pid;self.watch=ProcessWatch(pid);self.live_rate=False;return
+    # By default a non-fixed budget lets SteamVR's own rate updates lower the encoder below the
     # requested ceiling after bad-link events, instead of pinning a rate the link cannot carry.
+    # fixed pins the encoder to the request for users who want to test the link's real ceiling.
+    # A non-fixed H.264 hook is installed at the 500 Mbps maximum, so SteamVR's own live bitrate (the
+    # session's target, changeable without a restart) is the limit rather than a value fixed at install.
+    live=codec=='H.264' and not fixed
+    budget=H264_MAXIMUM_MBPS if live else target
     p=subprocess.run([str(self.backend/'trial_control.exe'),str(pid),str(self.backend/'SteamFrameAV1Backend.dll'),
-     'install',str(target*1000000),str(target*1000000),'0',str(fps),'1' if codec=='AV1' else '2'],
+     'install',str(budget*1000000),str(budget*1000000),'1' if fixed and codec!='HEVC' else '0',str(fps),'1' if codec=='AV1' else '2'],
      capture_output=True,text=True,timeout=12,creationflags=subprocess.CREATE_NO_WINDOW)
-    if not p.returncode:self.pid=pid;self.watch=ProcessWatch(pid);return
+    if not p.returncode:self.pid=pid;self.watch=ProcessWatch(pid);self.live_rate=live;return
     try:
      code=json.loads(p.stdout).get('code')
      if code not in (11,None):raise RuntimeError('PC codec installation rejected; incompatible monitor or encoder.')
@@ -241,8 +310,13 @@ class Supervisor:
   raise RuntimeError('Encoder errors after codec change: initialization status '+str(state['initialize_status'])+
    ', source '+str(state['width'])+'x'+str(state['height'])+' at '+str(state['source_fps_num'])+'/'+str(state['source_fps_den'])+
    ' fps. See encoder-failure.json in the codec session directory.')
- def switch(self,codec,target,fps,operation_id=''):
+ def switch(self,codec,target,fps,operation_id='',fixed=False):
   validate_mode(codec,target,fps)
+  requested_fps=fps;keep_rate=fps==0
+  if keep_rate:fps=self.current_refresh()
+  if self.keep and codec=='AV1':raise ValueError('Keep mode supports H.264 only')
+  if codec=='AV1' and not self.av1_supported:
+   raise RuntimeError('AV1 is not supported on this Frame kernel. Use H.264 or HEVC.')
   self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,
    message='Reconnecting SteamVR and the Frame with matching codecs.')
   self.experimental=True
@@ -252,17 +326,39 @@ class Supervisor:
   self.stop_server();time.sleep(2)
   recovered=self.action('rollback')['inventory']
   if recovered['current_driver']!='qcom-iris' or recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
-  self.phase='Frame display rate';self.frame_rate(fps)
-  self.phase='host settings';self.save_host_settings(codec,target,fps)
+  self.rate_managed=not keep_rate
+  if not keep_rate:self.phase='Frame display rate';self.frame_rate(fps)
+  self.phase='host settings';self.save_host_settings(codec,target,None if keep_rate else fps)
   self.phase='Frame codec activation'
   if codec=='AV1':
    if not self.action('load-av1').get('bound'):raise RuntimeError('AV1 hardware decoder did not bind.')
    if not self.action('client-av1').get('mounted'):raise RuntimeError('AV1 client activation failed.')
   elif codec=='H.264':
    if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
-  self.phase='host codec activation';self.start_server(codec,target,fps)
+  self.phase='host codec activation';self.start_server(codec,target,fps,fixed)
   self.phase='starting Frame stream';self.cef('start')
-  self.phase='verifying hardware stream'
+  self.phase='verifying hardware stream';self.verify_stream(codec,target,fps)
+  self.experimental=codec!='HEVC'
+  self.applied=(codec,target,requested_fps,bool(fixed)) if self.keep and codec=='H.264' else None
+  self.restart_on_close=True
+  self.update(state='ready',active_codec=codec,target_mbps=target,fps=fps,refresh_kept=keep_rate,fixed_bitrate=bool(fixed and codec!='HEVC'),stream_pid=self.pid,
+   message=codec+' connected.',last_result={'ok':True},operation_id=operation_id)
+ def set_rate(self,target,operation_id=''):
+  """Change only the bitrate of a running or kept H.264 session, without stopping SteamVR.
+
+  With SteamVR running, this records the new values so crash recovery stays correct; the caller then
+  writes them through SteamVR's live settings API. With SteamVR closed the values go into its settings file."""
+  if type(target) is not int or not 25<=target<=H264_MAXIMUM_MBPS:raise ValueError('Unsupported bitrate')
+  if not self.rate_available():raise RuntimeError('A live bitrate change is not available; apply the bitrate again.')
+  applied=codec_host_values('H.264',target,self.host_state['original'])
+  if self.pid:
+   self.host_state['previous']=self.host_state.get('applied');self.host_state['applied']=applied;atomic_json(self.host_path,self.host_state)
+  else:
+   requested=self.applied[2]
+   self.save_host_settings('H.264',target,None if requested==0 else requested)
+  if self.applied:self.applied=(self.applied[0],target,self.applied[2],self.applied[3])
+  self.update(target_mbps=target,operation_id=operation_id,last_result={'ok':True})
+ def verify_stream(self,codec,target,fps):
   deadline=time.monotonic()+20;ready=False
   while time.monotonic()<deadline:
    receiver=self.action('inventory')
@@ -276,9 +372,6 @@ class Supervisor:
      if self.stats()['locks']>before:ready=True;break
    time.sleep(.5)
   if not ready:raise RuntimeError('Matching hardware stream did not start.')
-  self.experimental=codec!='HEVC'
-  self.update(state='ready',active_codec=codec,target_mbps=target,fps=fps,stream_pid=self.pid,
-   message=codec+' connected over the dedicated dongle.',last_result={'ok':True},operation_id=operation_id)
  def recover(self,restart=True):
   """Restore the stock Frame client/decoder and the user's HEVC settings.
 
@@ -291,19 +384,117 @@ class Supervisor:
   restored=self.action('rollback')['inventory']
   if restored['current_driver']!='qcom-iris' or restored['client_trial_active']:raise RuntimeError('Stock codec restoration could not be confirmed.')
   if self.experimental:
-   self.save_host_settings('HEVC',self.status['target_mbps'],self.status['fps'])
+   self.save_host_settings('HEVC',self.status['target_mbps'],self.status['fps'] if self.rate_managed else None)
    if restart:self.start_server('HEVC',self.status['target_mbps'],self.status['fps']);self.cef('start')
   self.experimental=False
+ def restore_without_frame(self):
+  # The Frame is unreachable; its client mount ends when it restarts. Restore the PC side only.
+  if self.experimental:
+   self.stop_server()
+   self.save_host_settings('HEVC',self.status['target_mbps'],self.status['fps'] if self.rate_managed else None)
+   self.experimental=False
+  self.closing_message=self.closing_message or 'The Frame was unreachable; its H.264 client resets when the Frame restarts. PC settings restored.'
+ def frame_lost(self):
+  self.root=None;self.frame_mounted=False;self.next_attempt=0
+  self.update(state='waiting',active_codec='Unknown',message='The Frame connection was lost. H.264 is re-applied when it returns.')
+ def server_exited(self):
+  if self.watch:self.watch.close();self.watch=None
+  self.pid=0;self.restart_on_close=False
+  try:
+   if self.applied:
+    codec,target,fps,fixed=self.applied
+    self.save_host_settings(codec,target,None if fps==0 else fps)
+  except Exception:pass
+  self.update(state='waiting',active_codec='Unknown',stream_pid=0,message='SteamVR closed. H.264 is re-applied the next time SteamVR starts.')
+ def ensure_frame(self):
+  """Keep mode: an administrator session exists and the Frame client is the H.264 one."""
+  if self.root is None or self.root.poll() is not None:
+   self.root=None;self.authenticate(self.password)
+  inventory=self.action('inventory')
+  if inventory['client_sha256']==CLIENT_H264_SHA:self.frame_mounted=True;return
+  if inventory['client_sha256']!=CLIENT_STOCK_SHA or inventory['current_driver']!='qcom-iris':
+   raise RuntimeError('The Frame client changed; keep mode cannot continue safely.')
+  try:self.cef('stop')
+  except Exception:pass
+  if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
+  self.frame_mounted=True
+ def reapply(self):
+  codec,target,requested,fixed=self.applied
+  self.update(state='switching',active_codec='Unknown',message='SteamVR started; re-applying '+codec+'.')
+  for attempt in range(2):
+   try:
+    rate=requested or self.current_refresh()
+    # Hook the encoder first so a Frame that connects early still gets the matching stream.
+    self.phase='host codec activation'
+    if not (self.pid and self.server_alive()):self.start_server(codec,target,rate,fixed,launch=False)
+    self.phase='Frame codec activation';self.ensure_frame()
+    self.phase='starting Frame stream';self.cef('start')
+    self.phase='verifying hardware stream';self.verify_stream(codec,target,rate)
+    self.restart_on_close=True
+    self.update(state='ready',active_codec=codec,target_mbps=target,fps=rate,fixed_bitrate=bool(fixed),stream_pid=self.pid,
+     message=codec+' re-applied after SteamVR restarted.',last_result={'ok':True})
+    return
+   except Exception:
+    if attempt==0:time.sleep(3)
+  # Never leave a patched Frame client facing an unhooked SteamVR: restore everything and end keep mode.
+  self.closing_message='H.264 could not be re-applied ('+self.phase+'). Stock HEVC was restored and keep mode ended.'
+  self.keep=False;self.applied=None;self.stopping=True
+  self.update(keep=False)
+  self.recover()
+ def restream(self):
+  """Keep mode: the Frame came back while a hooked SteamVR is still running."""
+  codec,target,requested,fixed=self.applied
+  self.update(state='switching',active_codec='Unknown',message='The Frame returned; reconnecting the stream.')
+  try:
+   rate=self.status['fps']
+   self.ensure_frame();self.cef('start');self.verify_stream(codec,target,rate)
+   self.update(state='ready',active_codec=codec,message=codec+' reconnected after the Frame returned.',last_result={'ok':True})
+  except Exception:
+   self.update(state='waiting',active_codec='Unknown',message='The stream could not be reconnected; H.264 is re-applied the next time SteamVR starts.')
+ def resume_session(self):
+  """Keep mode after the app or PC restarted: adopt what is there, restart nothing the user is using."""
+  codec,target,requested=self.config['initial_codec'],self.config['target_mbps'],self.config['fps']
+  fixed=self.config.get('fixed_bitrate') is True
+  self.applied=(codec,target,requested,fixed);self.experimental=True
+  if self.server_pid() and self.frame_mounted:
+   # The Frame already expects H.264 but this SteamVR is not hooked: restart it once.
+   self.switch(codec,target,requested,fixed=fixed);return
+  if not self.server_pid():self.save_host_settings(codec,target,None if requested==0 else requested)
+  self.restart_on_close=False
+  self.update(state='waiting',active_codec='Unknown',message='H.264 is kept. It is applied the next time SteamVR starts.')
+ def keep_tick(self):
+  now=time.monotonic()
+  if self.root is None:
+   if now<self.next_attempt:return
+   self.next_attempt=now+RETRY_INTERVAL
+   try:self.authenticate(self.password)
+   except Exception:
+    failed=self.root;self.root=None
+    if failed is not None:
+     try:failed.stdin.close()
+     except Exception:pass
+    return
+   if self.applied and self.pid and self.server_alive():self.restream()
+   else:self.update(state='waiting',active_codec='Unknown',message='The Frame returned. H.264 is re-applied the next time SteamVR starts.')
+   return
+  if now-self.root_started>=RENEW_AFTER and now>=self.next_attempt:
+   try:self.swap_root()
+   except Exception:self.next_attempt=now+RETRY_INTERVAL*4 # the current session stays valid until its limit
+  if not self.pid and self.applied and self.server_pid():self.reapply()
  def run(self,credentials):
   self.update();threading.Thread(target=self.heartbeat,daemon=True).start()
   try:
    password=credentials.pop()
+   if self.keep:self.password=password
    self.authenticate(password);password=None
    self.phase='host settings';self.load_host_state()
-   self.switch(self.config['initial_codec'],self.config['target_mbps'],self.config['fps'])
+   if self.resume:self.resume_session()
+   else:self.switch(self.config['initial_codec'],self.config['target_mbps'],self.config['fps'],fixed=self.config.get('fixed_bitrate') is True)
    soft=time.monotonic()+SOFT_LIMIT;hard=self.root_started+ROOT_LIFETIME-RESTORE_MARGIN;expiring=False
-   while time.monotonic()<hard:
-    if self.root.poll() is not None:raise RuntimeError('Frame administrator session ended.')
+   while self.keep or time.monotonic()<hard:
+    if self.root is None or self.root.poll() is not None:
+     if not self.keep:raise RuntimeError('Frame administrator session ended.')
+     if self.root is not None:self.frame_lost()
     for path in sorted(self.requests.glob('request-*.json')):
      try:
       if path.is_symlink() or path.stat().st_size>4096:raise ValueError('Invalid request file')
@@ -313,36 +504,52 @@ class Supervisor:
       path.unlink(missing_ok=True);continue
      path.unlink()
      if action=='close':
+      # Restoring needs SteamVR stopped; bring it back as stock HEVC only if it was running.
+      if self.keep:self.restart_on_close=bool(self.server_pid())
       self.update(state='switching',active_codec='Unknown',operation_id=identifier,last_result=None,message='Restoring stock HEVC and closing the temporary session.')
       self.stopping=True;break
-     try:self.switch(value['codec'],value['target_mbps'],value['fps'],identifier)
+     if action=='rate':
+      # A refused bitrate-only change leaves the session exactly as it was; the caller may re-apply instead.
+      try:self.set_rate(value['target_mbps'],identifier)
+      except Exception as error:
+       self.update(operation_id=identifier,last_result={'ok':False,'error':'Live bitrate change unavailable: '+str(error)[:200]})
+      continue
+     try:self.switch(value['codec'],value['target_mbps'],value['fps'],identifier,value.get('fixed_bitrate') is True)
      except Exception:
+      self.applied=None
       self.recover()
       self.update(state='error',active_codec='HEVC',stream_pid=self.pid,operation_id=identifier,
        message='Codec switch failed; stock HEVC was restored.',last_result={'ok':False,'error':'Codec switch failed; stock HEVC was restored.'})
     if self.stopping:break
     if self.pid and not self.server_alive():
-     # SteamVR exited. Restore without relaunching it unless it was already started again.
-     self.restart_on_close=bool(self.server_pid());break
-    if time.monotonic()>=soft:
+     if self.keep and self.applied:self.server_exited()
+     else:
+      # SteamVR exited. Restore without relaunching it unless it was already started again.
+      self.restart_on_close=bool(self.server_pid());break
+    if self.keep:
+     if not self.stopping:self.keep_tick()
+     if self.stopping:break
+    elif time.monotonic()>=soft:
      if not self.experimental:break
      if not expiring:
       # Never stop a running game at the soft limit; restore when SteamVR next exits.
       expiring=True;self.update(message='The 90-minute codec session limit was reached. Stock HEVC is restored when SteamVR exits, or automatically within '+str(max(1,round((hard-time.monotonic())/60)))+' minutes.')
     time.sleep(.5)
   finally:
-   password=None
+   password=None;self.password=None
    if self.authenticated:
     try:
-     self.recover(self.restart_on_close);self.update(active_codec='HEVC',stream_pid=self.pid)
+     if self.root is None or self.root.poll() is not None:self.restore_without_frame()
+     else:self.recover(self.restart_on_close)
+     self.update(active_codec='HEVC',stream_pid=self.pid)
     finally:
      if self.root and self.root.poll() is None:
       self.root.stdin.write('{"action":"close"}\n');self.root.stdin.flush();self.root.stdin.close();self.root.wait(timeout=20)
    elif self.root and self.root.poll() is None:self.root.stdin.close();self.root.wait(timeout=20)
    if self.watch:self.watch.close();self.watch=None
    self.stop_heartbeat.set()
-   self.update(state='closed',message='Temporary codec session closed; HEVC restored.' if self.restart_on_close or not self.authenticated
-    else 'Temporary codec session closed after SteamVR exited; HEVC settings restored.',last_result={'ok':True})
+   self.update(state='closed',message=self.closing_message or ('Temporary codec session closed; HEVC restored.' if self.restart_on_close or not self.authenticated
+    else 'Temporary codec session closed after SteamVR exited; HEVC settings restored.'),last_result={'ok':True})
 
 def main():
  parser=argparse.ArgumentParser();parser.add_argument('--service',action='store_true');parser.add_argument('--session-dir',type=pathlib.Path,required=True);parser.add_argument('--config',type=pathlib.Path,required=True);a=parser.parse_args()

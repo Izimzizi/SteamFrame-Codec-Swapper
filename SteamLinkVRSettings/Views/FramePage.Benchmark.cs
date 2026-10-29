@@ -53,7 +53,7 @@ public sealed partial class FramePage
                 CompletedSteps=Math.Min(3,runner.Progress.CompletedSteps)});
             BenchmarkStatus.Text="Testing stopped: "+error.Message;
             int configuredWidth=double.IsFinite(StreamWidthInput.Value)?Math.Clamp((int)StreamWidthInput.Value,512,4096):1664;
-            var result=BenchmarkExplorer.Recommend([],options,false,error.Message,configuredWidth,CodecRefreshInput.SelectedIndex==1?120:90);
+            var result=BenchmarkExplorer.Recommend([],options,false,error.Message,configuredWidth,LegacyRefreshHz);
             var choice=result.Recommendations[0];
             var profile=WirelessBenchmark.Profile(new TuningProfile{BitratePatch=_patch?.IsPatched==true,RateControl=EncoderRateControl.Cbr},
                 choice.Candidate,choice.Candidate.Width,choice.Candidate.Fps);

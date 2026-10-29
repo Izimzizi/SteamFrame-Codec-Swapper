@@ -15,6 +15,8 @@
     <Compile Include="../../SteamLinkVRSettings/Frame/FrameReconnectRecovery.cs" Link="FrameReconnectRecovery.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/StreamCodecStatus.cs" Link="StreamCodecStatus.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/CodecController.cs" Link="CodecController.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/FrameAddress.cs" Link="FrameAddress.cs" />
+    <Compile Include="../../SteamLinkVRSettings/Frame/FrameCredentialStore.cs" Link="FrameCredentialStore.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/PairedCodecIdentity.cs" Link="PairedCodecIdentity.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/AdvancedEncoding.cs" Link="AdvancedEncoding.cs" />
     <Compile Include="../../SteamLinkVRSettings/Frame/AdvancedDriverSettings.cs" Link="AdvancedDriverSettings.cs" />

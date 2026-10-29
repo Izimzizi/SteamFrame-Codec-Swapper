@@ -87,7 +87,7 @@ public sealed partial class FramePage
             else driver.Remove(definition.Key);
         }
         var video = new Dictionary<string, JsonElement>(_pendingPreset?.Video ?? saved.Video) { [OpenVrSettings.SupersampleFilteringKey] = JsonSerializer.SerializeToElement(SupersampleFilteringInput.IsOn) };
-        var fps = CodecRefreshInput.SelectedIndex == 1 ? 120 : 90;
+        var fps = LegacyRefreshHz;
         video["preferredRefreshRate"] = JsonSerializer.SerializeToElement(fps);
         var profile = saved with
         {
@@ -109,7 +109,7 @@ public sealed partial class FramePage
         {
             CodecSelectionInput.SelectedIndex = (int)profile.Codec;
             BitrateInput.Maximum = CodecSwitchRequest.MaximumMbpsFor(profile.Codec); BitrateInput.Value = profile.TargetMbps;
-            CodecRefreshInput.SelectedIndex = profile.Fps == 120 ? 1 : 0;
+            SelectRefresh(profile.Fps);
             ShowSupersampleValue(videoValues.TryGetValue(OpenVrSettings.SupersampleFilteringKey, out var filtering) && filtering is true, "Preset value");
             bool Bool(string key, bool fallback) => values.TryGetValue(key, out var value) && value is bool b ? b : fallback;
             AutomaticInput.IsOn = Bool("automaticBandwidth", true); MultipleLinksInput.IsOn = Bool("allowMultipleLinks", false); AmfInput.IsOn = Bool("enableAmfEncoder", false);

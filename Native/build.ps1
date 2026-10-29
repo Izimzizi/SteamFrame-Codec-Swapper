@@ -12,7 +12,7 @@ if (-not $toolset) { throw 'No MSVC toolset found.' }
 if (-not $WindowsSdkRoot) { $WindowsSdkRoot = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots').KitsRoot10 }
 $sdk = Get-ChildItem -LiteralPath (Join-Path $WindowsSdkRoot 'Include') -Directory |
     Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'um\Windows.h')) -and (Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt\stdio.h')) } |
-    Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    Sort-Object { $_.Name -like '10.0.26100*' }, { [version]$_.Name } -Descending | Select-Object -First 1 # SDK 26100 first: the newest preview SDK breaks the NVENC policy tests
 if (-not $sdk) { throw 'No complete Windows SDK found.' }
 $compilerDirectory = Join-Path $toolset.FullName 'bin\Hostx64\x64'
 $compiler = Join-Path $compilerDirectory 'cl.exe'

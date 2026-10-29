@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace SteamLinkVRSettings.Frame;
 
-public sealed record CodecSwitchRequest(StreamCodec Codec, int TargetMbps = 100, int Fps = 90)
+public sealed record CodecSwitchRequest(StreamCodec Codec, int TargetMbps = 100, int Fps = 90, bool FixedBitrate = false)
 {
     public string CodecName => Codec switch { StreamCodec.Hevc => "HEVC", StreamCodec.Av1 => "AV1", StreamCodec.H264 => "H.264", _ => throw new ArgumentOutOfRangeException(nameof(Codec)) };
     public static int MaximumMbpsFor(StreamCodec codec) => codec switch
@@ -17,7 +17,7 @@ public sealed record CodecSwitchRequest(StreamCodec Codec, int TargetMbps = 100,
     {
         _ = CodecName;
         if (TargetMbps < 25 || TargetMbps > MaximumMbpsFor(Codec)) throw new ArgumentOutOfRangeException(nameof(TargetMbps), $"Choose a {CodecName} target from 25 to {MaximumMbpsFor(Codec)} Mbps.");
-        if (Fps is not (90 or 120)) throw new ArgumentOutOfRangeException(nameof(Fps), "Choose 90 or 120 Hz.");
+        if (Fps is not (0 or 72 or 80 or 90 or 120)) throw new ArgumentOutOfRangeException(nameof(Fps), "Choose Keep current, 72, 80, 90 or 120 Hz.");
     }
 }
 
@@ -34,6 +34,13 @@ public sealed record CodecServiceStatus
     [JsonPropertyName("last_result")] public CodecOperationResult? LastResult { get; init; }
     [JsonPropertyName("target_mbps")] public int TargetMbps { get; init; }
     [JsonPropertyName("fps")] public int Fps { get; init; }
+    [JsonPropertyName("fixed_bitrate")] public bool FixedBitrate { get; init; }
+    /// <summary>The session keeps the display refresh rate as it is instead of setting one.</summary>
+    [JsonPropertyName("refresh_kept")] public bool RefreshKept { get; init; }
+    /// <summary>H.264 stays applied across SteamVR restarts until it is closed.</summary>
+    [JsonPropertyName("keep")] public bool Keep { get; init; }
+    /// <summary>The bitrate can change without restarting SteamVR (see <see cref="CodecController.SetRateAsync"/>).</summary>
+    [JsonPropertyName("rate_live")] public bool RateLive { get; init; }
     [JsonPropertyName("maximum_h264_mbps")] public int MaximumH264Mbps { get; init; } = 200;
     [JsonIgnore] public bool Live { get; init; }
     [JsonIgnore] public bool CanStart { get; init; }
@@ -83,7 +90,7 @@ public sealed class CodecController
             var status = JsonSerializer.Deserialize<CodecServiceStatus>(stream) ?? throw new InvalidDataException("Codec status is empty.");
             if (status.ProtocolVersion != 1 || status.OwnerPid <= 0 || !double.IsFinite(status.OwnerCreatedEpoch) || !double.IsFinite(status.UpdatedEpoch) ||
                 status.MaximumH264Mbps is < 25 or > 500 ||
-                status.State is not ("starting" or "switching" or "ready" or "error" or "closed") ||
+                status.State is not ("starting" or "switching" or "ready" or "waiting" or "error" or "closed") ||
                 status.ActiveCodec is not ("HEVC" or "AV1" or "H.264" or "Unknown"))
                 throw new InvalidDataException("Codec status is incompatible.");
             var created = _ownerCreation(status.OwnerPid);
@@ -129,9 +136,12 @@ public sealed class CodecController
     }
 
     public async Task<CodecServiceStatus> SwitchAsync(CodecSwitchRequest request, FramePreferences preferences,
-        string? password, IProgress<CodecServiceStatus>? progress = null, CancellationToken cancellationToken = default)
+        string? password, IProgress<CodecServiceStatus>? progress = null, CancellationToken cancellationToken = default,
+        bool keep = false, bool resume = false)
     {
         request.Validate();
+        if ((keep || resume) && request.Codec != StreamCodec.H264) throw new InvalidOperationException("Keeping a codec across SteamVR restarts is only available for H.264.");
+        if (resume && !keep) throw new InvalidOperationException("Only a kept session can resume.");
         await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -152,7 +162,7 @@ public sealed class CodecController
             await WriteAtomicAsync(configPath, new { protocol_version = 1, initial_codec = request.CodecName,
                 steam_root = _steamPaths.SteamRoot, steamvr_root = _steamPaths.SteamVrRoot,
                 ssh_host = preferences.SshHost, ssh_key = Path.GetFullPath(preferences.SshKey), ssh_known_hosts = Path.GetFullPath(preferences.SshKnownHosts),
-                target_mbps = request.TargetMbps, fps = request.Fps }, cancellationToken).ConfigureAwait(false);
+                target_mbps = request.TargetMbps, fps = request.Fps, fixed_bitrate = request.FixedBitrate, keep, resume }, cancellationToken).ConfigureAwait(false);
             var info = CreateStartInfo(_runtimeDirectory, _sessionDirectory, configPath);
             _ownedProcess?.Dispose();
             _ownedProcess = Process.Start(info) ?? throw new InvalidOperationException("The codec service did not start.");
@@ -180,7 +190,22 @@ public sealed class CodecController
             var status = ReadStatus();
             if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation before restoring HEVC." : status.Message);
             return await SendAsync("close", new(StreamCodec.Hevc, status.TargetMbps is >= 25 and <= 500 ? status.TargetMbps : 100,
-                status.Fps is 90 or 120 ? status.Fps : 90), status, progress, cancellationToken).ConfigureAwait(false);
+                status.Fps is 0 or 72 or 80 or 90 or 120 ? status.Fps : 90), status, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
+    }
+
+    /// <summary>Changes only the H.264 bitrate of a live session; the supervisor refuses it when a restart would be needed.</summary>
+    public async Task<CodecServiceStatus> SetRateAsync(int targetMbps, IProgress<CodecServiceStatus>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (targetMbps is < 25 or > 500) throw new ArgumentOutOfRangeException(nameof(targetMbps), "Choose 25-500 Mbps.");
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var status = ReadStatus();
+            if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation to finish." : status.Message);
+            if (!status.RateLive) throw new InvalidOperationException("This session cannot change its bitrate without restarting SteamVR.");
+            return await SendAsync("rate", new(StreamCodec.H264, targetMbps, 0), status, progress, cancellationToken).ConfigureAwait(false);
         }
         finally { _operations.Release(); }
     }
@@ -195,8 +220,10 @@ public sealed class CodecController
         var current = ReadStatus();
         if (!current.Live || current.OwnerPid != owner.OwnerPid || current.OwnerCreatedEpoch != owner.OwnerCreatedEpoch || current.Busy)
             throw new InvalidOperationException("Codec service ownership or state changed before the switch. No request was sent.");
-        await WriteAtomicAsync(Path.Combine(directory, $"request-{id}.json"), new { protocol_version = 1, id, action,
-            codec = request.CodecName, target_mbps = request.TargetMbps, fps = request.Fps }, cancellationToken).ConfigureAwait(false);
+        object body = action == "rate"
+            ? new { protocol_version = 1, id, action, target_mbps = request.TargetMbps }
+            : new { protocol_version = 1, id, action, codec = request.CodecName, target_mbps = request.TargetMbps, fps = request.Fps, fixed_bitrate = request.FixedBitrate };
+        await WriteAtomicAsync(Path.Combine(directory, $"request-{id}.json"), body, cancellationToken).ConfigureAwait(false);
         return await WaitAsync(id, owner.OwnerPid, progress, cancellationToken, action == "close", owner.OwnerCreatedEpoch).ConfigureAwait(false);
     }
 
@@ -214,7 +241,7 @@ public sealed class CodecController
                 status.OperationId == operation && status.State == "closed" && status.LastResult is { Ok: true }) return status;
             if (status.Live && status.OwnerPid == ownerPid)
             {
-                if (operation is null && status.State == "ready") return status;
+                if (operation is null && status.State is "ready" or "waiting") return status;
                 if (operation is null && status.State == "error") throw new InvalidOperationException(SafeMessage(status.Message));
                 if (operation is not null && status.OperationId == operation && status.LastResult is { } result && !status.Busy)
                 {
@@ -244,8 +271,8 @@ public sealed class CodecController
 
     internal static void ValidateConnection(FramePreferences preferences)
     {
-        if (preferences.SshHost != "10.35.78.1") throw new InvalidOperationException("Configure the Frame's trusted dedicated dongle SSH connection (10.35.78.1) under Connection setup first.");
-        if (!File.Exists(preferences.SshKey) || !File.Exists(preferences.SshKnownHosts)) throw new InvalidOperationException("The trusted SteamOS Devkit key and known-hosts files are required. Pair the Frame before switching codecs.");
+        if (!FrameAddress.IsValid(preferences.SshHost)) throw new InvalidOperationException("Set the Frame's address (its hostname, normally frame, or an IP address) first.");
+        if (!File.Exists(preferences.SshKey) || !File.Exists(preferences.SshKnownHosts)) throw new InvalidOperationException("The SteamOS Devkit key and the Frame's pinned host key are required. Run the setup check, or pair the Frame first.");
     }
 
     private static async Task WriteAtomicAsync(string path, object value, CancellationToken cancellationToken)
