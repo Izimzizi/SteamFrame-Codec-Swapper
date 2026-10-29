@@ -1,5 +1,5 @@
 """Pure contract tests; never controls a real Frame or SteamVR process."""
-import json,os,pathlib,sys,tempfile,threading,unittest,uuid
+import contextlib,json,os,pathlib,sys,tempfile,threading,unittest,uuid
 from unittest.mock import MagicMock,Mock,patch
 import codec_supervisor as service
 class CodecProtocolTests(unittest.TestCase):
@@ -195,12 +195,13 @@ class KeepModeTests(unittest.TestCase):
   self.assertEqual(order[1:3],['frame','cef-start']);self.assertEqual(order[3],('verify',(300,72)))
   self.assertFalse(instance.stopping)
  def test_failed_reapply_restores_stock_and_ends_the_session(self):
-  instance=self.make()
-  with patch.object(instance,'update'),patch.object(instance,'current_refresh',return_value=72),patch.object(service.time,'sleep'),\
-       patch.object(instance,'start_server',side_effect=RuntimeError('no hook')),patch.object(instance,'recover') as recover:
+  instance=self.make();instance.directory=pathlib.Path(tempfile.mkdtemp())
+  with patch.object(instance,'update'),patch.object(instance,'current_refresh',return_value=72),patch.object(service.time,'sleep'),       patch.object(instance,'start_server',side_effect=RuntimeError('no hook')) as start,patch.object(instance,'recover') as recover:
    instance.reapply()
   recover.assert_called_once();self.assertTrue(instance.stopping);self.assertIsNone(instance.applied)
-  self.assertIn('session ended',instance.closing_message)
+  self.assertEqual(start.call_count,3)  # SteamVR may still be starting, so install is tried again before giving up
+  self.assertIn('session ended',instance.closing_message);self.assertIn('no hook',instance.closing_message)
+  self.assertEqual(json.loads((instance.directory/'reapply-failure.json').read_text())['error'],'no hook')
  def test_ensure_frame_mounts_the_client_after_a_frame_restart(self):
   instance=self.make();actions=[]
   def action(name):
@@ -406,3 +407,21 @@ class LiveRateTests(unittest.TestCase):
   for target in (24,501,350.0,None,'350'):
    with self.assertRaises(ValueError):service.validate_request(dict(request,target_mbps=target))
 if __name__=='__main__':unittest.main()
+
+
+class HistoryLogTests(unittest.TestCase):
+ def test_state_changes_are_kept_in_a_short_history_and_repeats_are_not(self):
+  instance=object.__new__(service.Supervisor)
+  instance.directory=pathlib.Path(tempfile.mkdtemp());instance.phase='verifying hardware stream'
+  instance.log('re-apply attempt 1 failed (verifying hardware stream): no decoder users')
+  instance.log_last=None
+  instance.status={'state':'waiting','active_codec':'Unknown','message':'SteamVR closed.'}
+  with instance_mutex(instance),patch.object(service.Supervisor,'rate_available',return_value=False),patch.object(service.Supervisor,'automatic_bandwidth',return_value=False):
+   instance.update();instance.update()
+  lines=(instance.directory/'supervisor.log').read_text().splitlines()
+  self.assertEqual(len(lines),2);self.assertIn('no decoder users',lines[0]);self.assertIn('state waiting / Unknown: SteamVR closed.',lines[1])
+
+
+def instance_mutex(instance):
+ instance.mutex=threading.RLock()
+ return contextlib.nullcontext()

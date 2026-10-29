@@ -34,6 +34,7 @@ public sealed class StatsSampler
     private readonly Func<Task<EncoderSnapshot>> _startMonitor;
     private readonly Func<DateTimeOffset> _now;
     private readonly Func<Task<HealthReading?>>? _health;
+    private readonly Func<bool>? _monitorAllowed;
     private readonly RateTracker _rate = new();
     private readonly List<double?> _history = [];
     private int _monitorPid;
@@ -41,9 +42,9 @@ public sealed class StatsSampler
     private string? _monitorNote;
     private (string Generation, ulong Sum, ulong Samples)? _qp;
 
-    public StatsSampler(Func<Task<EncoderSnapshot>> read, Func<Task<EncoderSnapshot>> startMonitor, Func<DateTimeOffset>? now = null, Func<Task<HealthReading?>>? health = null)
+    public StatsSampler(Func<Task<EncoderSnapshot>> read, Func<Task<EncoderSnapshot>> startMonitor, Func<DateTimeOffset>? now = null, Func<Task<HealthReading?>>? health = null, Func<bool>? monitorAllowed = null)
     {
-        _read = read; _startMonitor = startMonitor; _now = now ?? (() => DateTimeOffset.UtcNow); _health = health;
+        _read = read; _startMonitor = startMonitor; _now = now ?? (() => DateTimeOffset.UtcNow); _health = health; _monitorAllowed = monitorAllowed;
     }
 
     /// <summary>The most recent Mbps readings, oldest first; null entries are gaps.</summary>
@@ -116,6 +117,8 @@ public sealed class StatsSampler
             if (snapshot.Installed) _monitorNote = null;
             return snapshot;
         }
+        // While armed the paired H.264 hook is about to be installed, and it refuses to share SteamVR with the HEVC monitor.
+        if (_monitorAllowed is not null && !_monitorAllowed()) return snapshot;
         var now = _now();
         if (_monitorPid == snapshot.ProcessId && now < _nextMonitorAttempt) return snapshot;
         _monitorPid = snapshot.ProcessId; _nextMonitorAttempt = now + MonitorRetry;

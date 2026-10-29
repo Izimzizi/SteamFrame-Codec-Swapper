@@ -45,7 +45,7 @@ public sealed class TrayApp : ApplicationContext
         _liveBitrate = new LiveBitrate(_paths);
         _controller = new TrayController(new CodecServiceAdapter(_codec), new CredentialVault(new FrameCredentialStore()), _patch, _preferences, () => _preferences.SaveAsync(TrayData.SettingsPath), _liveBitrate);
         _setup = new SetupCheck(new ProcessRunner(), _preferences, () => _preferences.SaveAsync(TrayData.SettingsPath), new CredentialVault(new FrameCredentialStore()), SetupEnvironment.ForThisPc(_paths, Path.Combine(AppContext.BaseDirectory, "CodecLab")), _patch);
-        _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: new HealthReader(_paths, TrayData.DiagnosticsDirectory).ReadAsync), () => _controller.Current);
+        _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: new HealthReader(_paths, TrayData.DiagnosticsDirectory).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed), () => _controller.Current);
         _stats = new StatsForm(_statsService);
         _menuSlider = new MenuBitrateSlider(_bitrateLabel, mbps => RunAsync(() => ChangeTargetAsync(mbps)));
         BuildMenu();

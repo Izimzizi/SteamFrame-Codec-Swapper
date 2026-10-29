@@ -23,9 +23,18 @@ try {
     $probe = Join-Path $PSScriptRoot 'Native\build\SteamFrameEncoderProbe.dll'
     if (-not (Test-Path -LiteralPath $probe)) { & (Join-Path $PSScriptRoot 'Native\build.ps1') -SkipTests }
 
+    # Start clean so files from an earlier layout (loose runtime DLLs, language folders) cannot linger.
+    if (Test-Path -LiteralPath $out) { Get-ChildItem -LiteralPath $out -Force | Remove-Item -Recurse -Force }
+
     # CodecLabSource is pointed at nothing so publish does not copy a second, partial CodecLab.
-    & dotnet publish (Join-Path $PSScriptRoot 'SteamFrameTray\SteamFrameTray.csproj') -c Release -r win-x64 --self-contained $($SelfContained.ToString().ToLower()) "-p:CodecLabSource=$(Join-Path $out '_none_')" -o $out --nologo
+    # Single-file keeps the .NET runtime inside SteamFrameTray.exe, so the package root is just the exe, CodecLab and Native.
+    & dotnet publish (Join-Path $PSScriptRoot 'SteamFrameTray\SteamFrameTray.csproj') -c Release -r win-x64 --self-contained $($SelfContained.ToString().ToLower()) "-p:CodecLabSource=$(Join-Path $out '_none_')" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:DebugType=none -o $out --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+
+    # Single-file publish bundles the probe DLL into the exe; the tray needs it as a real file under Native\.
+    $native = Join-Path $out 'Native'
+    New-Item -ItemType Directory -Path $native -Force | Out-Null
+    Copy-Item -LiteralPath $probe -Destination $native -Force
 
     $lab = Join-Path $out 'CodecLab'
     if (Test-Path -LiteralPath $lab) { Remove-Item -LiteralPath $lab -Recurse -Force }

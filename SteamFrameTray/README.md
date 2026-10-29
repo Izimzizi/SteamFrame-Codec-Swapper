@@ -22,7 +22,7 @@ The tray only writes the bitrate (and the 1024 stream width H.264 needs). Refres
 ## First-time setup
 
 1. On the Frame: turn on Developer Mode and set a user password (Developer -> Set User Password).
-2. Extract the whole zip and run `SteamFrameTray.exe` (it is unsigned, so Windows SmartScreen may warn: More info -> Run anyway).
+2. Extract the whole zip (it holds `SteamFrameTray.exe` plus the `CodecLab` and `Native` folders, which must stay beside it) and run `SteamFrameTray.exe` (it is unsigned, so Windows SmartScreen may warn: More info -> Run anyway).
 3. The **Setup / connection check** opens by itself. Address is `frame` over Wi-Fi, or `10.35.78.1` with the dongle.
    It shows the Frame's host key fingerprint for you to trust once, creates this app's own SSH key, and asks for the
    Frame password once to authorize that key on the Frame (one line added to `~/.ssh/authorized_keys`). The password is

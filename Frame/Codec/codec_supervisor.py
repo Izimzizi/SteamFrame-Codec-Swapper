@@ -106,6 +106,8 @@ def codec_host_values(target):
 class Supervisor:
  resume=False;restore_only=False;password=None;applied=None;frame_mounted=False
  closing_message=None;next_attempt=0
+ log_last=None
+ verify_seconds=20  # how long a new stream may take to start; a user-started SteamVR needs longer
  live_rate=False  # the NVENC hook was installed uncapped, so SteamVR's own live bitrate drives the encoder
  automatic_cache=(0.0,False)
  def __init__(self,directory,config):
@@ -158,9 +160,20 @@ class Supervisor:
    except (OSError,ValueError):value=self.automatic_cache[1]
    self.automatic_cache=(now,value)
   return self.automatic_cache[1]
+ def log(self,text):
+  """A short history of what the session did and why, kept beside status.json (UTC times)."""
+  directory=getattr(self,'directory',None)
+  if directory is None:return
+  try:
+   path=directory/'supervisor.log'
+   if path.exists() and path.stat().st_size>300000:path.replace(directory/'supervisor.log.1')
+   with open(path,'a',encoding='utf-8') as handle:handle.write(time.strftime('%H:%M:%S',time.gmtime())+' '+text+chr(10))
+  except OSError:pass
  def update(self,**values):
   with self.mutex:
    self.status.update(values);self.status['updated_epoch']=time.time()
+   mark=(self.status.get('state'),self.status.get('active_codec'),self.status.get('message'))
+   if mark!=self.log_last:self.log('state '+str(mark[0])+' / '+str(mark[1])+': '+str(mark[2])+' [phase '+str(getattr(self,'phase',''))+']');self.log_last=mark
    try:self.status['rate_live']=self.rate_available()
    except Exception:self.status['rate_live']=False
    self.status['automatic_bandwidth']=self.automatic_bandwidth()
@@ -276,7 +289,7 @@ class Supervisor:
    driver.update(applied);atomic_json(path,data)
  def start_server(self,fps,launch=True,hook=True):
   if launch:subprocess.Popen([str(self.steam/'steam.exe'),'-applaunch','250820'],creationflags=subprocess.CREATE_NO_WINDOW)
-  deadline=time.monotonic()+25
+  deadline=time.monotonic()+25;detail='SteamVR did not appear'
   while time.monotonic()<deadline:
    pid=self.server_pid()
    if pid:
@@ -288,12 +301,13 @@ class Supervisor:
      'install',str(budget*1000000),str(budget*1000000),'0',str(fps),'2',self.rate_control,str(self.preset),str(self.vbv)],
      capture_output=True,text=True,timeout=12,creationflags=subprocess.CREATE_NO_WINDOW)
     if not p.returncode:self.pid=pid;self.watch=ProcessWatch(pid);self.live_rate=True;return
+    detail=((p.stdout or '').strip()+' '+(p.stderr or '').strip()).strip() or 'no output'
     try:
      code=json.loads(p.stdout).get('code')
-     if code not in (11,None):raise RuntimeError('PC codec installation rejected; incompatible monitor or encoder.')
+     if code not in (11,None):raise RuntimeError('PC codec installation rejected (hook code '+str(code)+('; the HEVC monitor is loaded in SteamVR' if code==18 else '')+').')
     except json.JSONDecodeError:pass
    time.sleep(.1)
-  raise RuntimeError('PC codec installation timed out.')
+  raise RuntimeError('PC codec installation timed out: '+detail[:200])
  def stats(self,action='stats'):
   return json.loads(self.command([self.backend/'hook_control.exe',self.pid,self.backend/'SteamFrameH264Hook.dll',action],timeout=12))
  def check_encoder_errors(self,state,target,fps):
@@ -306,7 +320,7 @@ class Supervisor:
    ' fps. See encoder-failure.json in the codec session directory.')
  def switch(self,target,operation_id=''):
   """Restart SteamVR with H.264: stop the stream and SteamVR, mount the Frame client, write the settings, start SteamVR hooked."""
-  validate_target(target)
+  validate_target(target);self.verify_seconds=20
   fps=self.current_refresh()
   self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,
    message='Reconnecting SteamVR and the Frame with matching codecs.')
@@ -346,17 +360,19 @@ class Supervisor:
   if self.applied:self.applied=target
   self.update(target_mbps=target,operation_id=operation_id,last_result={'ok':True})
  def verify_stream(self,target,fps):
-  deadline=time.monotonic()+20;ready=False
+  deadline=time.monotonic()+self.verify_seconds;ready=False;seen='no receiver reading'
   while time.monotonic()<deadline:
    receiver=self.action('inventory')
+   seen='Frame decoder '+str(receiver.get('current_driver'))+', '+str(receiver.get('open_decoder_users'))+' decoder user(s)'
    if receiver['current_driver']=='qcom-iris' and receiver['open_decoder_users']:
     state=self.stats();identity=self.stats('identity')
+    seen+='; encoder initializes '+str(state.get('initializes'))+', frames '+str(state.get('locks'))+', source '+str(state.get('source_fps_num'))+'/'+str(state.get('source_fps_den'))+', expected '+str(fps)+' Hz'
     self.check_encoder_errors(state,target,fps)
     if state['initializes'] and state['locks'] and identity['codec']=='H.264' and state['source_fps_num']==fps*state['source_fps_den']:
      before=state['locks'];time.sleep(.5)
      if self.stats()['locks']>before:ready=True;break
    time.sleep(.5)
-  if not ready:raise RuntimeError('Matching hardware stream did not start.')
+  if not ready:raise RuntimeError('Matching hardware stream did not start ('+seen+').')
  def recover(self,restart=True):
   """Restore the stock Frame client and the user's own stream settings.
 
@@ -422,7 +438,8 @@ class Supervisor:
  def reapply(self):
   target=self.applied
   self.update(state='switching',active_codec='Unknown',message='SteamVR started; re-applying H.264.')
-  for attempt in range(2):
+  failure='';self.verify_seconds=45
+  for attempt in range(3):
    try:
     rate=self.current_refresh()
     # Hook the encoder first so a Frame that connects early still gets the matching stream.
@@ -435,10 +452,12 @@ class Supervisor:
     self.update(state='ready',active_codec='H.264',target_mbps=target,fps=rate,stream_pid=self.pid,
      message='H.264 re-applied after SteamVR restarted.',last_result={'ok':True})
     return
-   except Exception:
-    if attempt==0:time.sleep(3)
+   except Exception as error:
+    failure=str(error);self.log('re-apply attempt '+str(attempt+1)+' failed ('+self.phase+'): '+failure[:300])
+    atomic_json(self.directory/'reapply-failure.json',{'observed_epoch':time.time(),'phase':self.phase,'attempt':attempt+1,'error':failure[:400]})
+    if attempt<2:time.sleep(5)
   # Never leave a patched Frame client facing an unhooked SteamVR: restore everything and end the session.
-  self.closing_message='H.264 could not be re-applied ('+self.phase+'). Stock HEVC was restored and the session ended.'
+  self.closing_message='H.264 could not be re-applied ('+self.phase+(': '+failure[:160] if failure else '')+'). Stock HEVC was restored and the session ended.'
   self.applied=None;self.stopping=True
   self.update(keep=False)
   self.recover()
