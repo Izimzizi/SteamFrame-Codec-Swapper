@@ -440,7 +440,7 @@ class LiveEncoderTests(LiveRateTests):
  def test_new_options_are_queued_on_the_resident_hook_with_the_current_rate(self):
   instance=self.make()
   done=Mock(returncode=0,stdout='{"code":0}',stderr='')
-  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(instance,'restream') as restream,patch.object(service.subprocess,'run',return_value=done) as run:
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(instance,'restream') as restream,patch.object(instance,'hook_counter',return_value=1),patch.object(instance,'hook_identity',return_value='x'),patch.object(service.subprocess,'run',return_value=done) as run:
    instance.set_encoder('cbr',4,2,'op')
   args=run.call_args.args[0]
   self.assertEqual(args[1],'7');self.assertEqual(args[3:],['configure','500000000','500000000','0','72','2','cbr','4','2'])
