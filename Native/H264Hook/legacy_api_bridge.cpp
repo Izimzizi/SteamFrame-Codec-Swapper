@@ -339,7 +339,7 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
  output->last=on;
  NVENCSTATUS status;
  if(on){
-  status=static_cast<NVENCSTATUS>(StockEncode(session->stock,source,eos?nullptr:mapped->real,real_output,extra_flags));++switch_info.stock_encodes;
+  status=static_cast<NVENCSTATUS>(StockEncode(session->stock,source,eos?nullptr:mapped->real,real_output,extra_flags));++switch_info.stock_encodes;++stats.encodes;
   if(status!=NV_ENC_SUCCESS&&status!=NV_ENC_ERR_NEED_MORE_INPUT){++stats.errors;++switch_info.stock_errors;}
   return status;
  }
@@ -372,7 +372,8 @@ NVENCSTATUS NVENCAPI lock_output(void* encoder,NV_ENC_LOCK_BITSTREAM* source){
  if(output->last==1&&stock&&output->stock){
   // Stock HEVC: the driver's own structure, filled in place.
   const auto result=static_cast<NVENCSTATUS>(StockLock(stock,source,output->stock));
-  std::lock_guard<std::mutex> lock(mutex);if(result==NV_ENC_SUCCESS)++switch_info.stock_locks;else{++stats.errors;++switch_info.stock_errors;}
+  std::lock_guard<std::mutex> lock(mutex);
+  if(result==NV_ENC_SUCCESS){++switch_info.stock_locks;++stats.locks;stats.bytes+=source->bitstreamSizeInBytes;}else{++stats.errors;++switch_info.stock_errors;}
   return result;
  }
  // Only the audited common request/result prefix is accessed in the legacy
@@ -468,7 +469,7 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  if(!output||output->size!=sizeof(HookTrialIdentity)||output->version!=1)return -1;
  std::lock_guard<std::mutex> lock(mutex);
  // The identity layout is shared with the managed reader: codec 2 is H.264, the only codec this hook produces.
- *output={sizeof(HookTrialIdentity),1,2,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};return 0;
+ *output={sizeof(HookTrialIdentity),1,active_mode==1?3u:2u,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};return 0;
 }
 
 extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory){

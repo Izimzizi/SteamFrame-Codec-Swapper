@@ -43,10 +43,12 @@ void write(HANDLE process,Remote& buffer,const void* data,size_t size){
 }
 int wmain(int argc,wchar_t** argv){
  try{
-  if(argc!=4&&argc!=7&&argc!=8&&argc!=12)throw std::runtime_error("Use hook_control PID DLL install|configure|stats|identity|remove [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]");
+  if(argc!=4&&argc!=5&&argc!=7&&argc!=8&&argc!=12)throw std::runtime_error("Use hook_control PID DLL install|configure|stats|identity|switch-info|remove, or mode h264|stock [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]");
   const auto pid=std::stoul(argv[1]);const auto path=std::filesystem::canonical(argv[2]).wstring();const std::wstring action=argv[3];
-  if(action!=L"install"&&action!=L"configure"&&action!=L"stats"&&action!=L"remove"&&action!=L"identity")throw std::runtime_error("Unknown trial action");
+  if(action!=L"install"&&action!=L"configure"&&action!=L"stats"&&action!=L"remove"&&action!=L"identity"&&action!=L"mode"&&action!=L"switch-info")throw std::runtime_error("Unknown trial action");
   HookTrialConfig config{sizeof(config),5,100000000,115000000,0,120,0,2,1};
+  if(action==L"mode"&&argc!=5)throw std::runtime_error("Use hook_control PID DLL mode h264|stock");
+  if(argc==5&&action!=L"mode")throw std::runtime_error("Only mode takes one argument");
   if(argc>=7){
    if(action!=L"install"&&action!=L"configure")throw std::runtime_error("Budget arguments require install or configure");
    auto number=[](const wchar_t* input){size_t count=0;const auto value=std::stoull(input,&count);if(count!=wcslen(input)||value>UINT32_MAX)throw std::runtime_error("Invalid budget argument");return static_cast<uint32_t>(value);};
@@ -81,15 +83,23 @@ int wmain(int argc,wchar_t** argv){
    if(!remote)throw std::runtime_error("Trial DLL did not load");
   }
   const auto local=LoadLibraryExW(path.c_str(),nullptr,DONT_RESOLVE_DLL_REFERENCES);if(!local)throw std::runtime_error("Trial exports unavailable");
-  const char* name=action==L"install"?"HookInstallTrial":action==L"configure"?"HookReconfigure":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
+  const char* name=action==L"mode"?"HookSwitchMode":action==L"switch-info"?"HookReadSwitchInfo":action==L"install"?"HookInstallTrial":action==L"configure"?"HookReconfigure":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
   const auto symbol=GetProcAddress(local,name);if(!symbol)throw std::runtime_error("Required trial export missing");
   auto address=reinterpret_cast<uint8_t*>(remote)+(reinterpret_cast<uint8_t*>(symbol)-reinterpret_cast<uint8_t*>(local));
   DWORD result=0;
-  if(action==L"identity"){
+  if(action==L"mode"||action==L"switch-info"){
+   HookSwitchInfo info{sizeof(info),1};
+   if(action==L"mode"){const std::wstring wanted=argv[4];if(wanted!=L"h264"&&wanted!=L"stock")throw std::runtime_error("Mode is h264 or stock");info.mode=wanted==L"stock"?1:0;}
+   Remote argument(process.value,sizeof(info));write(process.value,argument,&info,sizeof(info));
+   result=call(process.value,address,&argument);SIZE_T read=0;
+   if(!ReadProcessMemory(process.value,argument.address,&info,sizeof(info),&read)||read!=sizeof(info))throw std::runtime_error("Switch state unavailable");
+   std::cout<<"{\"pid\":"<<pid<<",\"code\":"<<result<<",\"mode\":\""<<(info.mode==1?"stock":"h264")<<"\",\"sessions\":"<<info.sessions<<",\"stock_sessions\":"<<info.stock_sessions
+    <<",\"switches\":"<<info.switches<<",\"stock_encodes\":"<<info.stock_encodes<<",\"stock_locks\":"<<info.stock_locks<<",\"stock_errors\":"<<info.stock_errors<<",\"last_stock_status\":"<<info.last_stock_status<<"}\n";
+  }else if(action==L"identity"){
    HookTrialIdentity identity{sizeof(identity),1};Remote argument(process.value,sizeof(identity));write(process.value,argument,&identity,sizeof(identity));
    result=call(process.value,address,&argument);SIZE_T read=0;
    if(result||!ReadProcessMemory(process.value,argument.address,&identity,sizeof(identity),&read)||read!=sizeof(identity))throw std::runtime_error("Codec identity unavailable");
-   std::cout<<"{\"codec\":\""<<(identity.codec==2?"H.264":"Unknown")<<"\",\"fps\":"<<identity.fps<<",\"average_bps\":"<<identity.average_bps<<",\"peak_bps\":"<<identity.peak_bps<<",\"rate_control\":\""<<(identity.rate_control?"cbr":"vbr")<<"\",\"preset\":"<<identity.preset<<",\"vbv_frames\":"<<identity.vbv_frames<<"}\n";
+   std::cout<<"{\"codec\":\""<<(identity.codec==2?"H.264":identity.codec==3?"HEVC":"Unknown")<<"\",\"fps\":"<<identity.fps<<",\"average_bps\":"<<identity.average_bps<<",\"peak_bps\":"<<identity.peak_bps<<",\"rate_control\":\""<<(identity.rate_control?"cbr":"vbr")<<"\",\"preset\":"<<identity.preset<<",\"vbv_frames\":"<<identity.vbv_frames<<"}\n";
   }else if(action==L"stats"){
    HookBridgeStats stats{sizeof(stats),1};Remote argument(process.value,sizeof(stats));write(process.value,argument,&stats,sizeof(stats));
    result=call(process.value,address,&argument);SIZE_T read=0;

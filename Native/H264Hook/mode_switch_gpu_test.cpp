@@ -119,7 +119,7 @@ int main(int argc,char** argv){
   if(HookGetLegacySwitchInfo(&info)||info.stock_encodes!=stock_expected||info.stock_locks!=stock_expected||info.switches!=switches||info.stock_errors)
    throw std::runtime_error("Counters disagree: stock encodes "+std::to_string(info.stock_encodes)+" of "+std::to_string(stock_expected)+", errors "+std::to_string(info.stock_errors)+", last status "+std::to_string(info.last_stock_status));
   HookBridgeStats stats{sizeof(stats),1};
-  if(HookGetLegacyBridgeStats(&stats)||stats.errors||stats.encodes+info.stock_encodes!=frames)throw std::runtime_error("The H.264 side saw errors or the wrong frame count");
+  if(HookGetLegacyBridgeStats(&stats)||stats.errors||stats.encodes!=frames)throw std::runtime_error("The H.264 side saw errors or the wrong frame count");
   check(api.nvEncDestroyBitstreamBuffer(encoder,output),"destroy output");output=nullptr;
   check(api.nvEncUnregisterResource(encoder,registered),"unregister");registered=nullptr;
   if(async){NV_ENC_EVENT_PARAMS p{};p.version=NV_ENC_EVENT_PARAMS_VER;p.completionEvent=event;check(api.nvEncUnregisterAsyncEvent(encoder,&p),"legacy event unregister");}

@@ -18,6 +18,9 @@ static NVENCSTATUS NVENCAPI intercept(NV_ENCODE_API_FUNCTION_LIST* table){
  GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                    reinterpret_cast<LPCWSTR>(_ReturnAddress()),&caller);
  if(caller==driver&&table&&table->version==NV_ENCODE_API_FUNCTION_LIST_VER){
+  // The driver's own SDK 11.1 encoder, which the bridge opens beside the H.264 one so the codec can change while SteamVR runs.
+  NV_ENCODE_API_FUNCTION_LIST stock{};stock.version=table->version;
+  if(original(&stock)==NV_ENC_SUCCESS)HookProvideStockTable(&stock,sizeof(stock),reinterpret_cast<void*>(original));
   const auto status=HookCreateLegacyFunctionTable(table,sizeof(*table),budget.average_bps,budget.peak_bps);
   return status==0?NV_ENC_SUCCESS:NV_ENC_ERR_INVALID_VERSION;
  }
@@ -56,6 +59,19 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookReconfigure(void* argument){
  if(HookQueueLegacyEncoder(requested.rate_control,requested.preset,requested.vbv_frames))return 19;
  budget.rate_control=requested.rate_control;budget.preset=requested.preset;budget.vbv_frames=requested.vbv_frames;
  return 0;
+}
+// Chooses the codec of the frames SteamVR encodes next: argument is a HookSwitchInfo whose mode is 0 (H.264) or 1 (stock HEVC);
+// it comes back filled in with the counters.
+extern "C" __declspec(dllexport) DWORD WINAPI HookSwitchMode(void* argument){
+ if(!installed)return 21;
+ auto* info=static_cast<HookSwitchInfo*>(argument);
+ if(!info||info->size!=sizeof(HookSwitchInfo)||info->version!=1)return 19;
+ const auto status=HookSetLegacyMode(info->mode);
+ if(HookGetLegacySwitchInfo(info))return 19;
+ return status==0?0:static_cast<DWORD>(30-status);
+}
+extern "C" __declspec(dllexport) DWORD WINAPI HookReadSwitchInfo(void* output){
+ return HookGetLegacySwitchInfo(static_cast<HookSwitchInfo*>(output))?1:0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI HookRemoveTrial(void*){
  if(!installed)return 0;
