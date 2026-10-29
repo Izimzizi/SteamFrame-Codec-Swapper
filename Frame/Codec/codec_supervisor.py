@@ -523,8 +523,9 @@ class Supervisor:
   """Arm while SteamVR is closed (or after the app or PC restarted): adopt what is there and restart nothing the user is using."""
   target=self.config['target_mbps']
   self.applied=target;self.experimental=True
-  if self.server_pid() and self.frame_mounted:
-   # The Frame already expects H.264 but this SteamVR is not hooked: restart it once.
+  if self.server_pid():
+   # SteamVR is running without the hook, either because the Frame already expects H.264 or because SteamVR was started
+   # while arming, before its streaming settings could be written. Restart it once so it reads them and loads the hook.
    self.switch(target);return
   if not self.server_pid():self.save_host_settings(target)
   self.restart_on_close=False

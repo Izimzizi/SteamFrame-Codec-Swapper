@@ -253,6 +253,12 @@ class KeepModeTests(unittest.TestCase):
   save.assert_called_once_with(350);switch.assert_not_called();start.assert_not_called()
   self.assertEqual(update.call_args.kwargs['state'],'waiting');self.assertEqual(instance.applied,350)
 
+ def test_steamvr_started_while_arming_is_restarted_once_so_it_reads_the_settings(self):
+  instance=self.make(None);instance.config={'target_mbps':350}
+  with patch.object(instance,'server_pid',return_value=77),patch.object(instance,'save_host_settings') as save,       patch.object(instance,'switch') as switch:
+   instance.frame_mounted=False;instance.resume_session()
+  switch.assert_called_once_with(350);save.assert_not_called()
+
 class SessionLifecycleTests(unittest.TestCase):
  def make(self):
   instance=object.__new__(service.Supervisor)
