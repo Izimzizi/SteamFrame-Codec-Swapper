@@ -425,3 +425,33 @@ class HistoryLogTests(unittest.TestCase):
 def instance_mutex(instance):
  instance.mutex=threading.RLock()
  return contextlib.nullcontext()
+
+
+class LiveEncoderTests(LiveRateTests):
+ def make(self,pid=7,live=True,applied=300,codec='H.264'):
+  instance=super().make(pid,live,applied,codec)
+  instance.backend=pathlib.Path('backend');instance.rate_control='vbr';instance.preset=2;instance.vbv=2
+  return instance
+ def test_encoder_requests_are_validated(self):
+  request={'protocol_version':1,'id':str(uuid.uuid4()),'action':'encoder','rate_control':'cbr','preset':4,'vbv_frames':2}
+  self.assertEqual(service.validate_request(request),(request['id'],'encoder'))
+  for key,bad in (('rate_control','abr'),('preset',8),('preset',True),('vbv_frames',0),('vbv_frames',17),('rate_control',None)):
+   with self.assertRaises(ValueError):service.validate_request(dict(request,**{key:bad}))
+ def test_new_options_are_queued_on_the_resident_hook_with_the_current_rate(self):
+  instance=self.make()
+  done=Mock(returncode=0,stdout='{"code":0}',stderr='')
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.subprocess,'run',return_value=done) as run:
+   instance.set_encoder('cbr',4,2,'op')
+  args=run.call_args.args[0]
+  self.assertEqual(args[1],'7');self.assertEqual(args[3:],['configure','500000000','500000000','0','72','2','cbr','4','2'])
+  self.assertEqual((instance.rate_control,instance.preset,instance.vbv),('cbr',4,2))
+  self.assertEqual(update.call_args.kwargs['last_result'],{'ok':True})
+ def test_a_refused_or_unavailable_change_leaves_the_options_alone(self):
+  hookless=self.make(live=False)
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(hookless,'update'),patch.object(service.subprocess,'run') as run:
+   with self.assertRaisesRegex(RuntimeError,'not available'):hookless.set_encoder('cbr',4,2)
+   run.assert_not_called()
+  failing=self.make();refused=Mock(returncode=1,stdout='',stderr='no')
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(failing,'update'),patch.object(service.subprocess,'run',return_value=refused):
+   with self.assertRaisesRegex(RuntimeError,'refused'):failing.set_encoder('cbr',4,2)
+  self.assertEqual((failing.rate_control,failing.preset,failing.vbv),('vbr',2,2))

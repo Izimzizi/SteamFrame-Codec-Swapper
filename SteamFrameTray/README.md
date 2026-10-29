@@ -16,7 +16,7 @@ The tray only writes the bitrate (and the 1024 stream width H.264 needs). Refres
 - **Stream stats window** (menu): encoded Mbps with a 60-second average beside it, FPS, the rate the encoder was configured with, dropped frames (sender held back: total and last 60 s), verified active codec, 60 s graph.
   Stock HEVC monitoring injects the existing read-only probe into vrserver only while this window is open.
 - **Start with Windows**: re-arms at login if it was armed when it last ran.
-- **Encoder experiment** (menu): VBR or CBR and the NVENC preset for the next arm (default VBR, P2). Logged in the stats log header.
+- **Encoder experiment** (menu): VBR or CBR, the NVENC preset and the VBV buffer (default VBR, P2, 2 frames). While armed on H.264 a change is queued on the running hook and applied by a brief stream reset (no SteamVR restart); otherwise it is used the next time you arm. Logged in the stats log header.
 - **Exit** disarms and ends the supervisor. If the Frame cannot be reached, the supervisor notices the tray is gone and keeps retrying the restore for 10 minutes. Signing out or shutting Windows down does the same.
 
 ## First-time setup

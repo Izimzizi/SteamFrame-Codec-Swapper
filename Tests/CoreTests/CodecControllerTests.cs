@@ -112,6 +112,28 @@ public sealed class CodecControllerTests
     }
 
     [Fact]
+    public async Task An_encoder_change_sends_the_three_options_only_to_a_live_hook_session()
+    {
+        using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264");
+        var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SetEncoderAsync("cbr", 4, 2));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => controller.SetEncoderAsync("abr", 4, 2));
+        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
+
+        lab.Status(codec: "H.264", rateLive: true);
+        var changing = controller.SetEncoderAsync("cbr", 4, 8);
+        var path = await lab.WaitForRequest();
+        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        var json = request.RootElement;
+        Assert.Equal("encoder", json.GetProperty("action").GetString());
+        Assert.Equal("cbr", json.GetProperty("rate_control").GetString());
+        Assert.Equal(4, json.GetProperty("preset").GetInt32()); Assert.Equal(8, json.GetProperty("vbv_frames").GetInt32());
+        Assert.False(json.TryGetProperty("password", out _));
+        lab.Status(codec: "H.264", rateLive: true, operation: json.GetProperty("id").GetString(), ok: true);
+        Assert.Equal("H.264", (await changing).ActiveCodec);
+    }
+
+    [Fact]
     public async Task A_refused_rate_change_is_reported_without_ending_the_session()
     {
         using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264", rateLive: true);

@@ -43,12 +43,12 @@ void write(HANDLE process,Remote& buffer,const void* data,size_t size){
 }
 int wmain(int argc,wchar_t** argv){
  try{
-  if(argc!=4&&argc!=7&&argc!=8&&argc!=12)throw std::runtime_error("Use hook_control PID DLL install|stats|identity|remove [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]");
+  if(argc!=4&&argc!=7&&argc!=8&&argc!=12)throw std::runtime_error("Use hook_control PID DLL install|configure|stats|identity|remove [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]");
   const auto pid=std::stoul(argv[1]);const auto path=std::filesystem::canonical(argv[2]).wstring();const std::wstring action=argv[3];
-  if(action!=L"install"&&action!=L"stats"&&action!=L"remove"&&action!=L"identity")throw std::runtime_error("Unknown trial action");
+  if(action!=L"install"&&action!=L"configure"&&action!=L"stats"&&action!=L"remove"&&action!=L"identity")throw std::runtime_error("Unknown trial action");
   HookTrialConfig config{sizeof(config),5,100000000,115000000,0,120,0,2,1};
   if(argc>=7){
-   if(action!=L"install")throw std::runtime_error("Budget arguments require install");
+   if(action!=L"install"&&action!=L"configure")throw std::runtime_error("Budget arguments require install or configure");
    auto number=[](const wchar_t* input){size_t count=0;const auto value=std::stoull(input,&count);if(count!=wcslen(input)||value>UINT32_MAX)throw std::runtime_error("Invalid budget argument");return static_cast<uint32_t>(value);};
    config.average_bps=number(argv[4]);config.peak_bps=number(argv[5]);config.fixed_target=number(argv[6]);
    if(argc>=8)config.fps=number(argv[7]);
@@ -81,7 +81,7 @@ int wmain(int argc,wchar_t** argv){
    if(!remote)throw std::runtime_error("Trial DLL did not load");
   }
   const auto local=LoadLibraryExW(path.c_str(),nullptr,DONT_RESOLVE_DLL_REFERENCES);if(!local)throw std::runtime_error("Trial exports unavailable");
-  const char* name=action==L"install"?"HookInstallTrial":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
+  const char* name=action==L"install"?"HookInstallTrial":action==L"configure"?"HookReconfigure":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
   const auto symbol=GetProcAddress(local,name);if(!symbol)throw std::runtime_error("Required trial export missing");
   auto address=reinterpret_cast<uint8_t*>(remote)+(reinterpret_cast<uint8_t*>(symbol)-reinterpret_cast<uint8_t*>(local));
   DWORD result=0;
@@ -101,7 +101,7 @@ int wmain(int argc,wchar_t** argv){
     <<",\"initialize_attempts\":"<<stats.initialize_attempts<<",\"initialize_status\":"<<stats.initialize_status
     <<",\"source_fps_num\":"<<stats.source_fps_num<<",\"source_fps_den\":"<<stats.source_fps_den<<",\"source_async\":"<<stats.source_async
     <<",\"initialize_error\":"<<quoted(stats.initialize_error)<<"}\n";
-  }else{Remote argument(process.value,sizeof(config));if(action==L"install")write(process.value,argument,&config,sizeof(config));result=call(process.value,address,action==L"install"?&argument:nullptr);std::cout<<"{\"pid\":"<<pid<<",\"action\":\""<<(action==L"install"?"install":"remove")<<"\",\"code\":"<<result<<"}\n";}
+  }else{Remote argument(process.value,sizeof(config));const bool configured=action==L"install"||action==L"configure";if(configured)write(process.value,argument,&config,sizeof(config));result=call(process.value,address,configured?&argument:nullptr);std::cout<<"{\"pid\":"<<pid<<",\"action\":\""<<(action==L"install"?"install":action==L"configure"?"configure":"remove")<<"\",\"code\":"<<result<<"}\n";}
   FreeLibrary(local);return result?1:0;
  }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}
 }

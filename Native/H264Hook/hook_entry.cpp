@@ -48,6 +48,15 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookInstallTrial(void* argument){
  if(MH_EnableHook(target)!=MH_OK){MH_RemoveHook(target);return 17;}
  installed=true;return 0;
 }
+// Queues new encoder options on the resident hook; they apply when SteamVR next opens an encoder session.
+extern "C" __declspec(dllexport) DWORD WINAPI HookReconfigure(void* argument){
+ if(!installed)return 21;
+ const auto requested=argument?*static_cast<HookTrialConfig*>(argument):budget;
+ if(requested.size!=sizeof(HookTrialConfig)||requested.version!=5)return 19;
+ if(HookQueueLegacyEncoder(requested.rate_control,requested.preset,requested.vbv_frames))return 19;
+ budget.rate_control=requested.rate_control;budget.preset=requested.preset;budget.vbv_frames=requested.vbv_frames;
+ return 0;
+}
 extern "C" __declspec(dllexport) DWORD WINAPI HookRemoveTrial(void*){
  if(!installed)return 0;
  HookBridgeStats state{sizeof(state),1};HookGetLegacyBridgeStats(&state);

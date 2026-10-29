@@ -63,8 +63,9 @@ def validate_request(value):
  identifier=str(uuid.UUID(value['id']))
  if identifier!=value['id']:raise ValueError('Noncanonical request ID')
  action=value.get('action')
- if action not in ('close','rate'):raise ValueError('Unknown codec action')
+ if action not in ('close','rate','encoder'):raise ValueError('Unknown codec action')
  if action=='rate':validate_target(value.get('target_mbps'))
+ if action=='encoder':validate_encoder_options(value.get('rate_control'),value.get('preset'),value.get('vbv_frames'))
  return identifier,action
 def validate_target(target):
  if type(target) is not int or not 25<=target<=H264_MAXIMUM_MBPS:raise ValueError('Unsupported bitrate')
@@ -359,6 +360,20 @@ class Supervisor:
    self.save_host_settings(target)
   if self.applied:self.applied=target
   self.update(target_mbps=target,operation_id=operation_id,last_result={'ok':True})
+ def set_encoder(self,rate_control,preset,vbv,operation_id=''):
+  """Queue new NVENC options on the resident hook; the encoder SteamVR builds next (after a stream reset) uses them."""
+  validate_encoder_options(rate_control,preset,vbv)
+  if not self.rate_available():raise RuntimeError('A live encoder change is not available; arm H.264 again to apply it.')
+  fps=self.status.get('fps')
+  if fps not in RATES:fps=self.current_refresh()
+  budget=H264_MAXIMUM_MBPS
+  p=subprocess.run([str(self.backend/'hook_control.exe'),str(self.pid),str(self.backend/'SteamFrameH264Hook.dll'),
+   'configure',str(budget*1000000),str(budget*1000000),'0',str(fps),'2',rate_control,str(preset),str(vbv)],
+   capture_output=True,text=True,timeout=12,creationflags=subprocess.CREATE_NO_WINDOW)
+  if p.returncode:raise RuntimeError('The hook refused the encoder options ('+((p.stdout or '')+' '+(p.stderr or '')).strip()[:160]+').')
+  self.rate_control=rate_control;self.preset=preset;self.vbv=vbv
+  self.log('encoder options queued: '+rate_control+', P'+str(preset)+', VBV '+str(vbv))
+  self.update(operation_id=operation_id,last_result={'ok':True},rate_control=rate_control,preset=preset,vbv_frames=vbv)
  def verify_stream(self,target,fps):
   deadline=time.monotonic()+self.verify_seconds;ready=False;seen='no receiver reading'
   while time.monotonic()<deadline:
@@ -521,6 +536,11 @@ class Supervisor:
     self.restart_on_close=bool(self.server_pid())
     self.update(state='switching',active_codec='Unknown',operation_id=identifier,last_result=None,message='Restoring SteamVR\'s own codec and closing the session.')
     self.stopping=True;return
+   if action=='encoder':
+    try:self.set_encoder(value['rate_control'],value['preset'],value['vbv_frames'],identifier)
+    except Exception as error:
+     self.update(operation_id=identifier,last_result={'ok':False,'error':'Live encoder change unavailable: '+str(error)[:200]})
+    continue
    # A refused bitrate-only change leaves the session exactly as it was; the caller may re-apply instead.
    try:self.set_rate(value['target_mbps'],identifier)
    except Exception as error:

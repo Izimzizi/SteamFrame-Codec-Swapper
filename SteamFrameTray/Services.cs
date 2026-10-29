@@ -16,6 +16,8 @@ public interface ICodecService
     void RequestCloseNoWait();
     Task<CodecServiceStatus> CloseAsync(IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken);
     Task<CodecServiceStatus> SetRateAsync(int targetMbps, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken);
+    /// <summary>Queues new encoder options on the live session; they apply when SteamVR next rebuilds its encoder.</summary>
+    Task<CodecServiceStatus> SetEncoderAsync(string rateControl, int preset, int vbvFrames, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken);
 }
 
 /// <summary>SteamVR's own live bitrate setting, which it applies to the encoder without a restart.</summary>
@@ -59,6 +61,8 @@ public sealed class CodecServiceAdapter(CodecController controller) : ICodecServ
         controller.CloseAsync(progress, cancellationToken);
     public Task<CodecServiceStatus> SetRateAsync(int targetMbps, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken) =>
         controller.SetRateAsync(targetMbps, progress, cancellationToken);
+    public Task<CodecServiceStatus> SetEncoderAsync(string rateControl, int preset, int vbvFrames, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken) =>
+        controller.SetEncoderAsync(rateControl, preset, vbvFrames, progress, cancellationToken);
 }
 
 public sealed class LiveBitrate(SteamPaths paths) : ILiveBitrate

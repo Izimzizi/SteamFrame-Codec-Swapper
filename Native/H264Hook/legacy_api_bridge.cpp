@@ -29,6 +29,9 @@ uint32_t requested_average=100000000,requested_peak=115000000;
 bool requested_fixed=false;
 uint32_t requested_fps=120;
 uint32_t requested_rate_control=0,requested_preset=2,requested_vbv_frames=1;
+// Encoder options queued while a session is open; the next session picks them up.
+bool pending_encoder=false;
+uint32_t pending_rate_control=0,pending_preset=2,pending_vbv_frames=1;
 bool valid_budget(uint32_t average,uint32_t peak){
  return average>=1000000&&average<=500000000u&&peak>=average&&peak<=500000000u;
 }
@@ -61,7 +64,10 @@ NVENCSTATUS NVENCAPI open(NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS* source,void** ou
  copy.apiVersion=NVENCAPI_VERSION;
  const auto status=api.nvEncOpenEncodeSessionEx(&copy,output);
  {std::lock_guard<std::mutex> lock(mutex);stats.last_status=status;
-  if(status==NV_ENC_SUCCESS){sessions.emplace(*output,State{});++stats.opens;}else ++stats.errors;}
+  if(status==NV_ENC_SUCCESS){
+   if(pending_encoder){requested_rate_control=pending_rate_control;requested_preset=pending_preset;requested_vbv_frames=pending_vbv_frames;pending_encoder=false;}
+   sessions.emplace(*output,State{});++stats.opens;
+  }else ++stats.errors;}
  return status;
 }
 NVENCSTATUS NVENCAPI caps(void* encoder,GUID codec,NV_ENC_CAPS_PARAM* source,int* output){
@@ -315,6 +321,12 @@ extern "C" int HOOK_CALL HookConfigureLegacyEncoder(uint32_t rate_control,uint32
  std::lock_guard<std::mutex> lock(mutex);
  if(!sessions.empty())return -2;
  requested_rate_control=rate_control;requested_preset=preset;requested_vbv_frames=vbv_frames;return 0;
+}
+extern "C" int HOOK_CALL HookQueueLegacyEncoder(uint32_t rate_control,uint32_t preset,uint32_t vbv_frames){
+ if(rate_control>1||preset<1||preset>7||vbv_frames<1||vbv_frames>16)return -1;
+ std::lock_guard<std::mutex> lock(mutex);
+ if(sessions.empty()){requested_rate_control=rate_control;requested_preset=preset;requested_vbv_frames=vbv_frames;pending_encoder=false;return 0;}
+ pending_rate_control=rate_control;pending_preset=preset;pending_vbv_frames=vbv_frames;pending_encoder=true;return 0;
 }
 extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  if(!output||output->size!=sizeof(HookTrialIdentity)||output->version!=1)return -1;

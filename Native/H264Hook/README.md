@@ -2,14 +2,14 @@
 
 `SteamFrameH264Hook.dll` is injected into `vrserver.exe` by `hook_control.exe`. It intercepts the public NVENC factory only for SteamVR's VRLink driver (`hook_entry.cpp`) and translates the driver's HEVC-facing SDK 11.1 function table (`legacy_api_bridge.cpp`) into an H.264 encoder session, so the Frame receives H.264 up to 500 Mbps. The tray starts and removes it through the supervisor (`Frame/Codec/codec_supervisor.py`); you normally never run it by hand.
 
-The hook produces H.264 only. Two encoder options are an experiment and take effect the next time H.264 is armed: the rate control (VBR, the default, or CBR where the peak equals the average) the NVENC preset (P1 to P7, default P2) and the VBV buffer size (1 to 16 frames of the average bitrate, default 2: one frame undershoots the target by about a quarter). The tray sets them from its "Encoder experiment" menu and logs them in the run header.
+The hook produces H.264 only. Two encoder options are an experiment; they are applied live (`hook_control ... configure`, queued until the next encoder session, so a stream reset applies them) or at the next arm: the rate control (VBR, the default, or CBR where the peak equals the average) the NVENC preset (P1 to P7, default P2) and the VBV buffer size (1 to 16 frames of the average bitrate, default 2: one frame undershoots the target by about a quarter). The tray sets them from its "Encoder experiment" menu and logs them in the run header.
 
 ## Build
 
 Run `build.ps1` from Windows PowerShell with Visual Studio C++ and a Windows SDK installed. Output goes to `artifacts/H264Hook/`:
 
 - `SteamFrameH264Hook.dll` – the hook.
-- `hook_control.exe` – `hook_control PID DLL install|stats|identity|remove [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]`. Codec must be `2` (H.264, 500 Mbps limit), `rate_control` is `vbr` or `cbr`, `preset` is 1 to 7, `vbv_frames` is 1 to 16.
+- `hook_control.exe` – `hook_control PID DLL install|configure|stats|identity|remove [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]`. Codec must be `2` (H.264, 500 Mbps limit), `rate_control` is `vbr` or `cbr`, `preset` is 1 to 7, `vbv_frames` is 1 to 16.
 - `codec_caps.exe` – prints the NVENC codec capabilities of the installed GPU.
 - `picture_abi_test.exe`, `bridge_gpu_test.exe` – the guards below.
 
@@ -21,4 +21,4 @@ The SDK 11.1 picture's QP-map offset differs from SDK 12.1. Never copy the whole
 
 `start_steamvr_trial.ps1 -Mbps N` launches SteamVR and installs the hook early, without the tray, for isolated trials.
 
-The exported entry points are `HookInstallTrial`, `HookRemoveTrial`, `HookReadTrialStats` and `HookReadTrialIdentity`. The managed side reads them in `Core/EncoderProbe.Hook.cs`.
+The exported entry points are `HookInstallTrial`, `HookReconfigure`, `HookRemoveTrial`, `HookReadTrialStats` and `HookReadTrialIdentity`. The managed side reads them in `Core/EncoderProbe.Hook.cs`.

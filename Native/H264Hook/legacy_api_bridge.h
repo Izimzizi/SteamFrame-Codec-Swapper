@@ -14,6 +14,9 @@ HOOK_API int HOOK_CALL HookConfigureLegacyRate(uint32_t fps);
 // Experiment: rate control (0 VBR, 1 CBR), NVENC preset (1 = P1 ... 7 = P7) and VBV buffer size in frames of the
 // average bitrate (1..16). Immutable while a session is open.
 HOOK_API int HOOK_CALL HookConfigureLegacyEncoder(uint32_t rate_control, uint32_t preset, uint32_t vbv_frames);
+// Same options as HookConfigureLegacyEncoder, but allowed while a session is open: they take effect when the next
+// session opens (SteamVR rebuilds the encoder on a stream reset).
+HOOK_API int HOOK_CALL HookQueueLegacyEncoder(uint32_t rate_control, uint32_t preset, uint32_t vbv_frames);
 typedef struct HookTrialConfig {
  uint32_t size,version,average_bps,peak_bps,fixed_target,fps,rate_control,preset,vbv_frames;
 } HookTrialConfig;

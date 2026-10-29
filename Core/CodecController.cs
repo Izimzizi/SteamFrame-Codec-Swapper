@@ -249,8 +249,23 @@ public sealed class CodecController
         finally { _operations.Release(); }
     }
 
+    /// <summary>Queues new encoder options (rate control, preset, VBV) on the resident hook; the encoder SteamVR builds next uses them.</summary>
+    public async Task<CodecServiceStatus> SetEncoderAsync(string rateControl, int preset, int vbvFrames, IProgress<CodecServiceStatus>? progress = null, CancellationToken cancellationToken = default)
+    {
+        new CodecStartRequest(RateControl: rateControl, Preset: preset, VbvFrames: vbvFrames).Validate();
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var status = ReadStatus();
+            if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation to finish." : status.Message);
+            if (!status.RateLive) throw new InvalidOperationException("This session cannot change its encoder without restarting SteamVR.");
+            return await SendAsync("encoder", 0, status, progress, cancellationToken, new CodecStartRequest(RateControl: rateControl, Preset: preset, VbvFrames: vbvFrames)).ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
+    }
+
     private async Task<CodecServiceStatus> SendAsync(string action, int targetMbps, CodecServiceStatus owner,
-        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken)
+        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, CodecStartRequest? encoder = null)
     {
         var id = Guid.NewGuid().ToString("D");
         var directory = Path.Combine(_sessionDirectory, "requests");
@@ -259,7 +274,9 @@ public sealed class CodecController
         var current = ReadStatus();
         if (!current.Live || current.OwnerPid != owner.OwnerPid || current.OwnerCreatedEpoch != owner.OwnerCreatedEpoch || current.Busy)
             throw new InvalidOperationException("Codec service ownership or state changed before the switch. No request was sent.");
-        object body = action == "rate" ? new { protocol_version = 1, id, action, target_mbps = targetMbps } : new { protocol_version = 1, id, action };
+        object body = action == "rate" ? new { protocol_version = 1, id, action, target_mbps = targetMbps }
+            : action == "encoder" ? new { protocol_version = 1, id, action, rate_control = encoder!.RateControl, preset = encoder.Preset, vbv_frames = encoder.VbvFrames }
+            : new { protocol_version = 1, id, action };
         await WriteAtomicAsync(Path.Combine(directory, $"request-{id}.json"), body, cancellationToken).ConfigureAwait(false);
         return await WaitAsync(id, owner.OwnerPid, progress, cancellationToken, action == "close", owner.OwnerCreatedEpoch).ConfigureAwait(false);
     }

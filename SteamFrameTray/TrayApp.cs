@@ -22,7 +22,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _status = new() { Enabled = false, AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 24), TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripMenuItem _toggle = new();
     private readonly MenuBitrateSlider _menuSlider;
-    private readonly ToolStripMenuItem _rateMenu = new("Encoder experiment (next arm)");
+    private readonly ToolStripMenuItem _rateMenu = new("Encoder experiment");
     private readonly ToolStripLabel _bitrateLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
     private readonly ToolStripMenuItem _statsItem = new("Stream stats window");
     private readonly ToolStripMenuItem _startup = new("Start with Windows");
@@ -134,7 +134,13 @@ public sealed class TrayApp : ApplicationContext
                 {
                     set();
                     await _preferences.SaveAsync(TrayData.SettingsPath);
-                    Balloon("Encoder experiment", $"{_preferences.HookRateControl.ToUpperInvariant()}, P{_preferences.HookPreset}, VBV {_preferences.HookVbvFrames} frame(s) is used the next time you arm H.264.", ToolTipIcon.Info);
+                    var summary = $"{_preferences.HookRateControl.ToUpperInvariant()}, P{_preferences.HookPreset}, VBV {_preferences.HookVbvFrames} frame(s)";
+                    try
+                    {
+                        if (await _controller.ApplyEncoderOptionsAsync()) Balloon("Encoder experiment", $"{summary} is applied; the stream restarts for a moment.", ToolTipIcon.Info);
+                        else Balloon("Encoder experiment", $"{summary} is used the next time you arm H.264.", ToolTipIcon.Info);
+                    }
+                    catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder experiment", $"Saved ({summary}) for the next arm. {error.Message}", ToolTipIcon.Warning); }
                 };
                 items.Add((item, selected));
                 group.DropDownItems.Add(item);

@@ -81,6 +81,34 @@ public sealed class TrayController
         return await ReapplyAsync(requestPassword, confirmPatch, confirmRestart, cancellationToken);
     }
 
+    /// <summary>
+    /// Applies the saved encoder options (rate control, preset, VBV) to a live H.264 session: the hook queues them and a stream reset
+    /// (the same nudge a bitrate change makes) rebuilds the encoder with them. False means they are used the next time H.264 is armed.
+    /// </summary>
+    public async Task<bool> ApplyEncoderOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (!Current.IsArmed) return false;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var status = await _codec.ReadStatusAsync(cancellationToken);
+            if (!(status.Live && status.RateLive && status.ActiveCodec == "H.264" && status.State == "ready")) return false;
+            var result = await _codec.SetEncoderAsync(_preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames, new Progress<CodecServiceStatus>(), cancellationToken);
+            Publish(Map(result));
+            if (_live is { SteamVrRunning: true })
+            {
+                _ownWriteUntil = DateTime.UtcNow.AddSeconds(10);
+                try { await _live.ApplyAsync(TargetMbps); }
+                catch (Exception error) when (error is IOException or InvalidOperationException)
+                {
+                    throw new InvalidOperationException($"The encoder options were queued, but SteamVR's stream could not be reset ({error.Message}). They apply the next time the stream restarts.", error);
+                }
+            }
+            return true;
+        }
+        finally { _gate.Release(); }
+    }
+
     /// <summary>Stock codec: SteamVR's own setting is the bitrate, so write it live, or into its settings file while SteamVR is closed.</summary>
     private async Task<ChangeOutcome> ChangeDisarmedAsync(int mbps, Func<BitratePatchStatus, Task<bool>> confirmPatch, CancellationToken cancellationToken)
     {
