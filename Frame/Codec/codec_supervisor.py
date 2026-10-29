@@ -134,7 +134,7 @@ class Supervisor:
   self.vr=pathlib.Path(config.get('steamvr_root',str(self.steam/'steamapps/common/SteamVR'))).resolve()/'bin/win64'
   if not (self.steam/'steam.exe').is_file() or not (self.vr/'vrserver.exe').is_file():raise ValueError('SteamVR installation unavailable')
   # The tray that started this service. When it is gone the service restores stock and ends: nothing is left applied.
-  self.tray=None;self.tray_checked=0.0
+  self.tray=None;self.tray_checked=0.0;self.watched=None;self.watched_at=0.0
   tray_pid=config.get('tray_pid')
   if type(tray_pid) is int and tray_pid>0:self.tray=ProcessWatch(tray_pid,'The tray')
   self.pid=0;self.watch=None;self.root=None;self.root_started=0;self.authenticated=False;self.root_replies=queue.Queue();self.stopping=False
@@ -374,6 +374,18 @@ class Supervisor:
  def hook_counter(self,name):
   try:return self.stats()[name]
   except Exception:return '?'
+ def watch_encoder(self):
+  """Log whenever SteamVR opens or initializes an encoder, or changes its size, so a setting change can be tied to a new session."""
+  now=time.monotonic()
+  if not self.pid or now-self.watched_at<2:return
+  self.watched_at=now
+  try:state=self.stats()
+  except Exception:return
+  seen=tuple(state.get(name) for name in ('tables','opens','initializes','reconfigures','width','height'))
+  if self.watched is not None and seen[:3]+seen[4:]!=self.watched[:3]+self.watched[4:]:
+   self.log('encoder change: tables %s->%s, opens %s->%s, initializes %s->%s, size %sx%s->%sx%s'%(
+    self.watched[0],seen[0],self.watched[1],seen[1],self.watched[2],seen[2],self.watched[4],self.watched[5],seen[4],seen[5]))
+  self.watched=seen
  def hook_identity(self):
   try:
    identity=self.stats('identity')
@@ -549,6 +561,7 @@ class Supervisor:
    try:self.swap_root()
    except Exception:self.next_attempt=now+RETRY_INTERVAL*4 # the current session stays valid until its limit
   if not self.pid and self.applied and self.server_pid():self.reapply()
+  self.watch_encoder()
  def tray_gone(self):
   """True once the tray process that started this service has exited (checked every few seconds)."""
   if self.tray is None:return False

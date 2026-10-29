@@ -259,6 +259,18 @@ class KeepModeTests(unittest.TestCase):
    instance.frame_mounted=False;instance.resume_session()
   switch.assert_called_once_with(350);save.assert_not_called()
 
+class EncoderWatchTests(unittest.TestCase):
+ def test_a_new_encoder_session_or_size_is_logged_once(self):
+  instance=object.__new__(service.Supervisor);instance.pid=5;instance.watched=None;instance.watched_at=0.0
+  readings=[dict(tables=1,opens=1,initializes=1,reconfigures=10,width=1024,height=1024),
+   dict(tables=1,opens=1,initializes=1,reconfigures=90,width=1024,height=1024),
+   dict(tables=1,opens=2,initializes=2,reconfigures=3,width=2048,height=2048)]
+  lines=[]
+  with patch.object(instance,'stats',side_effect=readings),patch.object(instance,'log',side_effect=lines.append):
+   for _ in readings:
+    instance.watched_at=0.0;instance.watch_encoder()
+  self.assertEqual(len(lines),1);self.assertIn('opens 1->2',lines[0]);self.assertIn('1024x1024->2048x2048',lines[0])
+
 class SessionLifecycleTests(unittest.TestCase):
  def make(self):
   instance=object.__new__(service.Supervisor)
