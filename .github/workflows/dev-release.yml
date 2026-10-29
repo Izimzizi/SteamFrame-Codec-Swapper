@@ -64,7 +64,7 @@ jobs:
         shell: pwsh
         run: |
           # Commits from before the Assets folder was dropped still insist on it.
-          $legacy = Select-String -Path src/Package-Tray.ps1 -Pattern "'runtime\python.exe', 'Assets'" -Quiet
+          $legacy = Select-String -Path src/Package-Tray.ps1 -Pattern "'runtime\python.exe', 'Assets'" -SimpleMatch -Quiet
           $arguments = @{ OutputDirectory = "$PWD/codeclab" }
           if ($legacy) { $arguments.LegacyAssets = $true }
           & ci/Tools/Prepare-CodecLab.ps1 @arguments
