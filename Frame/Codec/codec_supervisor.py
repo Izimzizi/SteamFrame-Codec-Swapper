@@ -360,6 +360,14 @@ class Supervisor:
    self.save_host_settings(target)
   if self.applied:self.applied=target
   self.update(target_mbps=target,operation_id=operation_id,last_result={'ok':True})
+ def hook_counter(self,name):
+  try:return self.stats()[name]
+  except Exception:return '?'
+ def hook_identity(self):
+  try:
+   identity=self.stats('identity')
+   return str(identity.get('rate_control'))+', P'+str(identity.get('preset'))+', VBV '+str(identity.get('vbv_frames'))
+  except Exception:return 'unreadable'
  def set_encoder(self,rate_control,preset,vbv,operation_id=''):
   """Queue new NVENC options on the resident hook; the encoder SteamVR builds next (after a stream reset) uses them."""
   validate_encoder_options(rate_control,preset,vbv)
@@ -375,7 +383,10 @@ class Supervisor:
   self.log('encoder options queued: '+rate_control+', P'+str(preset)+', VBV '+str(vbv))
   self.update(rate_control=rate_control,preset=preset,vbv_frames=vbv)
   # SteamVR keeps one encoder session across stream resets of its own, so restart the Frame's stream: the new session uses the queued options.
+  opens=self.hook_counter('opens')
   self.restream('Applying the new encoder options; the stream restarts for a moment.','H.264 running with the new encoder options.',operation_id,stop=True)
+  # Evidence for the log: the options only apply if SteamVR opened a new encoder session during the restart.
+  self.log('encoder sessions opened: '+str(opens)+' -> '+str(self.hook_counter('opens'))+'; hook identity '+self.hook_identity())
  def verify_stream(self,target,fps):
   deadline=time.monotonic()+self.verify_seconds;ready=False;seen='no receiver reading'
   while time.monotonic()<deadline:

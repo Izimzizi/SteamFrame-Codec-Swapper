@@ -59,7 +59,7 @@ public sealed class StatsForm : Form
         _fps.Text = sample.Fps is double f ? $"{f:0.0} fps" : "— fps";
         _target.Text = $"target {tray.TargetMbps} Mbps";
         _encoder.Text = sample.Config is { } c
-            ? $"encoder asked for {c.AverageMbps:0} Mbps avg / {c.MaxMbps:0} peak ({c.RateControl}{(c.Fps is double cf ? $", {cf:0} fps" : "")})"
+            ? $"encoder asked for {c.AverageMbps:0} Mbps avg / {c.MaxMbps:0} peak ({c.RateControl}, {c.Preset}{(c.VbvSize > 0 ? $", VBV {c.VbvSize / 1e6:0.0} Mbit" : "")}{(c.Fps is double cf ? $", {cf:0} fps" : "")})"
             : "";
         _dropped.Text = sample.Health is { } h
             ? $"dropped frames (sender held back): {h.HeldTotal} total / {h.HeldLastMinute} in last 60 s" + (h.CompositorAvailable ? $"    PC: {h.CompositorDropped} dropped, {h.CompositorLate} late" : "")

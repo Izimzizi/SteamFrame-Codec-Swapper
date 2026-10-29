@@ -110,6 +110,17 @@ int main(int argc,char** argv){
   HookBridgeStats completed{sizeof(completed),1};
   if(HookGetLegacyBridgeStats(&completed)||completed.errors||completed.reconfigures!=3||completed.source_fps_num!=fps||completed.source_fps_den!=1)
    throw std::runtime_error("Measured-throughput reconfigure did not preserve nominal cadence");
+  {
+   // Options queued while a session is open reach the identity only when the next session opens.
+   HookTrialIdentity id{sizeof(id),1};void* second=nullptr;void* third=nullptr;auto again=original_open;
+   check(api.nvEncOpenEncodeSessionEx(&again,&second),"second open");
+   if(HookQueueLegacyEncoder(cbr?0:1,4,8)||HookQueueLegacyEncoder(2,4,8)==0)throw std::runtime_error("Queue guard failed");
+   if(HookGetLegacyIdentity(&id)||id.rate_control!=(cbr?1u:0u)||id.preset!=preset_number||id.vbv_frames!=vbv_frames)throw std::runtime_error("Queued options leaked into an open session");
+   check(api.nvEncDestroyEncoder(second),"second destroy");
+   again=original_open;check(api.nvEncOpenEncodeSessionEx(&again,&third),"third open");
+   if(HookGetLegacyIdentity(&id)||id.rate_control!=(cbr?0u:1u)||id.preset!=4||id.vbv_frames!=8)throw std::runtime_error("Queued options were not adopted by the next session");
+   check(api.nvEncDestroyEncoder(third),"third destroy");
+  }
   std::cout<<"{\"caller_sdk\":\"11.1\",\"codec\":\""<<"H.264\",\"rate_control\":\""<<(cbr?"cbr":"vbr")<<"\",\"preset\":"<<preset_number<<",\"frames\":120,\"fps\":"<<fps<<",\"width\":"<<width<<",\"height\":"<<height<<",\"caller_preserved\":true,\"pic_lock_canaries_preserved\":true,\"reconfigure\":true,\"measured_rate_updates\":[65,300],\"async\":"<<(async?"true":"false")<<",\"injected\":false}\n";
   return 0;
  }catch(const std::exception& error){std::cerr<<error.what()<<"\n";
