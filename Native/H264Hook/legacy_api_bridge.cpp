@@ -327,16 +327,17 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
  auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
  auto* mapped=static_cast<VMapped*>(view.input);auto* output=static_cast<VOutput*>(view.output);
  const bool eos=(view.flags&NV_ENC_PIC_FLAG_EOS)!=0;
- // An end-of-stream picture carries no input.
- if(!eos&&!session->mapped.count(mapped))return NV_ENC_ERR_INVALID_PTR;
- if(!session->outputs.count(output))return NV_ENC_ERR_INVALID_PTR;
- const int on=!eos?mapped->on:(session->last_encoded==1?1:0);
- void* real_output=on?output->stock:output->h264;if(!real_output)return NV_ENC_ERR_INVALID_PARAM;
+ // An end-of-stream picture carries neither input nor output; it goes to the encoder that encoded last.
+ const bool known_output=session->outputs.count(output)!=0;
+ if(!eos&&(!session->mapped.count(mapped)||!known_output))return NV_ENC_ERR_INVALID_PTR;
+ const int on=!eos?mapped->on:(session->last_encoded==1&&session->stock?1:0);
+ void* real_output=!known_output?nullptr:on?output->stock:output->h264;
+ if(!eos&&!real_output)return NV_ENC_ERR_INVALID_PARAM;
  // The first picture a session encodes after a switch starts a fresh sequence: its decoder has seen nothing of this stream.
  uint32_t extra_flags=0;
  if(!eos){if(session->last_encoded<0)session->last_encoded=on;
   else if(session->last_encoded!=on){extra_flags=NV_ENC_PIC_FLAG_FORCEIDR|NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;session->last_encoded=on;}}
- output->last=on;
+ if(known_output)output->last=on;
  NVENCSTATUS status;
  if(on){
   status=static_cast<NVENCSTATUS>(StockEncode(session->stock,source,eos?nullptr:mapped->real,real_output,extra_flags));++switch_info.stock_encodes;++stats.encodes;

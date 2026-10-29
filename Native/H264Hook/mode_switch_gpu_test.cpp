@@ -116,10 +116,19 @@ int main(int argc,char** argv){
    if(i%10==5){NV_ENC_RECONFIGURE_PARAMS change{};change.version=NV_ENC_RECONFIGURE_PARAMS_VER;change.reInitEncodeParams=init;
     check(api.nvEncReconfigureEncoder(encoder,&change),"legacy reconfigure");}
   }
-  if(HookGetLegacySwitchInfo(&info)||info.stock_encodes!=stock_expected||info.stock_locks!=stock_expected||info.switches!=switches||info.stock_errors)
-   throw std::runtime_error("Counters disagree: stock encodes "+std::to_string(info.stock_encodes)+" of "+std::to_string(stock_expected)+", errors "+std::to_string(info.stock_errors)+", last status "+std::to_string(info.last_stock_status));
+  // SteamVR ends a stream with an end-of-stream picture that has no input and no output buffer; it goes to whichever encoder ran last.
+  auto end_of_stream=[&](const char* where){
+   NV_ENC_PIC_PARAMS eos{};eos.version=NV_ENC_PIC_PARAMS_VER;eos.encodePicFlags=NV_ENC_PIC_FLAG_EOS;eos.completionEvent=event;
+   check(api.nvEncEncodePicture(encoder,&eos),where);
+   if(async&&WaitForSingleObject(event,2000)!=WAIT_OBJECT_0)throw std::runtime_error(std::string("EOS did not signal ")+where);
+  };
+  end_of_stream("end of stream after stock frames");
+  if(HookSetLegacyMode(0))throw std::runtime_error("Switch back after EOS refused");
+  end_of_stream("end of stream after H.264 frames");
+  if(HookGetLegacySwitchInfo(&info)||info.stock_encodes!=stock_expected+2||info.stock_locks!=stock_expected||info.switches!=switches+1||info.stock_errors)
+   throw std::runtime_error("Counters disagree: stock encodes "+std::to_string(info.stock_encodes)+" of "+std::to_string(stock_expected+2)+", errors "+std::to_string(info.stock_errors)+", last status "+std::to_string(info.last_stock_status));
   HookBridgeStats stats{sizeof(stats),1};
-  if(HookGetLegacyBridgeStats(&stats)||stats.errors||stats.encodes!=frames)throw std::runtime_error("The H.264 side saw errors or the wrong frame count");
+  if(HookGetLegacyBridgeStats(&stats)||stats.errors||stats.encodes!=frames+2)throw std::runtime_error("The H.264 side saw errors or the wrong frame count");
   check(api.nvEncDestroyBitstreamBuffer(encoder,output),"destroy output");output=nullptr;
   check(api.nvEncUnregisterResource(encoder,registered),"unregister");registered=nullptr;
   if(async){NV_ENC_EVENT_PARAMS p{};p.version=NV_ENC_EVENT_PARAMS_VER;p.completionEvent=event;check(api.nvEncUnregisterAsyncEvent(encoder,&p),"legacy event unregister");}
