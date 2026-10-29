@@ -119,12 +119,23 @@ public sealed class TrayControllerTests
         public int RestartPrompts { get; private set; }
         public bool AllowRestart { get; set; } = true;
         public TrayController Controller { get; }
-        public Rig() => Controller = new(Codec, Vault, Patch, Prefs, () => { Saves++; return Task.CompletedTask; }, Live);
+        public bool Driver { get; set; }
+        public Rig() => Controller = new(Codec, Vault, Patch, Prefs, () => { Saves++; return Task.CompletedTask; }, Live, () => Driver);
         public Task<ChangeOutcome> Change(int mbps, string? typed = null, bool allowPatch = true) =>
             Controller.ChangeTargetAsync(mbps, () => Task.FromResult(typed), _ => Task.FromResult(allowPatch), () => { RestartPrompts++; return Task.FromResult(AllowRestart); });
         public Task<bool> Arm(string? typed = null, bool allowPatch = true, bool allowRestart = true) =>
             Controller.ArmAsync(() => Task.FromResult(typed), _ => Task.FromResult(allowPatch), () => { RestartPrompts++; return Task.FromResult(allowRestart); });
         public Task Disarm(string? typed = null) => Controller.DisarmAsync(() => Task.FromResult(typed));
+    }
+
+    [Fact]
+    public async Task Arming_with_the_permanent_driver_never_asks_to_restart_a_running_SteamVR()
+    {
+        var rig = new Rig { Driver = true };
+        rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live();
+        Assert.True(await rig.Arm());
+        Assert.Equal(0, rig.RestartPrompts);
+        Assert.True(Assert.Single(rig.Codec.Switches).Request.Driver);
     }
 
     [Fact]

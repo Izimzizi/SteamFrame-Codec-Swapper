@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 namespace SteamFrame.Core;
 
 /// <summary>What to start: H.264 at a bitrate. The two encoder options are an experiment and default to the hook's usual VBR / preset P2.</summary>
-public sealed record CodecStartRequest(int TargetMbps = 100, string RateControl = "vbr", int Preset = 2, int VbvFrames = 2)
+public sealed record CodecStartRequest(int TargetMbps = 100, string RateControl = "vbr", int Preset = 2, int VbvFrames = 2, bool Driver = false)
 {
     public const int MinimumMbps = 25, MaximumMbps = 500;
     public void Validate()
@@ -148,7 +148,7 @@ public sealed class CodecController
             if (!status.CanStart) throw new InvalidOperationException(status.Message);
             var process = await LaunchAsync(new { protocol_version = 1, steam_root = _steamPaths.SteamRoot, steamvr_root = _steamPaths.SteamVrRoot,
                 ssh_host = preferences.SshHost, ssh_key = Path.GetFullPath(preferences.SshKey), ssh_known_hosts = Path.GetFullPath(preferences.SshKnownHosts),
-                target_mbps = request.TargetMbps, rate_control = request.RateControl, preset = request.Preset, vbv_frames = request.VbvFrames, resume, tray_pid = Environment.ProcessId },
+                target_mbps = request.TargetMbps, rate_control = request.RateControl, preset = request.Preset, vbv_frames = request.VbvFrames, driver = request.Driver, resume, tray_pid = Environment.ProcessId },
                 preferences, password, cancellationToken).ConfigureAwait(false);
             password = null;
             return await WaitAsync(null, process.Id, progress, cancellationToken).ConfigureAwait(false);

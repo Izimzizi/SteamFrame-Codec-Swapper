@@ -105,7 +105,7 @@ def codec_host_values(target):
  return {'targetBandwidth':float(target),'recommendedBandwidthMbit':target}
 
 class Supervisor:
- resume=False;restore_only=False;password=None;applied=None;frame_mounted=False
+ resume=False;restore_only=False;password=None;applied=None;frame_mounted=False;driver=False;next_attach=0.0;stock_mode=False
  closing_message=None;next_attempt=0
  log_last=None
  verify_seconds=20  # how long a new stream may take to start; a user-started SteamVR needs longer
@@ -114,6 +114,8 @@ class Supervisor:
  def __init__(self,directory,config):
   validate_target(config['target_mbps'])
   self.resume=config.get('resume') is True;self.restore_only=config.get('restore_only') is True
+  # The permanent PC driver is registered in SteamVR: the hook is already resident, so nothing is injected or restarted.
+  self.driver=config.get('driver') is True;self.next_attach=0.0
   self.rate_control=config.get('rate_control','vbr');self.preset=config.get('preset',2);self.vbv=config.get('vbv_frames',2)
   validate_encoder_options(self.rate_control,self.preset,self.vbv)
   if config.get('protocol_version')!=1 or not valid_host(config.get('ssh_host')):raise ValueError('Use the paired Frame address')
@@ -418,7 +420,7 @@ class Supervisor:
   if mode not in ('h264','stock'):raise ValueError('Unknown codec mode')
   if not (self.pid and self.live_rate and self.server_alive()):raise RuntimeError('SteamVR is not running with the codec hook; a live switch is not available.')
   before=self.stats('switch-info')
-  if not before.get('stock_sessions'):raise RuntimeError('This SteamVR session has no stock encoder beside the H.264 one; restart SteamVR once.')
+  if before.get('sessions') and not before.get('stock_sessions'):raise RuntimeError('This SteamVR session has no stock encoder beside the H.264 one; restart SteamVR once.')
   previous='stock' if before.get('mode')=='stock' else 'h264'
   if previous==mode:
    self.update(operation_id=operation_id,last_result={'ok':True});return
@@ -542,7 +544,10 @@ class Supervisor:
   if self.watch:self.watch.close();self.watch=None
   self.pid=0;self.restart_on_close=False
   try:
-   if self.applied:self.save_host_settings(self.applied)
+   if self.driver:
+    # The next SteamVR starts on stock HEVC: the Frame must too, until the codec is switched again.
+    self.stock_mode=True;self.action('rollback')
+   elif self.applied:self.save_host_settings(self.applied)
   except Exception:pass
   self.update(state='waiting',active_codec='Unknown',stream_pid=0,message='SteamVR closed. H.264 is re-applied the next time SteamVR starts.')
  def ensure_frame(self):
@@ -556,6 +561,30 @@ class Supervisor:
   self.stop_frame_stream();self.wait_decoder_idle()
   if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
   self.frame_mounted=True
+ def start_driver_session(self):
+  """Arm with the permanent driver: attach to the hook SteamVR already holds and flip the codec live. No injection, no restart, no settings."""
+  self.applied=self.config['target_mbps'];self.experimental=False;self.restart_on_close=False;self.stock_mode=True
+  if self.server_pid():self.attach_driver()
+  else:self.update(state='waiting',active_codec='Unknown',message='Armed. H.264 is applied when SteamVR starts.')
+ def attach_driver(self):
+  pid=self.server_pid()
+  self.update(state='switching',active_codec='Unknown',message='Attaching to the codec driver in SteamVR.')
+  deadline=time.monotonic()+25;info=None
+  while info is None:
+   self.pid=pid
+   try:info=self.stats('switch-info')
+   except Exception as error:
+    self.pid=0
+    if time.monotonic()>deadline:raise RuntimeError('SteamVR is running without the codec driver; restart SteamVR once after installing it ('+str(error)[:120]+').')
+    time.sleep(.5)
+  self.watch=ProcessWatch(pid);self.live_rate=True;self.stock_mode=info.get('mode')=='stock'
+  budget=H264_MAXIMUM_MBPS*1000000
+  self.stats('configure',str(budget),str(budget),'0',str(self.current_refresh()),'2',self.rate_control,str(self.preset),str(self.vbv))
+  self.log('attached to the SteamVR driver (pid '+str(pid)+', hook mode '+str(info.get('mode'))+', '+str(info.get('sessions'))+' encoder session(s))')
+  rate=self.current_refresh()
+  self.update(state='ready',active_codec='HEVC' if self.stock_mode else 'H.264',target_mbps=self.applied,fps=rate,stream_pid=pid,
+   message='Attached to SteamVR. Streaming '+('stock HEVC.' if self.stock_mode else 'H.264.'),last_result={'ok':True})
+  if self.stock_mode and self.applied:self.set_mode('h264')
  def reapply(self):
   target=self.applied;self.stock_mode=False
   self.update(state='switching',active_codec='Unknown',message='SteamVR started; re-applying H.264.')
@@ -621,13 +650,22 @@ class Supervisor:
      try:failed.stdin.close()
      except Exception:pass
     return
-   if self.applied and self.pid and self.server_alive():self.restream()
+   if self.applied and self.pid and self.server_alive():
+    if self.stock_mode:self.update(state='ready',active_codec='HEVC',message='The Frame returned; streaming stock HEVC.')
+    else:self.restream()
    else:self.update(state='waiting',active_codec='Unknown',message='The Frame returned. H.264 is re-applied the next time SteamVR starts.')
    return
   if now-self.root_started>=RENEW_AFTER and now>=self.next_attempt:
    try:self.swap_root()
    except Exception:self.next_attempt=now+RETRY_INTERVAL*4 # the current session stays valid until its limit
-  if not self.pid and self.applied and self.server_pid():self.reapply()
+  if self.driver:
+   if not self.pid and self.applied and self.server_pid() and now>=self.next_attach:
+    self.next_attach=now+10
+    try:self.attach_driver()
+    except Exception as error:
+     self.pid=0;self.log('attaching to the SteamVR driver failed: '+str(error)[:300])
+     self.update(state='waiting',active_codec='Unknown',message='Could not attach to SteamVR: '+str(error)[:160])
+  elif not self.pid and self.applied and self.server_pid():self.reapply()
   self.watch_encoder()
  def tray_gone(self):
   """True once the tray process that started this service has exited (checked every few seconds)."""
@@ -647,7 +685,7 @@ class Supervisor:
    path.unlink()
    if action=='close':
     # Restoring needs SteamVR stopped; bring it back as stock only if it was running.
-    self.restart_on_close=bool(self.server_pid())
+    self.restart_on_close=bool(self.server_pid()) and not self.driver
     self.update(state='switching',active_codec='Unknown',operation_id=identifier,last_result=None,message='Restoring SteamVR\'s own codec and closing the session.')
     self.stopping=True;return
    if action=='mode':
@@ -675,6 +713,7 @@ class Supervisor:
     # Leftovers from a session that ended without restoring: put the saved originals back and end.
     self.experimental=True;self.restart_on_close=bool(self.server_pid());self.stopping=True
     self.closing_message='Leftover H.264 settings were restored.'
+   elif self.driver:self.start_driver_session()
    elif self.resume:self.resume_session()
    else:self.switch(self.config['target_mbps'])
    while not self.stopping:
@@ -691,6 +730,11 @@ class Supervisor:
     time.sleep(.5)
   finally:
    try:
+    if self.driver:
+     self.restart_on_close=False
+     if self.pid and self.server_alive() and not self.stock_mode and self.root is not None and self.root.poll() is None:
+      try:self.set_mode('stock')
+      except Exception as error:self.log('could not switch back to stock HEVC: '+str(error)[:200])
     if self.authenticated:
      try:
       if self.root is None or self.root.poll() is not None:

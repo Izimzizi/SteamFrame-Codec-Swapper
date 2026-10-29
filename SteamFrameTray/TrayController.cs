@@ -33,12 +33,13 @@ public sealed class TrayController
     private readonly Func<Task> _save;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _wasLive;
+    private readonly Func<bool>? _driverInstalled;
     private int? _lastSteamVr;
     private DateTime _ownWriteUntil;
 
-    public TrayController(ICodecService codec, ICredentialVault vault, IDriverPatch patch, FramePreferences preferences, Func<Task> save, ILiveBitrate? live = null)
+    public TrayController(ICodecService codec, ICredentialVault vault, IDriverPatch patch, FramePreferences preferences, Func<Task> save, ILiveBitrate? live = null, Func<bool>? driverInstalled = null)
     {
-        _codec = codec; _vault = vault; _patch = patch; _preferences = preferences; _save = save; _live = live;
+        _driverInstalled = driverInstalled; _codec = codec; _vault = vault; _patch = patch; _preferences = preferences; _save = save; _live = live;
         Current = new(TrayState.Disarmed, "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps);
     }
 
@@ -290,7 +291,8 @@ public sealed class TrayController
             var status = await _codec.ReadStatusAsync(cancellationToken);
             var steamVrRunning = _live?.SteamVrRunning ?? false;
             var alreadyApplied = status.Live && status.Keep && status.ActiveCodec == "H.264" && status.TargetMbps == request.TargetMbps && status.State is "ready" or "waiting";
-            if (!alreadyApplied && steamVrRunning && confirmRestart is not null && !await confirmRestart())
+            // With the permanent driver SteamVR already holds the hook: arming flips the codec live and never restarts it.
+            if (!alreadyApplied && steamVrRunning && !request.Driver && confirmRestart is not null && !await confirmRestart())
             {
                 Publish(Map(status));
                 return false;
@@ -367,7 +369,7 @@ public sealed class TrayController
         finally { _gate.Release(); }
     }
 
-    private CodecStartRequest Request() => new(TargetMbps, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames);
+    private CodecStartRequest Request() => new(TargetMbps, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames, _driverInstalled?.Invoke() ?? false);
 
     /// <summary>Windows is ending the session: ask a live supervisor to restore now (it also notices the tray disappearing).</summary>
     public void RequestCloseNoWait() => _codec.RequestCloseNoWait();

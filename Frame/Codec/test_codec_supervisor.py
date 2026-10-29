@@ -553,3 +553,28 @@ class LiveModeTests(LiveRateTests):
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update:
    instance.set_mode('h264','op')
   self.assertEqual(calls,[]);self.assertEqual(update.call_args.kwargs,{'operation_id':'op','last_result':{'ok':True}})
+
+class DriverSessionTests(LiveModeTests):
+ def test_arming_with_the_driver_attaches_and_flips_live_without_touching_steamvr(self):
+  instance=self.make(pid=0,live=False);calls=[];instance.driver=True;instance.rate_control='vbr';instance.preset=2;instance.vbv=2
+  info={'mode':'stock','stock_sessions':1,'sessions':1}
+  def stats(action='stats',*arguments):
+   calls.append(action)
+   if action=='switch-info':return dict(info)
+   if action=='configure':return {'code':0}
+   if action=='mode':info['mode']=arguments[0];return {'code':0}
+   raise AssertionError(action)
+  instance.stats=stats;instance.stop_frame_stream=lambda:None;instance.wait_decoder_idle=lambda *a:None;instance.cef=lambda w:calls.append('cef '+w)
+  instance.action=lambda n:{'mounted':True,'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
+  instance.verify_stream=lambda *a:calls.append('verify h264');instance.current_refresh=lambda:90
+  with patch.object(service.Supervisor,'server_pid',return_value=4242),patch.object(service,'ProcessWatch'),patch.object(service.Supervisor,'server_alive',return_value=True),       patch.object(instance,'update'),patch.object(instance,'log'),patch.object(service.time,'sleep'),patch.object(instance,'save_host_settings') as save,patch.object(instance,'start_server') as start:
+   instance.start_driver_session()
+  self.assertEqual(calls[:3],['switch-info','configure','switch-info'])
+  self.assertIn('mode',calls);self.assertIn('verify h264',calls)
+  save.assert_not_called();start.assert_not_called()
+  self.assertFalse(instance.stock_mode);self.assertFalse(instance.restart_on_close)
+ def test_arming_with_steamvr_closed_waits_for_it(self):
+  instance=self.make(pid=0,live=False);instance.driver=True
+  with patch.object(service.Supervisor,'server_pid',return_value=0),patch.object(instance,'update') as update:
+   instance.start_driver_session()
+  self.assertEqual(update.call_args.kwargs['state'],'waiting')
