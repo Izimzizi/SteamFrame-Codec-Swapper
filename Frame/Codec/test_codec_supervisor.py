@@ -99,19 +99,21 @@ class HostSettingsTests(unittest.TestCase):
   self.instance.directory=root/'session';self.instance.directory.mkdir();self.instance.host_path=self.instance.directory/'host-original.json'
  def tearDown(self):self.temporary.cleanup()
  def driver(self):return json.loads(self.settings.read_text(encoding='utf-8'))['driver_vrlink']
- def test_session_writes_only_the_bitrate_and_width_then_restores_user_settings(self):
+ def test_session_writes_only_the_bitrate_then_restores_user_settings(self):
   self.instance.load_host_state()
   with patch.object(self.instance,'server_pid',return_value=0):
    self.instance.save_host_settings(300)
    driver=self.driver()
-   self.assertEqual((driver['streamFormatWidth'],driver['automaticStreamFormatWidth'],driver['targetBandwidth'],driver['recommendedBandwidthMbit']),(1024,False,300.0,300))
+   # The stream width is the user's own (no 1024 clamp): it is left alone.
+   self.assertEqual((driver['streamFormatWidth'],driver['targetBandwidth'],driver['recommendedBandwidthMbit']),(1280,300.0,300))
+   self.assertNotIn('automaticStreamFormatWidth',driver)
    # Automatic bandwidth and multi-link belong to the user: never written.
    self.assertTrue(driver['automaticBandwidth']);self.assertTrue(driver['allowMultipleLinks'])
    self.instance.save_host_settings(None)
   # Keys absent before the session are removed again; unrelated keys are untouched.
   self.assertEqual(self.driver(),self.user)
  def test_the_session_never_names_multi_link_or_automatic_bandwidth(self):
-  self.assertEqual(set(service.codec_host_values(300)),{'targetBandwidth','recommendedBandwidthMbit','automaticStreamFormatWidth','streamFormatWidth'})
+  self.assertEqual(set(service.codec_host_values(300)),{'targetBandwidth','recommendedBandwidthMbit'})
   self.assertNotIn('allowMultipleLinks',service.HOST_KEYS);self.assertNotIn('automaticBandwidth',service.HOST_KEYS)
  def test_a_user_who_turned_multi_link_off_during_a_session_keeps_it_off(self):
   self.instance.load_host_state()

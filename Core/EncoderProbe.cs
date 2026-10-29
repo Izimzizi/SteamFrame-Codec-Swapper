@@ -39,7 +39,7 @@ public sealed partial class EncoderProbe
         var modules = ReadModules(process);
         var driver = modules.FirstOrDefault(m => m.Name.Equals("driver_vrlink.dll", StringComparison.OrdinalIgnoreCase));
         if (driver is null) { ResetHookState(); return new() { ProcessId = process.Id, WaitingForDriver = true, Message = "Steam Link VR driver is not loaded." }; }
-        var hook = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameH264Hook.dll", StringComparison.OrdinalIgnoreCase));
+        var hook = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameH264Hook.dll", StringComparison.OrdinalIgnoreCase) || m.Name.Equals("driver_steamframe.dll", StringComparison.OrdinalIgnoreCase));
         if (hook is not null) return ReadHookSnapshot(process, hook);
         ResetHookState();
         if (_session is null || _session.ProcessId != process.Id || _session.CreationTime != ProcessCreationTime(process))
@@ -91,7 +91,7 @@ public sealed partial class EncoderProbe
         if (process is null) return new() { WaitingForDriver = true, Message = "Start SteamVR before starting encoder monitoring." };
         if (!Environment.Is64BitProcess) return new() { ProcessId = process.Id, Message = "Encoder monitoring requires the x64 application." };
         var modules = ReadModules(process);
-        var hook = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameH264Hook.dll", StringComparison.OrdinalIgnoreCase));
+        var hook = modules.FirstOrDefault(m => m.Name.Equals("SteamFrameH264Hook.dll", StringComparison.OrdinalIgnoreCase) || m.Name.Equals("driver_steamframe.dll", StringComparison.OrdinalIgnoreCase));
         if (hook is not null) { _hookStopped = false; return ReadHookSnapshot(process, hook); }
         var driver = modules.FirstOrDefault(m => m.Name.Equals("driver_vrlink.dll", StringComparison.OrdinalIgnoreCase));
         if (driver is null) return new() { ProcessId = process.Id, WaitingForDriver = true, Message = "Waiting for SteamVR's streaming driver." };

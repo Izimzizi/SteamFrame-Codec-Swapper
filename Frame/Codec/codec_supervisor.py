@@ -8,8 +8,7 @@ import argparse,base64,ctypes as c,json,os,pathlib,queue,re,subprocess,sys,threa
 
 RATES=(72,80,90,120)  # the refresh rates the hook accepts; read from SteamVR, never set by this service
 # The only stream settings a session changes. Everything else, including multi-link and automatic bandwidth, is the user's.
-HOST_KEYS=('targetBandwidth','recommendedBandwidthMbit','automaticStreamFormatWidth','streamFormatWidth')
-H264_WIDTH=1024  # the Frame's H.264 decoder needs this stream width
+HOST_KEYS=('targetBandwidth','recommendedBandwidthMbit')
 # Keep mode swaps in a fresh administrator session well before the old one expires (the Frame root helper ends after two hours).
 RENEW_AFTER=100*60;RETRY_INTERVAL=15
 # The paired H.264 encoder's highest accepted bitrate; the hook is installed at it so SteamVR's live bitrate drives the encoder.
@@ -103,7 +102,7 @@ def host_original(current,saved):
     saved.get('applied') is not None and current in (saved.get('applied'),saved.get('previous')) and set(saved['original'])<=set(HOST_KEYS):return dict(saved['original'])
  return dict(current)
 def codec_host_values(target):
- return {'targetBandwidth':float(target),'recommendedBandwidthMbit':target,'automaticStreamFormatWidth':False,'streamFormatWidth':H264_WIDTH}
+ return {'targetBandwidth':float(target),'recommendedBandwidthMbit':target}
 
 class Supervisor:
  resume=False;restore_only=False;password=None;applied=None;frame_mounted=False
