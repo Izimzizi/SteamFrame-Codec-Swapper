@@ -134,6 +134,25 @@ public sealed class CodecControllerTests
     }
 
     [Fact]
+    public async Task A_live_codec_switch_is_sent_only_to_a_session_whose_SteamVR_has_the_hook()
+    {
+        using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264", rateLive: true);
+        var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SetModeAsync("stock"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => controller.SetModeAsync("hevc"));
+        Assert.False(Directory.Exists(Path.Combine(lab.Root, "requests")));
+
+        lab.Status(codec: "H.264", rateLive: true, modeLive: true);
+        var switching = controller.SetModeAsync("stock");
+        var path = await lab.WaitForRequest();
+        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        Assert.Equal("mode", request.RootElement.GetProperty("action").GetString());
+        Assert.Equal("stock", request.RootElement.GetProperty("mode").GetString());
+        lab.Status(codec: "HEVC", rateLive: true, modeLive: true, operation: request.RootElement.GetProperty("id").GetString(), ok: true);
+        Assert.Equal("HEVC", (await switching).ActiveCodec);
+    }
+
+    [Fact]
     public async Task A_refused_rate_change_is_reported_without_ending_the_session()
     {
         using var lab = new CodecTestDirectory(); lab.Status(codec: "H.264", rateLive: true);
@@ -239,6 +258,7 @@ public sealed class CodecControllerTests
     [Theory]
     [InlineData(1u, "AV1")]
     [InlineData(2u, "H.264")]
+    [InlineData(3u, "HEVC")]
     public void Shared_backend_identity_distinguishes_av1_and_h264(uint id, string expected)
     {
         var bytes = new byte[36];
@@ -246,7 +266,7 @@ public sealed class CodecControllerTests
         for (var i = 0; i < fields.Length; i++) BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(i * 4), fields[i]);
         var identity = PairedCodecIdentity.Read(bytes);
         Assert.Equal(expected, identity.Codec); Assert.Equal(90u, identity.Fps); Assert.True(identity.Cbr); Assert.Equal(4u, identity.Preset); Assert.Equal(3u, identity.VbvFrames);
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8), 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8), 4);
         Assert.Throws<InvalidDataException>(() => PairedCodecIdentity.Read(bytes));
         Assert.Throws<InvalidDataException>(() => PairedCodecIdentity.Read(new byte[36]));
     }
@@ -302,13 +322,13 @@ public sealed class CodecControllerTests
     {
         public string Root { get; } = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "steam-frame-codec-test-" + Guid.NewGuid().ToString("N")));
         public CodecTestDirectory() => Directory.CreateDirectory(Root);
-        public void Status(double created = 100, double updated = 1000, string state = "ready", string codec = "HEVC", string? operation = null, bool? ok = null, string? error = null, int? maximumH264 = 500, bool rateLive = false)
+        public void Status(double created = 100, double updated = 1000, string state = "ready", string codec = "HEVC", string? operation = null, bool? ok = null, string? error = null, int? maximumH264 = 500, bool rateLive = false, bool modeLive = false)
         {
             var path = Path.Combine(Root, "status.json");
             var temporary = path + ".tmp";
             var value = JsonSerializer.SerializeToNode(new { protocol_version = 1, owner_pid = 123, owner_created_epoch = created,
                 updated_epoch = updated, state, active_codec = codec, message = "Test session", operation_id = operation ?? "",
-                last_result = ok is null ? null : new { ok = ok.Value, error }, target_mbps = 100, fps = 90, maximum_h264_mbps = maximumH264, rate_live = rateLive })!;
+                last_result = ok is null ? null : new { ok = ok.Value, error }, target_mbps = 100, fps = 90, maximum_h264_mbps = maximumH264, rate_live = rateLive, mode_live = modeLive })!;
             if (maximumH264 == null) value.AsObject().Remove("maximum_h264_mbps");
             File.WriteAllText(temporary, value.ToJsonString());
             File.Move(temporary, path, true);

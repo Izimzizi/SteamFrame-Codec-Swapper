@@ -40,6 +40,13 @@ internal sealed class FakeCodec : ICodecService
     public List<int> Rates { get; } = [];
     public List<(string RateControl, int Preset, int Vbv)> Encoders { get; } = [];
     public Exception? EncoderError { get; set; }
+    public List<string> Modes { get; } = [];
+    public Task<CodecServiceStatus> SetModeAsync(string mode, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken)
+    {
+        Calls.Add("mode");
+        Modes.Add(mode);
+        return Task.FromResult(Status);
+    }
     public Task<CodecServiceStatus> SetEncoderAsync(string rateControl, int preset, int vbvFrames, IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken)
     {
         Calls.Add("encoder");
@@ -348,6 +355,32 @@ public sealed class TrayControllerTests
         await rig.Controller.RefreshAsync();
         Assert.True(await rig.Controller.ApplyEncoderOptionsAsync());
         Assert.Equal([("cbr", 4, 2)], rig.Codec.Encoders); Assert.Empty(rig.Live.Applied);
+    }
+
+    [Fact]
+    public async Task A_live_codec_switch_goes_to_the_supervisor_only_for_a_hooked_ready_session()
+    {
+        var rig = new Rig();
+        rig.Prefs.KeepH264 = true; rig.Codec.Status = LiveRate() with { ModeLive = true };
+        await rig.Controller.RefreshAsync();
+        Assert.True(await rig.Controller.SwitchCodecLiveAsync(stock: true));
+        Assert.True(await rig.Controller.SwitchCodecLiveAsync(stock: false));
+        Assert.Equal(["stock", "h264"], rig.Codec.Modes); Assert.Empty(rig.Live.Applied);
+
+        var unhooked = new Rig();
+        unhooked.Prefs.KeepH264 = true; unhooked.Codec.Status = LiveRate();
+        await unhooked.Controller.RefreshAsync();
+        Assert.False(await unhooked.Controller.SwitchCodecLiveAsync(stock: true));
+        Assert.Empty(unhooked.Codec.Modes);
+    }
+
+    [Fact]
+    public async Task Streaming_stock_HEVC_in_an_armed_session_is_described_as_such()
+    {
+        var rig = new Rig();
+        rig.Prefs.KeepH264 = true; rig.Codec.Status = LiveRate() with { ActiveCodec = "HEVC", ModeLive = true };
+        await rig.Controller.RefreshAsync();
+        Assert.Equal(TrayState.Armed, rig.Controller.Current.State); Assert.Contains("HEVC", rig.Controller.Current.Message);
     }
 
     [Fact]

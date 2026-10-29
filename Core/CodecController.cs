@@ -37,6 +37,8 @@ public sealed record CodecServiceStatus
     [JsonPropertyName("automatic_bandwidth")] public bool AutomaticBandwidth { get; init; }
     /// <summary>The bitrate can change without restarting SteamVR (see <see cref="CodecController.SetRateAsync"/>).</summary>
     [JsonPropertyName("rate_live")] public bool RateLive { get; init; }
+    /// <summary>The running SteamVR can switch between H.264 and its own HEVC without a restart (see <see cref="CodecController.SetModeAsync"/>).</summary>
+    [JsonPropertyName("mode_live")] public bool ModeLive { get; init; }
     [JsonIgnore] public bool Live { get; init; }
     [JsonIgnore] public bool CanStart { get; init; }
     [JsonIgnore] public bool Busy => Live && State is "starting" or "switching";
@@ -264,8 +266,23 @@ public sealed class CodecController
         finally { _operations.Release(); }
     }
 
+    /// <summary>Switches the running SteamVR between H.264 ("h264") and its own HEVC ("stock") without restarting it: the stream stops, the hook and the Frame's client flip together, the stream starts again.</summary>
+    public async Task<CodecServiceStatus> SetModeAsync(string mode, IProgress<CodecServiceStatus>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (mode is not ("h264" or "stock")) throw new ArgumentOutOfRangeException(nameof(mode), "Mode is h264 or stock.");
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var status = ReadStatus();
+            if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation to finish." : status.Message);
+            if (!status.ModeLive) throw new InvalidOperationException("SteamVR was started without the live codec hook; arm H.264 and let SteamVR start (or restart it) first.");
+            return await SendAsync("mode", 0, status, progress, cancellationToken, mode: mode).ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
+    }
+
     private async Task<CodecServiceStatus> SendAsync(string action, int targetMbps, CodecServiceStatus owner,
-        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, CodecStartRequest? encoder = null)
+        IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, CodecStartRequest? encoder = null, string? mode = null)
     {
         var id = Guid.NewGuid().ToString("D");
         var directory = Path.Combine(_sessionDirectory, "requests");
@@ -275,6 +292,7 @@ public sealed class CodecController
         if (!current.Live || current.OwnerPid != owner.OwnerPid || current.OwnerCreatedEpoch != owner.OwnerCreatedEpoch || current.Busy)
             throw new InvalidOperationException("Codec service ownership or state changed before the switch. No request was sent.");
         object body = action == "rate" ? new { protocol_version = 1, id, action, target_mbps = targetMbps }
+            : action == "mode" ? new { protocol_version = 1, id, action, mode }
             : action == "encoder" ? new { protocol_version = 1, id, action, rate_control = encoder!.RateControl, preset = encoder.Preset, vbv_frames = encoder.VbvFrames }
             : new { protocol_version = 1, id, action };
         await WriteAtomicAsync(Path.Combine(directory, $"request-{id}.json"), body, cancellationToken).ConfigureAwait(false);

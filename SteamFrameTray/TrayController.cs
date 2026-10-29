@@ -100,6 +100,25 @@ public sealed class TrayController
         finally { _gate.Release(); }
     }
 
+    /// <summary>
+    /// Experiment: switches the running SteamVR between H.264 and its own HEVC without restarting it (the stream stops briefly).
+    /// False means the session cannot do it now (no live hook in this SteamVR).
+    /// </summary>
+    public async Task<bool> SwitchCodecLiveAsync(bool stock, CancellationToken cancellationToken = default)
+    {
+        if (!Current.IsArmed) return false;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var status = await _codec.ReadStatusAsync(cancellationToken);
+            if (!(status.Live && status.ModeLive && status.State == "ready")) return false;
+            var result = await _codec.SetModeAsync(stock ? "stock" : "h264", new Progress<CodecServiceStatus>(), cancellationToken);
+            Publish(Map(result));
+            return true;
+        }
+        finally { _gate.Release(); }
+    }
+
     /// <summary>Stock codec: SteamVR's own setting is the bitrate, so write it live, or into its settings file while SteamVR is closed.</summary>
     private async Task<ChangeOutcome> ChangeDisarmedAsync(int mbps, Func<BitratePatchStatus, Task<bool>> confirmPatch, CancellationToken cancellationToken)
     {
@@ -392,6 +411,7 @@ public sealed class TrayController
         {
             "starting" or "switching" => new(TrayState.Arming, status.Message, target),
             "waiting" => new(TrayState.Waiting, $"Armed: H.264 {target} Mbps, waiting for SteamVR to start.", target),
+            "ready" when status.ActiveCodec == "HEVC" => new(TrayState.Armed, $"Armed, streaming SteamVR's own HEVC (live switch). H.264 {target} Mbps comes back when you switch or restart SteamVR.", target),
             "ready" => new(TrayState.Armed, $"Armed: H.264 {target} Mbps." + (status.AutomaticBandwidth ? " SteamVR's Automatic bandwidth is on and may lower it." : ""), target),
             "error" => new(TrayState.Error, status.Message, target),
             _ => new(TrayState.Disarmed, "Disarmed. SteamVR uses its own codec and bitrate.", TargetMbps)

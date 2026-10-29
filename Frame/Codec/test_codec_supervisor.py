@@ -377,7 +377,8 @@ class LiveRateTests(unittest.TestCase):
   with patch.object(service.Supervisor,'server_alive',return_value=True):
    self.assertTrue(self.make().rate_available())
    self.assertFalse(self.make(live=False).rate_available())          # hook installed with a fixed budget
-   self.assertFalse(self.make(codec='HEVC').rate_available())
+   self.assertTrue(self.make(codec='HEVC').rate_available())         # the hook's stock mode still follows SteamVR's live bitrate
+   self.assertFalse(self.make(codec='Unknown').rate_available())
   with patch.object(service.Supervisor,'server_alive',return_value=False):
    self.assertFalse(self.make().rate_available())                    # hooked SteamVR went away
   self.assertTrue(self.make(pid=0).rate_available())                 # armed and waiting for SteamVR
@@ -488,3 +489,65 @@ class LiveEncoderTests(LiveRateTests):
   instance=self.make();done=Mock(returncode=0,stdout='{"code":0}',stderr='');clock=iter([0,1,2,3,4,5,6,7,8,9,10,11,12,13])
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(instance,'hook_identity',return_value='vbr, P2, VBV 2'),patch.object(service.time,'sleep'),patch.object(service.time,'monotonic',side_effect=lambda:next(clock)),patch.object(service.subprocess,'run',return_value=done):
    with self.assertRaisesRegex(RuntimeError,'has not applied'):instance.set_encoder('cbr',4,2,'op')
+
+class LiveModeTests(LiveRateTests):
+ def make(self,pid=7,live=True,applied=300,codec='H.264'):
+  instance=super().make(pid,live,applied,codec)
+  instance.backend=pathlib.Path('backend');instance.config={'target_mbps':300};instance.stock_mode=False;instance.phase=''
+  return instance
+ def wire(self,instance,calls,mode='h264',stock_sessions=1,fail=None):
+  def stats(action='stats',*arguments):
+   if action=='switch-info':return {'mode':mode,'stock_sessions':stock_sessions,'sessions':1}
+   if action=='mode':calls.append('hook '+arguments[0]);return {'code':0}
+   raise AssertionError(action)
+  instance.stats=stats
+  instance.stop_frame_stream=lambda:calls.append('cef stop')
+  instance.wait_decoder_idle=lambda *a:calls.append('idle')
+  instance.cef=lambda which:calls.append('cef '+which)
+  def action(name):
+   calls.append('frame '+name)
+   if name=='rollback':return {'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
+   return {'mounted':True}
+  instance.action=action
+  instance.verify_stock=lambda *a:calls.append('verify stock') if fail!='stock' else (_ for _ in ()).throw(RuntimeError('no stream'))
+  instance.verify_stream=lambda *a:calls.append('verify h264') if fail!='h264' else (_ for _ in ()).throw(RuntimeError('no stream'))
+ def test_mode_requests_are_validated(self):
+  request={'protocol_version':1,'id':str(uuid.uuid4()),'action':'mode','mode':'stock'}
+  self.assertEqual(service.validate_request(request),(request['id'],'mode'))
+  for bad in ('hevc',None,3):
+   with self.assertRaises(ValueError):service.validate_request(dict(request,mode=bad))
+ def test_switching_to_stock_flips_the_hook_and_the_client_while_the_stream_is_stopped(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls)
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   instance.set_mode('stock','op')
+  self.assertEqual(calls,['cef stop','idle','frame rollback','hook stock','cef start','verify stock'])
+  self.assertEqual(update.call_args.kwargs['active_codec'],'HEVC');self.assertTrue(instance.stock_mode)
+ def test_switching_back_mounts_the_h264_client_before_the_hook_flips(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls,mode='stock')
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   instance.set_mode('h264','op')
+  self.assertEqual(calls,['cef stop','idle','frame client-h264','hook h264','cef start','verify h264'])
+  self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
+ def test_a_failed_switch_puts_the_previous_codec_back(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls,fail='stock')
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   with self.assertRaisesRegex(RuntimeError,'no stream'):instance.set_mode('stock','op')
+  first=calls.index('cef start')
+  self.assertEqual(calls[:first+1],['cef stop','idle','frame rollback','hook stock','cef start'])
+  self.assertEqual(calls[first+1:],['cef stop','idle','frame client-h264','hook h264','cef start'])
+  self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
+ def test_no_switch_without_a_hook_or_a_stock_encoder(self):
+  hookless=self.make(live=False)
+  with patch.object(service.Supervisor,'server_alive',return_value=True):
+   with self.assertRaisesRegex(RuntimeError,'not running with the codec hook'):hookless.set_mode('stock')
+  single=self.make();self.wire(single,[],stock_sessions=0)
+  with patch.object(service.Supervisor,'server_alive',return_value=True):
+   with self.assertRaisesRegex(RuntimeError,'no stock encoder'):single.set_mode('stock')
+ def test_asking_for_the_current_mode_changes_nothing(self):
+  instance=self.make();calls=[];self.wire(instance,calls)
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update:
+   instance.set_mode('h264','op')
+  self.assertEqual(calls,[]);self.assertEqual(update.call_args.kwargs,{'operation_id':'op','last_result':{'ok':True}})

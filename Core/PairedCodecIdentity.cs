@@ -12,7 +12,7 @@ public sealed record PairedCodecIdentity(string Codec, uint Fps, uint AverageBit
             throw new InvalidDataException("The paired codec identity interface is incompatible.");
         var codec = BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..]) switch
         {
-            1 => "AV1", 2 => "H.264", _ => throw new InvalidDataException("The paired codec identity is unknown.")
+            1 => "AV1", 2 => "H.264", 3 => "HEVC", _ => throw new InvalidDataException("The paired codec identity is unknown.")
         };
         var fps = BinaryPrimitives.ReadUInt32LittleEndian(bytes[12..]);
         var average = BinaryPrimitives.ReadUInt32LittleEndian(bytes[16..]);

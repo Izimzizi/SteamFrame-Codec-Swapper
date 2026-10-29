@@ -10,6 +10,7 @@ Run `build.ps1` from Windows PowerShell with Visual Studio C++ and a Windows SDK
 
 - `SteamFrameH264Hook.dll` – the hook.
 - `hook_control.exe` – `hook_control PID DLL install|configure|stats|identity|remove [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]`. Codec must be `2` (H.264, 500 Mbps limit), `rate_control` is `vbr` or `cbr`, `preset` is 1 to 7, `vbv_frames` is 1 to 16.
+- `hook_control PID DLL mode h264|stock` and `switch-info` (experimental, branch `live-codec-switch`): the hook opens the driver's own SDK 11.1 (HEVC) encoder beside the H.264 one for every session SteamVR opens, and SteamVR's buffer handles are virtual, wrapping both. `mode` chooses which encoder takes the frames mapped from then on (the first frame after a switch is a keyframe with parameter sets); the Frame's client must change at the same moment, which the supervisor does while the stream is stopped. `switch-info` prints the mode and counters. The hook must have been loaded when SteamVR started, because it only wraps sessions opened afterwards. The driver checks every session open against the API version of the process's latest `NvEncodeAPICreateInstance` call, so the bridge asks for each version again right before opening a session of it.
 - `codec_caps.exe` – prints the NVENC codec capabilities of the installed GPU.
 - `picture_abi_test.exe`, `bridge_gpu_test.exe` – the guards below.
 
@@ -21,4 +22,4 @@ The SDK 11.1 picture's QP-map offset differs from SDK 12.1. Never copy the whole
 
 `start_steamvr_trial.ps1 -Mbps N` launches SteamVR and installs the hook early, without the tray, for isolated trials.
 
-The exported entry points are `HookInstallTrial`, `HookReconfigure`, `HookRemoveTrial`, `HookReadTrialStats` and `HookReadTrialIdentity`. The managed side reads them in `Core/EncoderProbe.Hook.cs`.
+The exported entry points are `HookInstallTrial`, `HookReconfigure`, `HookRemoveTrial`, `HookReadTrialStats`, `HookReadTrialIdentity`, `HookSwitchMode` and `HookReadSwitchInfo`. The managed side reads them in `Core/EncoderProbe.Hook.cs`.

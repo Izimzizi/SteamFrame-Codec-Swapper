@@ -63,7 +63,8 @@ def validate_request(value):
  identifier=str(uuid.UUID(value['id']))
  if identifier!=value['id']:raise ValueError('Noncanonical request ID')
  action=value.get('action')
- if action not in ('close','rate','encoder'):raise ValueError('Unknown codec action')
+ if action not in ('close','rate','encoder','mode'):raise ValueError('Unknown codec action')
+ if action=='mode' and value.get('mode') not in ('h264','stock'):raise ValueError('Unknown codec mode')
  if action=='rate':validate_target(value.get('target_mbps'))
  if action=='encoder':validate_encoder_options(value.get('rate_control'),value.get('preset'),value.get('vbv_frames'))
  return identifier,action
@@ -134,7 +135,7 @@ class Supervisor:
   self.vr=pathlib.Path(config.get('steamvr_root',str(self.steam/'steamapps/common/SteamVR'))).resolve()/'bin/win64'
   if not (self.steam/'steam.exe').is_file() or not (self.vr/'vrserver.exe').is_file():raise ValueError('SteamVR installation unavailable')
   # The tray that started this service. When it is gone the service restores stock and ends: nothing is left applied.
-  self.tray=None;self.tray_checked=0.0;self.watched=None;self.watched_at=0.0
+  self.tray=None;self.tray_checked=0.0;self.watched=None;self.watched_at=0.0;self.stock_mode=False
   tray_pid=config.get('tray_pid')
   if type(tray_pid) is int and tray_pid>0:self.tray=ProcessWatch(tray_pid,'The tray')
   self.pid=0;self.watch=None;self.root=None;self.root_started=0;self.authenticated=False;self.root_replies=queue.Queue();self.stopping=False
@@ -151,7 +152,7 @@ class Supervisor:
  def rate_available(self):
   """A bitrate-only change needs no restart: SteamVR is running with the uncapped hook (its own live
   setting then drives the encoder), or SteamVR is closed and the session applies it at the next start."""
-  if self.pid and self.live_rate and self.status.get('active_codec')=='H.264':return self.server_alive()
+  if self.pid and self.live_rate and self.status.get('active_codec') in ('H.264','HEVC'):return self.server_alive()
   return bool(self.applied and not self.pid)
  def automatic_bandwidth(self):
   """SteamVR's Automatic bandwidth is the user's choice and is left alone; the tray shows a note when it is on."""
@@ -177,6 +178,8 @@ class Supervisor:
    if mark!=self.log_last:self.log('state '+str(mark[0])+' / '+str(mark[1])+': '+str(mark[2])+' [phase '+str(getattr(self,'phase',''))+']');self.log_last=mark
    try:self.status['rate_live']=self.rate_available()
    except Exception:self.status['rate_live']=False
+   try:self.status['mode_live']=bool(self.pid and self.live_rate and self.server_alive())
+   except Exception:self.status['mode_live']=False
    self.status['automatic_bandwidth']=self.automatic_bandwidth()
    atomic_json(self.directory/'status.json',self.status)
  def heartbeat(self):
@@ -309,8 +312,8 @@ class Supervisor:
     except json.JSONDecodeError:pass
    time.sleep(.1)
   raise RuntimeError('PC codec installation timed out: '+detail[:200])
- def stats(self,action='stats'):
-  return json.loads(self.command([self.backend/'hook_control.exe',self.pid,self.backend/'SteamFrameH264Hook.dll',action],timeout=12))
+ def stats(self,action='stats',*arguments):
+  return json.loads(self.command([self.backend/'hook_control.exe',self.pid,self.backend/'SteamFrameH264Hook.dll',action,*arguments],timeout=12))
  def check_encoder_errors(self,state,target,fps):
   if not state['errors']:return
   # Preserve the counter-only diagnosis before recovery destroys the encoder.
@@ -391,6 +394,71 @@ class Supervisor:
    identity=self.stats('identity')
    return str(identity.get('rate_control'))+', P'+str(identity.get('preset'))+', VBV '+str(identity.get('vbv_frames'))
   except Exception:return 'unreadable'
+ def verify_stock(self,fps):
+  """Stock HEVC is flowing: the Frame holds its decoder and the hook's frame count keeps rising while it reports HEVC."""
+  deadline=time.monotonic()+self.verify_seconds;seen='no receiver reading'
+  while time.monotonic()<deadline:
+   receiver=self.action('inventory')
+   seen='Frame decoder '+str(receiver.get('current_driver'))+', '+str(receiver.get('open_decoder_users'))+' decoder user(s)'
+   if receiver.get('open_decoder_users'):
+    state=self.stats();identity=self.stats('identity')
+    seen+='; hook codec '+str(identity.get('codec'))+', frames '+str(state.get('locks'))+', errors '+str(state.get('errors'))
+    if state['errors']:raise RuntimeError('Encoder errors after the live switch ('+seen+').')
+    if identity['codec']=='HEVC' and state['locks']:
+     before=state['locks'];time.sleep(.5)
+     if self.stats()['locks']>before:return
+   time.sleep(.5)
+  raise RuntimeError('The stock HEVC stream did not start ('+seen+').')
+ def hook_mode(self,mode):
+  result=self.stats('mode',mode)
+  if result.get('code'):raise RuntimeError('The hook refused the '+mode+' mode (code '+str(result.get('code'))+', stock encoders '+str(result.get('stock_sessions'))+' of '+str(result.get('sessions'))+' sessions).')
+  return result
+ def set_mode(self,mode,operation_id=''):
+  """Switch the running SteamVR between H.264 and its own HEVC without restarting it: the stream stops, the hook and the Frame's
+  client flip together, the stream starts again. On any failure the previous codec is put back."""
+  if mode not in ('h264','stock'):raise ValueError('Unknown codec mode')
+  if not (self.pid and self.live_rate and self.server_alive()):raise RuntimeError('SteamVR is not running with the codec hook; a live switch is not available.')
+  before=self.stats('switch-info')
+  if not before.get('stock_sessions'):raise RuntimeError('This SteamVR session has no stock encoder beside the H.264 one; restart SteamVR once.')
+  previous='stock' if before.get('mode')=='stock' else 'h264'
+  if previous==mode:
+   self.update(operation_id=operation_id,last_result={'ok':True});return
+  target=self.applied or self.config['target_mbps']
+  fps=self.status.get('fps')
+  if fps not in RATES:fps=self.current_refresh()
+  self.verify_seconds=20
+  self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,
+   message='Switching the stream to '+('stock HEVC' if mode=='stock' else 'H.264')+'.')
+  def flip(wanted):
+   # The stream is stopped, so the hook and the Frame's decoder client may change together.
+   self.phase='Frame codec activation'
+   if wanted=='stock':
+    recovered=self.action('rollback')['inventory']
+    if recovered['current_driver']!='qcom-iris' or recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
+    self.frame_mounted=False
+   else:
+    if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
+   self.phase='host codec activation';self.hook_mode(wanted)
+  try:
+   self.phase='stopping stream';self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle()
+   flip(mode)
+   self.phase='starting Frame stream';self.cef('start')
+   self.phase='verifying hardware stream'
+   if mode=='stock':self.verify_stock(fps)
+   else:self.verify_stream(target,fps)
+  except Exception as error:
+   self.log('live switch to '+mode+' failed ('+self.phase+'): '+str(error)[:300])
+   try:
+    self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle();flip(previous);self.cef('start')
+    self.update(state='ready',active_codec='HEVC' if previous=='stock' else 'H.264',stream_pid=self.pid,
+     message='The live switch failed; the stream is back on '+('stock HEVC' if previous=='stock' else 'H.264')+'.')
+   except Exception as restore:
+    self.log('could not return to '+previous+': '+str(restore)[:200])
+    self.update(state='error',active_codec='Unknown',message='The live switch failed and the previous codec could not be restored; restart SteamVR.')
+   raise
+  self.stock_mode=mode=='stock'
+  self.update(state='ready',active_codec='HEVC' if mode=='stock' else 'H.264',target_mbps=target,fps=fps,stream_pid=self.pid,
+   message='Streaming '+('stock HEVC; the hook stays ready for H.264.' if mode=='stock' else 'H.264.'),last_result={'ok':True},operation_id=operation_id)
  def set_encoder(self,rate_control,preset,vbv,operation_id=''):
   """Queue new NVENC options on the resident hook; the encoder SteamVR builds next (after a stream reset) uses them."""
   validate_encoder_options(rate_control,preset,vbv)
@@ -490,7 +558,7 @@ class Supervisor:
   if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
   self.frame_mounted=True
  def reapply(self):
-  target=self.applied
+  target=self.applied;self.stock_mode=False
   self.update(state='switching',active_codec='Unknown',message='SteamVR started; re-applying H.264.')
   failure='';self.verify_seconds=45
   for attempt in range(3):
@@ -583,6 +651,11 @@ class Supervisor:
     self.restart_on_close=bool(self.server_pid())
     self.update(state='switching',active_codec='Unknown',operation_id=identifier,last_result=None,message='Restoring SteamVR\'s own codec and closing the session.')
     self.stopping=True;return
+   if action=='mode':
+    try:self.set_mode(value['mode'],identifier)
+    except Exception as error:
+     self.update(operation_id=identifier,last_result={'ok':False,'error':'Live codec switch unavailable: '+str(error)[:200]})
+    continue
    if action=='encoder':
     try:self.set_encoder(value['rate_control'],value['preset'],value['vbv_frames'],identifier)
     except Exception as error:

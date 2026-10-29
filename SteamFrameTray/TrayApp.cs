@@ -23,6 +23,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _toggle = new();
     private readonly MenuBitrateSlider _menuSlider;
     private readonly ToolStripMenuItem _rateMenu = new("Encoder experiment");
+    private readonly ToolStripMenuItem _liveCodecMenu = new("Live codec switch (experiment)");
     private readonly ToolStripLabel _bitrateLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
     private readonly ToolStripMenuItem _statsItem = new("Stream stats window");
     private readonly ToolStripMenuItem _startup = new("Start with Windows");
@@ -107,7 +108,7 @@ public sealed class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _toggle, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _toggle, _bitrateLabel, _menuSlider, _rateMenu, _liveCodecMenu, new ToolStripSeparator(), _statsItem, _record, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
@@ -156,6 +157,20 @@ public sealed class TrayApp : ApplicationContext
             Group("VBV buffer", [..new[] { 1, 2, 4, 8, 16 }.Select<int, (string, Func<bool>, Action)>(v =>
                 ($"{v} frame{(v == 1 ? "" : "s")}" + (v == 2 ? " (default)" : ""), () => _preferences.HookVbvFrames == v, () => _preferences.HookVbvFrames = v))]),
         ]);
+        var stockItem = new ToolStripMenuItem("Switch to SteamVR's own HEVC now");
+        var h264Item = new ToolStripMenuItem("Switch to H.264 now");
+        async Task Switch(bool stock)
+        {
+            try
+            {
+                if (await _controller.SwitchCodecLiveAsync(stock)) Balloon("Live codec switch", stock ? "Streaming SteamVR's own HEVC." : "Streaming H.264.", ToolTipIcon.Info);
+                else Balloon("Live codec switch", "Not available now: arm H.264 and start SteamVR with the hook first.", ToolTipIcon.Warning);
+            }
+            catch (Exception error) when (error is not OperationCanceledException) { Balloon("Live codec switch", error.Message, ToolTipIcon.Warning); }
+        }
+        stockItem.Click += async (_, _) => await RunAsync(() => Switch(true));
+        h264Item.Click += async (_, _) => await RunAsync(() => Switch(false));
+        _liveCodecMenu.DropDownItems.AddRange([stockItem, h264Item]);
     }
 
     private void OnSessionEnding(object? sender, SessionEndingEventArgs e)
