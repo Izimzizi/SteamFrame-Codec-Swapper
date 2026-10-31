@@ -5,7 +5,7 @@ using SteamFrame.Core;
 namespace SteamFrameTray;
 
 /// <summary>The notification-area icon and its menu. All state lives in <see cref="TrayController"/>.</summary>
-public sealed class TrayApp : ApplicationContext
+public sealed partial class TrayApp : ApplicationContext
 {
     private readonly FramePreferences _preferences = LoadPreferences();
     private readonly SteamPaths _paths = SteamPaths.Current;
@@ -59,6 +59,7 @@ public sealed class TrayApp : ApplicationContext
         _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleStats(); };
         _poll.Tick += async (_, _) => { try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
+        StartHud();
         _ = StartAsync(autostart);
     }
 
@@ -102,6 +103,7 @@ public sealed class TrayApp : ApplicationContext
         _patchMenu.DropDownItems.AddRange([_patchState, new ToolStripSeparator(), _installPatch, _removePatch, _admin]);
         _patchMenu.DropDownOpening += async (_, _) => await RefreshPatchMenuAsync();
         BuildDriverMenu();
+        var hudMenu = BuildHudMenu();
         var setup = new ToolStripMenuItem("Setup / connection check…");
         setup.Click += (_, _) => ShowSetup();
         var openLogs = new ToolStripMenuItem("Open logs folder");
@@ -110,7 +112,7 @@ public sealed class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, hudMenu, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
@@ -350,6 +352,7 @@ public sealed class TrayApp : ApplicationContext
     private void ExitApp()
     {
         _poll.Stop();
+        StopHud();
         _icon.Visible = false;
         _icon.Dispose();
         _stats.Dispose();

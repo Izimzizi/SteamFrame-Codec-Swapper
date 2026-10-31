@@ -10,7 +10,7 @@ public sealed class StatsService : IDisposable
     private readonly Func<TraySnapshot> _tray;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 1000 };
     private RunLog? _log;
-    private bool _sampling, _viewing;
+    private bool _sampling, _viewing, _hud;
 
     public StatsService(StatsSampler sampler, Func<TraySnapshot> tray)
     {
@@ -27,6 +27,13 @@ public sealed class StatsService : IDisposable
     {
         get => _viewing;
         set { _viewing = value; Update(); }
+    }
+
+    /// <summary>The in-VR HUD is on: keep sampling for its readouts.</summary>
+    public bool HudActive
+    {
+        get => _hud;
+        set { _hud = value; Update(); }
     }
 
     /// <summary>Starts a new CSV in the logs folder; the header lines describe the setup being measured.</summary>
@@ -48,7 +55,7 @@ public sealed class StatsService : IDisposable
 
     private void Update()
     {
-        var wanted = _viewing || _log is not null;
+        var wanted = _viewing || _hud || _log is not null;
         if (wanted == _timer.Enabled) return;
         _timer.Enabled = wanted;
         if (wanted) _ = TickAsync();
@@ -56,7 +63,7 @@ public sealed class StatsService : IDisposable
 
     private async Task TickAsync()
     {
-        if (_sampling || !(_viewing || _log is not null)) return;
+        if (_sampling || !(_viewing || _hud || _log is not null)) return;
         _sampling = true;
         try
         {

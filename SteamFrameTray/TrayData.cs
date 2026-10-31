@@ -5,6 +5,8 @@ public static class TrayData
 {
     public static string Root { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamFrameTray");
     public static string SettingsPath => Path.Combine(Root, "settings.json");
+    public static string HudPath => Path.Combine(Root, "hud.json");
+    public static string HudLogPath => Path.Combine(Root, "hud.log");
     public static string SessionDirectory => Path.Combine(Root, "CodecSession");
     public static string KnownHosts => Path.Combine(Root, "known_hosts");
     public static string TrayKey => Path.Combine(Root, "frame_ed25519");
