@@ -503,7 +503,7 @@ class LiveModeTests(LiveRateTests):
    if action=='mode':calls.append('hook '+arguments[0]);return {'code':0}
    raise AssertionError(action)
   instance.stats=stats
-  instance.stop_frame_stream=lambda:calls.append('cef stop')
+  instance.stop_frame_stream=lambda:calls.append('cef stop') or True
   instance.wait_decoder_idle=lambda *a:calls.append('idle')
   instance.cef=lambda which:calls.append('cef '+which)
   def action(name):
@@ -564,7 +564,7 @@ class DriverSessionTests(LiveModeTests):
    if action=='configure':return {'code':0}
    if action=='mode':info['mode']=arguments[0];return {'code':0}
    raise AssertionError(action)
-  instance.stats=stats;instance.stop_frame_stream=lambda:None;instance.wait_decoder_idle=lambda *a:None;instance.cef=lambda w:calls.append('cef '+w)
+  instance.stats=stats;instance.stop_frame_stream=lambda:True;instance.wait_decoder_idle=lambda *a:None;instance.cef=lambda w:calls.append('cef '+w)
   instance.action=lambda n:{'mounted':True,'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
   instance.verify_stream=lambda *a:calls.append('verify h264');instance.current_refresh=lambda:90
   with patch.object(service.Supervisor,'server_pid',return_value=4242),patch.object(service,'ProcessWatch'),patch.object(service.Supervisor,'server_alive',return_value=True),       patch.object(instance,'update'),patch.object(instance,'log'),patch.object(service.time,'sleep'),patch.object(instance,'save_host_settings') as save,patch.object(instance,'start_server') as start:
@@ -578,3 +578,23 @@ class DriverSessionTests(LiveModeTests):
   with patch.object(service.Supervisor,'server_pid',return_value=0),patch.object(instance,'update') as update:
    instance.start_driver_session()
   self.assertEqual(update.call_args.kwargs['state'],'waiting')
+
+class UnreachableFrameTests(LiveModeTests):
+ def test_a_stream_stop_the_frame_refuses_leaves_everything_as_it_was(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls)
+  instance.stop_frame_stream=lambda:calls.append('cef stop') and False
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   with self.assertRaisesRegex(RuntimeError,'did not accept the stream stop'):instance.set_mode('stock','op')
+  self.assertEqual(calls,['cef stop'])
+  self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
+ def test_a_driver_session_keeps_the_choice_while_the_frame_cannot_be_reached(self):
+  instance=self.make(pid=0,live=False);instance.driver=True
+  with patch.object(instance,'update') as update:
+   instance.start_driver_session(False)
+  self.assertEqual(instance.applied,300);self.assertEqual(update.call_args.kwargs['state'],'waiting')
+  self.assertIn('waiting for the Frame',update.call_args.kwargs['message'])
+ def test_only_connection_failures_count_as_the_frame_being_away(self):
+  instance=self.make()
+  self.assertTrue(instance.frame_unreachable(RuntimeError('A paired codec command failed; check connection and installation.')))
+  self.assertFalse(instance.frame_unreachable(RuntimeError('Frame administrator authentication failed.')))

@@ -56,10 +56,7 @@ public sealed class TrayApp : ApplicationContext
         SystemEvents.SessionEnding += OnSessionEnding;
         _controller.Changed += Render;
         Render(_controller.Current);
-        _icon.MouseDoubleClick += async (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left && _useH264.Enabled) await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : ArmAsync());
-        };
+        _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleStats(); };
         _poll.Tick += async (_, _) => { try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
         _ = StartAsync(autostart);

@@ -189,7 +189,9 @@ class Supervisor:
    except OSError:pass # Leave the status stale and retry; never report false readiness.
  def command(self,args,input=None,timeout=30):
   p=subprocess.run(list(map(str,args)),input=input,capture_output=True,text=True,timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
-  if p.returncode:raise RuntimeError('A paired codec command failed; check connection and installation.')
+  if p.returncode:
+   self.log('command failed ('+str(p.returncode)+'): '+' '.join((p.stderr or p.stdout or '').split())[-200:])
+   raise RuntimeError('A paired codec command failed; check connection and installation.')
   return p.stdout.strip()
  def frame(self,script,timeout=12):return self.command([self.ssh,*self.options,self.login,'python3 -'],input=script,timeout=timeout)
  def cef(self,which):
@@ -364,8 +366,8 @@ class Supervisor:
   if self.applied:self.applied=target
   self.update(target_mbps=target,operation_id=operation_id,last_result={'ok':True})
  def stop_frame_stream(self):
-  try:self.cef('stop')
-  except Exception as error:self.log('Frame stream stop failed: '+str(error)[:200])
+  try:self.cef('stop');return True
+  except Exception as error:self.log('Frame stream stop failed: '+str(error)[:200]);return False
  def wait_decoder_idle(self,seconds=20):
   """The Frame client may only be swapped once nothing holds its hardware decoder; the stop takes a moment to reach it."""
   deadline=time.monotonic()+seconds;users=None
@@ -430,9 +432,10 @@ class Supervisor:
   self.verify_seconds=20
   self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,
    message='Switching the stream to '+('stock HEVC' if mode=='stock' else 'H.264')+'.')
+  touched=[False]
   def flip(wanted):
    # The stream is stopped, so the hook and the Frame's decoder client may change together.
-   self.phase='Frame codec activation'
+   touched[0]=True;self.phase='Frame codec activation'
    if wanted=='stock':
     recovered=self.action('rollback')['inventory']
     if recovered['current_driver']!='qcom-iris' or recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
@@ -441,7 +444,9 @@ class Supervisor:
     if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
    self.phase='host codec activation';self.hook_mode(wanted)
   try:
-   self.phase='stopping stream';self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle()
+   self.phase='stopping stream'
+   if not self.stop_frame_stream():raise RuntimeError('The Frame did not accept the stream stop; try again in a moment.')
+   time.sleep(1);self.wait_decoder_idle()
    flip(mode)
    self.phase='starting Frame stream';self.cef('start')
    self.phase='verifying hardware stream'
@@ -449,6 +454,11 @@ class Supervisor:
    else:self.verify_stream(target,fps)
   except Exception as error:
    self.log('live switch to '+mode+' failed ('+self.phase+'): '+str(error)[:300])
+   if not touched[0]:
+    # Neither the hook nor the Frame's client changed: the stream is as it was.
+    self.update(state='ready',active_codec='HEVC' if previous=='stock' else 'H.264',stream_pid=self.pid,
+     message='The switch did not start ('+str(error)[:120]+'); the stream is unchanged.')
+    raise
    try:
     self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle();flip(previous);self.cef('start')
     self.update(state='ready',active_codec='HEVC' if previous=='stock' else 'H.264',stream_pid=self.pid,
@@ -561,9 +571,13 @@ class Supervisor:
   self.stop_frame_stream();self.wait_decoder_idle()
   if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
   self.frame_mounted=True
- def start_driver_session(self):
+ def frame_unreachable(self,error):
+  return isinstance(error,subprocess.TimeoutExpired) or 'paired codec command failed' in str(error)
+ def start_driver_session(self,frame_ready=True):
   """Arm with the permanent driver: attach to the hook SteamVR already holds and flip the codec live. No injection, no restart, no settings."""
   self.applied=self.config['target_mbps'];self.experimental=False;self.restart_on_close=False;self.stock_mode=True
+  if not frame_ready:
+   self.update(state='waiting',active_codec='Unknown',message='H.264 selected; waiting for the Frame. It is applied when the Frame is reachable.');return
   if self.server_pid():self.attach_driver()
   else:self.update(state='waiting',active_codec='Unknown',message='Armed. H.264 is applied when SteamVR starts.')
  def attach_driver(self):
@@ -651,7 +665,11 @@ class Supervisor:
      except Exception:pass
     return
    if self.applied and self.pid and self.server_alive():
-    if self.stock_mode:self.update(state='ready',active_codec='HEVC',message='The Frame returned; streaming stock HEVC.')
+    if self.stock_mode:
+     self.update(state='ready',active_codec='HEVC',message='The Frame returned; streaming stock HEVC.')
+     if self.driver:
+      try:self.set_mode('h264')
+      except Exception as error:self.log('switching to H.264 after the Frame returned failed: '+str(error)[:200])
     else:self.restream()
    else:self.update(state='waiting',active_codec='Unknown',message='The Frame returned. H.264 is re-applied the next time SteamVR starts.')
    return
@@ -707,13 +725,19 @@ class Supervisor:
   try:
    password=credentials.pop()
    self.password=password
-   self.authenticate(password);password=None
+   frame_ready=True
+   try:self.authenticate(password)
+   except Exception as error:
+    # A driver session only needs the Frame to flip the codec: if it cannot be reached now, keep the choice and retry.
+    if not (self.driver and self.root is None and self.frame_unreachable(error)):raise
+    self.log('the Frame is not reachable; H.264 waits for it: '+str(error)[:160]);frame_ready=False
+   password=None
    self.phase='host settings';self.load_host_state()
    if self.restore_only:
     # Leftovers from a session that ended without restoring: put the saved originals back and end.
     self.experimental=True;self.restart_on_close=bool(self.server_pid());self.stopping=True
     self.closing_message='Leftover H.264 settings were restored.'
-   elif self.driver:self.start_driver_session()
+   elif self.driver:self.start_driver_session(frame_ready)
    elif self.resume:self.resume_session()
    else:self.switch(self.config['target_mbps'])
    while not self.stopping:

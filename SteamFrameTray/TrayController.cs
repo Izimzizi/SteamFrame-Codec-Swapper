@@ -412,6 +412,7 @@ public sealed class TrayController
         return status.State switch
         {
             "starting" or "switching" => new(TrayState.Arming, status.Message, target),
+            "waiting" when status.Message.Contains("waiting for the Frame") => new(TrayState.Waiting, $"H.264 selected ({target} Mbps); the Frame is not reachable, so it is applied as soon as it is.", target),
             "waiting" => new(TrayState.Waiting, $"H.264 selected ({target} Mbps); it starts with SteamVR.", target),
             "ready" when status.ActiveCodec == "HEVC" => new(TrayState.Armed, $"Default (HEVC): H.264 is selected but the stream is on HEVC right now.", target),
             "ready" => new(TrayState.Armed, $"Streaming H.264, {target} Mbps." + (status.AutomaticBandwidth ? " SteamVR's Automatic bandwidth is on and may lower it." : ""), target),
