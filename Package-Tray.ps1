@@ -41,7 +41,7 @@ try {
     New-Item -ItemType Directory -Path $lab, (Join-Path $lab 'Backend') | Out-Null
     Copy-Item -LiteralPath (Join-Path $source 'runtime') -Destination $lab -Recurse
     if (Test-Path -LiteralPath (Join-Path $source 'Assets')) { Copy-Item -LiteralPath (Join-Path $source 'Assets') -Destination $lab -Recurse }
-    foreach ($helper in @('codec_supervisor.py', 'root_session.py', 'frame_cef_stdio.py', 'start_stream.js', 'stop_stream.js')) {
+    foreach ($helper in @('codec_supervisor.py', 'root_session.py', 'frame_cef_stdio.py', 'frame_cef_server.py', 'start_stream.js', 'stop_stream.js')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Frame\Codec\$helper") -Destination $lab
     }
     if ($BuildBackend) {
