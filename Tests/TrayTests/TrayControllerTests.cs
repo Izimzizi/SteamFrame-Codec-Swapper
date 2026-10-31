@@ -139,6 +139,40 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
+    public async Task Going_back_to_the_default_codec_keeps_the_driver_session_open_and_going_to_H264_again_reuses_it()
+    {
+        var rig = new Rig { Driver = true };
+        rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live() with { DriverSession = true };
+        Assert.True(await rig.Arm());
+        Assert.Equal(["start"], rig.Codec.Calls);
+
+        rig.Codec.Status = Live(codec: "HEVC") with { DriverSession = true, WantH264 = false };
+        await rig.Controller.DisarmAsync(() => Task.FromResult<string?>(null));
+        Assert.Equal(["start", "mode"], rig.Codec.Calls);
+        Assert.Equal(["stock"], rig.Codec.Modes);
+        Assert.Equal(TrayState.Disarmed, rig.Controller.Current.State);
+        Assert.False(rig.Prefs.KeepH264);
+
+        rig.Codec.Status = Live(codec: "HEVC") with { DriverSession = true, WantH264 = false };
+        Assert.True(await rig.Arm());
+        Assert.Equal(["start", "mode", "mode"], rig.Codec.Calls);
+        Assert.Equal(["stock", "h264"], rig.Codec.Modes);
+        Assert.True(rig.Prefs.KeepH264);
+    }
+
+    [Fact]
+    public async Task A_kept_session_on_the_default_codec_reads_as_disarmed_not_as_an_armed_one_on_HEVC()
+    {
+        var rig = new Rig { Driver = true };
+        rig.Codec.Status = Live(codec: "HEVC") with { DriverSession = true, WantH264 = false };
+        await rig.Controller.RefreshAsync();
+        Assert.Equal(TrayState.Disarmed, rig.Controller.Current.State);
+        rig.Codec.Status = Live("switching", codec: "Unknown") with { DriverSession = true, WantH264 = false };
+        await rig.Controller.RefreshAsync();
+        Assert.Equal(TrayState.Disarming, rig.Controller.Current.State);
+    }
+
+    [Fact]
     public async Task Arming_with_a_stored_password_starts_a_kept_H264_session_that_restarts_a_running_SteamVR_once()
     {
         var rig = new Rig { };

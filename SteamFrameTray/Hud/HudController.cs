@@ -15,7 +15,7 @@ public interface IHudActions
 public sealed class HudController(IOverlayApi api, HudSettings settings, Func<HudView> readView, IHudActions actions, Action saveSettings, Func<bool> steamVrRunning, Action<string>? log = null) : IDisposable
 {
     private const string OverlayKey = "steamframe.tray.hud";
-    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), MinimumUpload = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(250), InteractionUpload = TimeSpan.FromMilliseconds(25);
 
     private ulong _overlay;
     private uint _attachedTo = IOverlayApi.NoDevice;
@@ -102,8 +102,10 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void Draw(DateTime at)
     {
         var view = View();
-        if (_drawn is not null && view == _drawn && _hover == _drawnHover) return;
-        if (at - _lastUpload < MinimumUpload) return;
+        var hoverChanged = _hover != _drawnHover;
+        if (_drawn is not null && view == _drawn && !hoverChanged) return;
+        // The picture lives in one texture, so repainting costs nothing visible: a highlight follows the laser at once, readouts at 4 Hz.
+        if (at - _lastUpload < (hoverChanged || _drawn is null ? InteractionUpload : DataUpload)) return;
         using var bitmap = HudPanel.Render(view, _hover);
         api.SetImage(_overlay, HudPanel.ToRgba(bitmap), HudPanel.Width, HudPanel.Height);
         _drawn = view; _drawnHover = _hover; _lastUpload = at;

@@ -363,6 +363,8 @@ public sealed partial class TrayApp : ApplicationContext
             try { await DisarmAsync(); }
             catch (Exception error) { Balloon("SteamFrame Tray", "H.264 will be released in the background: " + error.Message, ToolTipIcon.Warning); }
         }
+        // A session kept open for fast switching ends with the tray (the supervisor also notices the tray is gone).
+        try { _controller.RequestCloseNoWait(); } catch (Exception) { /* the supervisor closes itself */ }
         ExitApp();
     }
 

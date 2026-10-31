@@ -39,6 +39,10 @@ public sealed record CodecServiceStatus
     [JsonPropertyName("rate_live")] public bool RateLive { get; init; }
     /// <summary>The running SteamVR can switch between H.264 and its own HEVC without a restart (see <see cref="CodecController.SetModeAsync"/>).</summary>
     [JsonPropertyName("mode_live")] public bool ModeLive { get; init; }
+    /// <summary>The H.264 choice is on; false means the user went back to Default (HEVC) but the session stayed open.</summary>
+    [JsonPropertyName("want_h264")] public bool WantH264 { get; init; } = true;
+    /// <summary>The session works through the permanent driver, so it can flip the codec without being restarted.</summary>
+    [JsonPropertyName("driver_session")] public bool DriverSession { get; init; }
     [JsonIgnore] public bool Live { get; init; }
     [JsonIgnore] public bool CanStart { get; init; }
     [JsonIgnore] public bool Busy => Live && State is "starting" or "switching";
@@ -275,7 +279,7 @@ public sealed class CodecController
         {
             var status = ReadStatus();
             if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation to finish." : status.Message);
-            if (!status.ModeLive) throw new InvalidOperationException("SteamVR was started without the live codec hook; arm H.264 and let SteamVR start (or restart it) first.");
+            if (!status.ModeLive && !status.DriverSession) throw new InvalidOperationException("SteamVR was started without the live codec hook; arm H.264 and let SteamVR start (or restart it) first.");
             return await SendAsync("mode", 0, status, progress, cancellationToken, mode: mode).ConfigureAwait(false);
         }
         finally { _operations.Release(); }

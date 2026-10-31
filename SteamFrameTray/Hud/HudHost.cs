@@ -56,7 +56,7 @@ public static class HudHost
         while (!quit)
         {
             lock (gate) { try { hud.Tick(); } catch (Exception error) when (error is not OutOfMemoryException) { Log("HUD tick failed: " + error.Message); hud.Teardown(); } }
-            Thread.Sleep(33);
+            Thread.Sleep(16);
         }
         hud.Teardown();
         return 0;

@@ -365,6 +365,23 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void A_highlight_follows_the_laser_within_a_tick_but_readouts_are_paced()
+    {
+        var rig = new Rig();
+        var start = new DateTime(2026, 1, 1);
+        rig.Hud.Tick(start);
+        var uploads = rig.Api.Uploads;
+        rig.Api.Events.Enqueue(rig.Click("codec:hevc", OverlayEventKind.MouseMove));
+        rig.Hud.Tick(start.AddMilliseconds(40));
+        Assert.Equal(uploads + 1, rig.Api.Uploads);
+        rig.View = rig.View with { Mbps = 251 };
+        rig.Hud.Tick(start.AddMilliseconds(80));
+        Assert.Equal(uploads + 1, rig.Api.Uploads);
+        rig.Hud.Tick(start.AddMilliseconds(320));
+        Assert.Equal(uploads + 2, rig.Api.Uploads);
+    }
+
+    [Fact]
     public void An_unchanged_view_is_not_uploaded_again()
     {
         var rig = new Rig();

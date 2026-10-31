@@ -104,8 +104,11 @@ def host_original(current,saved):
 def codec_host_values(target):
  return {'targetBandwidth':float(target),'recommendedBandwidthMbit':target}
 
+class CefCommandError(RuntimeError):pass
+NL_=chr(10)
+
 class Supervisor:
- resume=False;restore_only=False;password=None;applied=None;frame_mounted=False;driver=False;next_attach=0.0;stock_mode=False
+ resume=False;restore_only=False;password=None;applied=None;frame_mounted=False;driver=False;next_attach=0.0;stock_mode=False;want_h264=True;cef_proc=None;cef_replies=None
  closing_message=None;next_attempt=0
  log_last=None
  verify_seconds=20  # how long a new stream may take to start; a user-started SteamVR needs longer
@@ -182,6 +185,7 @@ class Supervisor:
    try:self.status['mode_live']=bool(self.pid and self.live_rate and self.server_alive())
    except Exception:self.status['mode_live']=False
    self.status['automatic_bandwidth']=self.automatic_bandwidth()
+   self.status['want_h264']=self.want_h264;self.status['driver_session']=bool(self.driver)
    atomic_json(self.directory/'status.json',self.status)
  def heartbeat(self):
   while not self.stop_heartbeat.wait(1):
@@ -194,8 +198,39 @@ class Supervisor:
    raise RuntimeError('A paired codec command failed; check connection and installation.')
   return p.stdout.strip()
  def frame(self,script,timeout=12):return self.command([self.ssh,*self.options,self.login,'python3 -'],input=script,timeout=timeout)
+ def cef_channel_call(self,expression):
+  """Evaluate in Steam's UI over a kept SSH session: no new login for every stream command."""
+  if self.cef_proc is None or self.cef_proc.poll() is not None:
+   self.cef_replies=replies=queue.Queue()
+   proc=subprocess.Popen([str(self.ssh),*self.options,self.login,'python3 -u /tmp/steam-frame-av1-lab-20261011/frame_cef_server.py'],
+    stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
+   def pump():
+    for line in proc.stdout:replies.put(line)
+    replies.put(None)
+   threading.Thread(target=pump,daemon=True).start();self.cef_proc=proc
+  self.cef_proc.stdin.write(json.dumps({'expression':expression})+NL_);self.cef_proc.stdin.flush()
+  line=self.cef_replies.get(timeout=25)
+  if line is None:raise OSError('Frame stream channel ended.')
+  reply=json.loads(line)
+  if not reply.get('ok'):raise CefCommandError(str(reply.get('error')))
+  return reply.get('value')
+ def close_cef_channel(self):
+  proc=self.cef_proc;self.cef_proc=None
+  if proc is None:return
+  try:proc.stdin.close()
+  except Exception:pass
+  try:proc.wait(timeout=3)
+  except Exception:
+   try:proc.kill()
+   except Exception:pass
  def cef(self,which):
   expression=(self.package/(which+'_stream.js')).read_text()
+  try:return self.cef_channel_call(expression) or {}
+  except CefCommandError as error:
+   self.log('Frame stream '+which+' refused: '+str(error)[:240]);raise RuntimeError('Frame stream command failed.')
+  except Exception as error:
+   # The kept session is a speed-up only: any transport problem falls back to one SSH call per command.
+   self.log('Frame stream channel failed ('+str(error)[:120]+'); using a single SSH call.');self.close_cef_channel()
   script=(self.package/'frame_cef_stdio.py').read_text().replace('__EXPRESSION_BASE64__',base64.b64encode(expression.encode()).decode())
   result=json.loads(self.frame(script,20))
   if not isinstance(result,dict) or result.get('error'):raise RuntimeError('Frame stream command failed.')
@@ -225,7 +260,7 @@ class Supervisor:
  def start_root(self,password):
   self.phase='Frame staging and authentication'
   self.command([self.ssh,*self.options,self.login,'mkdir -p /tmp/steam-frame-av1-lab-20261011'])
-  self.command([self.scp,*self.options,self.package/'root_session.py','%s:/tmp/steam-frame-av1-lab-20261011/root_session.py'%self.login])
+  self.command([self.scp,*self.options,self.package/'root_session.py',self.package/'frame_cef_server.py','%s:/tmp/steam-frame-av1-lab-20261011/'%self.login])
   self.root_started=time.monotonic()
   self.root_replies=replies=queue.Queue()
   self.root=root=subprocess.Popen([str(self.ssh),*self.options,self.login,
@@ -375,7 +410,7 @@ class Supervisor:
    try:users=self.action('inventory').get('open_decoder_users')
    except Exception:return
    if not users:return
-   time.sleep(1)
+   time.sleep(.25)
   self.log('the Frame decoder is still open after '+str(seconds)+' s: '+json.dumps(users)[:300])
  def hook_counter(self,name):
   try:return self.stats()[name]
@@ -420,11 +455,18 @@ class Supervisor:
   """Switch the running SteamVR between H.264 and its own HEVC without restarting it: the stream stops, the hook and the Frame's
   client flip together, the stream starts again. On any failure the previous codec is put back."""
   if mode not in ('h264','stock'):raise ValueError('Unknown codec mode')
+  if mode not in ('h264','stock'):raise ValueError('Unknown codec mode')
+  if self.driver and not self.pid:
+   # SteamVR is closed: only the choice is recorded; it is applied when SteamVR starts.
+   self.want_h264=mode=='h264'
+   self.update(operation_id=operation_id,last_result={'ok':True},message=('H.264 selected; it is applied when SteamVR starts.' if self.want_h264 else 'Default (HEVC) selected.'))
+   return
   if not (self.pid and self.live_rate and self.server_alive()):raise RuntimeError('SteamVR is not running with the codec hook; a live switch is not available.')
   before=self.stats('switch-info')
   if before.get('sessions') and not before.get('stock_sessions'):raise RuntimeError('This SteamVR session has no stock encoder beside the H.264 one; restart SteamVR once.')
   previous='stock' if before.get('mode')=='stock' else 'h264'
   if previous==mode:
+   if self.driver:self.want_h264=mode=='h264'
    self.update(operation_id=operation_id,last_result={'ok':True});return
   target=self.applied or self.config['target_mbps']
   fps=self.status.get('fps')
@@ -446,7 +488,7 @@ class Supervisor:
   try:
    self.phase='stopping stream'
    if not self.stop_frame_stream():raise RuntimeError('The Frame did not accept the stream stop; try again in a moment.')
-   time.sleep(1);self.wait_decoder_idle()
+   time.sleep(.3);self.wait_decoder_idle()
    flip(mode)
    self.phase='starting Frame stream';self.cef('start')
    self.phase='verifying hardware stream'
@@ -468,6 +510,7 @@ class Supervisor:
     self.update(state='error',active_codec='Unknown',message='The live switch failed and the previous codec could not be restored; restart SteamVR.')
    raise
   self.stock_mode=mode=='stock'
+  if self.driver:self.want_h264=mode=='h264'
   self.update(state='ready',active_codec='HEVC' if mode=='stock' else 'H.264',target_mbps=target,fps=fps,stream_pid=self.pid,
    message='Streaming '+('stock HEVC; the hook stays ready for H.264.' if mode=='stock' else 'H.264.'),last_result={'ok':True},operation_id=operation_id)
  def set_encoder(self,rate_control,preset,vbv,operation_id=''):
@@ -575,7 +618,7 @@ class Supervisor:
   return isinstance(error,subprocess.TimeoutExpired) or 'paired codec command failed' in str(error)
  def start_driver_session(self,frame_ready=True):
   """Arm with the permanent driver: attach to the hook SteamVR already holds and flip the codec live. No injection, no restart, no settings."""
-  self.applied=self.config['target_mbps'];self.experimental=False;self.restart_on_close=False;self.stock_mode=True
+  self.applied=self.config['target_mbps'];self.experimental=False;self.restart_on_close=False;self.stock_mode=True;self.want_h264=True
   if not frame_ready:
    self.update(state='waiting',active_codec='Unknown',message='H.264 selected; waiting for the Frame. It is applied when the Frame is reachable.');return
   if self.server_pid():self.attach_driver()
@@ -598,7 +641,7 @@ class Supervisor:
   rate=self.current_refresh()
   self.update(state='ready',active_codec='HEVC' if self.stock_mode else 'H.264',target_mbps=self.applied,fps=rate,stream_pid=pid,
    message='Attached to SteamVR. Streaming '+('stock HEVC.' if self.stock_mode else 'H.264.'),last_result={'ok':True})
-  if self.stock_mode and self.applied:self.set_mode('h264')
+  if self.stock_mode and self.applied and self.want_h264:self.set_mode('h264')
  def reapply(self):
   target=self.applied;self.stock_mode=False
   self.update(state='switching',active_codec='Unknown',message='SteamVR started; re-applying H.264.')
@@ -667,7 +710,7 @@ class Supervisor:
    if self.applied and self.pid and self.server_alive():
     if self.stock_mode:
      self.update(state='ready',active_codec='HEVC',message='The Frame returned; streaming stock HEVC.')
-     if self.driver:
+     if self.driver and self.want_h264:
       try:self.set_mode('h264')
       except Exception as error:self.log('switching to H.264 after the Frame returned failed: '+str(error)[:200])
     else:self.restream()
@@ -772,6 +815,7 @@ class Supervisor:
     elif self.root and self.root.poll() is None:self.root.stdin.close();self.root.wait(timeout=20)
    finally:
     password=None;self.password=None
+    self.close_cef_channel()
     if self.watch:self.watch.close();self.watch=None
     if self.tray:self.tray.close()
     self.stop_heartbeat.set()

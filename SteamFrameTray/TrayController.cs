@@ -302,6 +302,11 @@ public sealed class TrayController
             var progress = new Progress<CodecServiceStatus>(s => Publish(Map(s)));
             CodecServiceStatus result;
             if (alreadyApplied) result = status;
+            else if (KeptDriverSession(status) && !status.WantH264)
+            {
+                // The session stayed open when the user went back to Default (HEVC): flipping the codec needs no new login.
+                result = await _codec.SetModeAsync("h264", progress, cancellationToken);
+            }
             else
             {
                 if (status.Live)
@@ -344,7 +349,12 @@ public sealed class TrayController
             Publish(new(TrayState.Disarming, "Switching back to Default (HEVC)…", TargetMbps));
             var progress = new Progress<CodecServiceStatus>(s => Publish(new(TrayState.Disarming, s.Message, TargetMbps)));
             var status = await _codec.ReadStatusAsync(cancellationToken);
-            if (status.Live) await _codec.CloseAsync(progress, cancellationToken);
+            if (KeptDriverSession(status))
+            {
+                // Back to SteamVR's own codec, but the session (and its login to the Frame) stays open for the next switch.
+                await _codec.SetModeAsync("stock", progress, cancellationToken);
+            }
+            else if (status.Live) await _codec.CloseAsync(progress, cancellationToken);
             else if (HostSettingsPending())
             {
                 // No supervisor is running but it left its settings applied (for example after a crash or reboot):
@@ -368,6 +378,8 @@ public sealed class TrayController
         }
         finally { _gate.Release(); }
     }
+
+    private static bool KeptDriverSession(CodecServiceStatus status) => status.Live && status.DriverSession && status.State is "ready" or "waiting";
 
     private CodecStartRequest Request() => new(TargetMbps, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames, _driverInstalled?.Invoke() ?? false);
 
@@ -407,6 +419,13 @@ public sealed class TrayController
         if (!status.Live)
             return new(status.State == "error" ? TrayState.Error : TrayState.Disarmed,
                 status.State == "error" ? status.Message : "Default (HEVC): SteamVR uses its own codec and bitrate.", TargetMbps);
+        if (status.DriverSession && !status.WantH264)
+            return status.State switch
+            {
+                "starting" or "switching" => new(TrayState.Disarming, status.Message, TargetMbps),
+                "error" => new(TrayState.Error, status.Message, TargetMbps),
+                _ => new(TrayState.Disarmed, "Default (HEVC): SteamVR uses its own codec and bitrate.", TargetMbps)
+            };
         if (!status.Keep && status.ActiveCodec != "H.264")
             return new(TrayState.Disarmed, $"A codec session is running ({status.ActiveCodec}); H.264 is not selected.", TargetMbps);
         return status.State switch

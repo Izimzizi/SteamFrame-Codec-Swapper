@@ -598,3 +598,45 @@ class UnreachableFrameTests(LiveModeTests):
   instance=self.make()
   self.assertTrue(instance.frame_unreachable(RuntimeError('A paired codec command failed; check connection and installation.')))
   self.assertFalse(instance.frame_unreachable(RuntimeError('Frame administrator authentication failed.')))
+
+class KeptSessionTests(LiveModeTests):
+ def test_choosing_the_default_codec_with_steamvr_closed_only_records_the_choice(self):
+  instance=self.make(pid=0,live=False);instance.driver=True
+  with patch.object(instance,'update') as update:
+   instance.set_mode('stock','op')
+  self.assertFalse(instance.want_h264)
+  self.assertEqual(update.call_args.kwargs['last_result'],{'ok':True})
+  with patch.object(instance,'update'):
+   instance.set_mode('h264','op2')
+  self.assertTrue(instance.want_h264)
+ def test_steamvr_starting_later_is_not_flipped_to_h264_after_the_default_was_chosen(self):
+  instance=self.make(pid=0,live=False);instance.driver=True;instance.want_h264=False;instance.rate_control='vbr';instance.preset=2;instance.vbv=2
+  instance.server_pid=lambda:55
+  flips=[];instance.set_mode=lambda *a:flips.append(a)
+  instance.stats=lambda action='stats',*a:{'mode':'stock','sessions':1} if action=='switch-info' else {}
+  instance.current_refresh=lambda:90
+  with patch.object(service,'ProcessWatch'),patch.object(instance,'update'),patch.object(instance,'log'):
+   instance.attach_driver()
+  self.assertEqual(flips,[])
+ def test_a_flip_done_while_streaming_updates_the_wanted_codec(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls)
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   instance.driver=True;instance.set_mode('stock','op')
+  self.assertFalse(instance.want_h264)
+ def test_the_status_publishes_the_choice(self):
+  instance=self.make()
+  instance.driver=True;instance.want_h264=False
+  instance.mutex=threading.RLock();instance.log_last=None;instance.directory=pathlib.Path(tempfile.mkdtemp())
+  with patch.object(instance,'rate_available',return_value=False),patch.object(instance,'automatic_bandwidth',return_value=False),patch.object(instance,'log'),patch.object(service,'atomic_json'):
+   instance.update()
+  self.assertEqual((instance.status['want_h264'],instance.status['driver_session']),(False,True))
+ def test_a_broken_stream_channel_falls_back_to_one_ssh_call_but_a_refused_command_does_not(self):
+  instance=self.make();instance.package=pathlib.Path(tempfile.mkdtemp())
+  (instance.package/'stop_stream.js').write_text('1');(instance.package/'frame_cef_stdio.py').write_text('x __EXPRESSION_BASE64__')
+  logs=[];instance.log=logs.append;instance.close_cef_channel=lambda:None
+  instance.frame=lambda script,timeout=12:'{"requested": true}'
+  instance.cef_channel_call=lambda expression:(_ for _ in ()).throw(OSError('gone'))
+  self.assertEqual(instance.cef('stop'),{'requested':True})
+  instance.cef_channel_call=lambda expression:(_ for _ in ()).throw(service.CefCommandError('More than one PC'))
+  with self.assertRaisesRegex(RuntimeError,'Frame stream command failed'):instance.cef('stop')
