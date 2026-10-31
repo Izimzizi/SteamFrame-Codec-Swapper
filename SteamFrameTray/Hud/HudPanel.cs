@@ -8,9 +8,10 @@ namespace SteamFrameTray;
 /// <summary>Everything the HUD shows and highlights; equal views draw identical pictures, so an unchanged view is not uploaded again.</summary>
 public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
-    string RateControl, int Preset, int VbvFrames, long Late, long Dropped, bool Repositioning, string Hand, string History = "")
+    string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
+    string Average = "", string Encoder = "", string Health = "", string Note = "", bool ApplyHevc = false, string OpenMenu = "")
 {
-    public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, 0, 0, false, "left");
+    public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
     /// <summary>The recent bitrate readings, oldest first; empty entries are gaps.</summary>
     public IReadOnlyList<double?> Series => [..History.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(v => double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var d) ? (double?)d : null)];
@@ -21,40 +22,74 @@ public sealed record HudView(
 
 public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Active, bool Enabled);
 
-/// <summary>The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, rate:-, rate:+, rc:vbr, rc:cbr, preset:N, vbv:N, reposition, save, cancel, default, size:-, size:+. "grab" is the panel body.</summary>
+/// <summary>
+/// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
+/// applyhevc, reposition, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// </summary>
 public static class HudPanel
 {
-    public const int Width = 512, Height = 520, BitrateStep = 10;
-    private const int Shift = 120; // the graph sits between the readouts and the controls
-    public static readonly Rectangle GraphArea = new(20, 138, Width - 40, 108);
-    public static readonly int[] Presets = [1, 2, 4, 6, 7];
-    public static readonly int[] VbvChoices = [1, 2, 4, 8, 16];
+    public const int Width = 640, Height = 624, BitrateStep = 5;
+    public static readonly Rectangle GraphArea = new(20, 200, Width - 40, 120);
+    public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
+    private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
+
+    public static readonly (string Id, string Text)[] RateControls =
+        [("vbr", "VBR — the bitrate follows the scene (default)"), ("cbr", "CBR — constant bitrate, steadier on a weak link")];
+    public static readonly (int Value, string Text)[] Presets =
+        [(1, "P1 — fastest, lowest quality"), (2, "P2 — fast (default)"), (3, "P3 — fast, a little better"), (4, "P4 — balanced"),
+         (5, "P5 — slower, better quality"), (6, "P6 — slow, high quality"), (7, "P7 — slowest, best quality")];
+    public static readonly (int Value, string Text)[] VbvChoices =
+        [(1, "1 frame — tightest buffer, least latency"), (2, "2 frames — the default"), (4, "4 frames — smoother bitrate"),
+         (8, "8 frames — smoother still, more latency"), (16, "16 frames — loosest buffer")];
+
+    /// <summary>The bitrate a laser at panel x selects: whole steps of <see cref="BitrateStep"/> between the tray's limits.</summary>
+    public static int SliderValue(float x)
+    {
+        var t = Math.Clamp((x - TrackLeft) / (TrackRight - TrackLeft), 0f, 1f);
+        var raw = TrayController.MinimumMbps + t * (TrayController.MaximumMbps - TrayController.MinimumMbps);
+        return Math.Clamp((int)Math.Round(raw / BitrateStep) * BitrateStep, TrayController.MinimumMbps, TrayController.MaximumMbps);
+    }
+
+    public static float SliderX(int mbps) =>
+        TrackLeft + (TrackRight - TrackLeft) * (Math.Clamp(mbps, TrayController.MinimumMbps, TrayController.MaximumMbps) - TrayController.MinimumMbps)
+        / (float)(TrayController.MaximumMbps - TrayController.MinimumMbps);
+
+    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", _ => "" };
 
     public static IReadOnlyList<HudButton> Layout(HudView view)
     {
         var buttons = new List<HudButton>();
         const int margin = 20, gap = 10;
-        void Row(int top, int height, (string Id, string Text, bool Active, bool Enabled)[] items, int leftEdge = margin, int rightEdge = Width - margin)
+        void Row(int top, int height, (string Id, string Text, bool Active, bool Enabled)[] items)
         {
-            var each = (rightEdge - leftEdge - gap * (items.Length - 1)) / items.Length;
+            var each = (Width - 2 * margin - gap * (items.Length - 1)) / items.Length;
             for (var i = 0; i < items.Length; i++)
-                buttons.Add(new(items[i].Id, new(leftEdge + i * (each + gap), top, each, height), items[i].Text, items[i].Active, items[i].Enabled));
+                buttons.Add(new(items[i].Id, new(margin + i * (each + gap), top, each, height), items[i].Text, items[i].Active, items[i].Enabled));
         }
         if (view.Repositioning)
         {
-            Row(262 + Shift - 80, 56, [("size:-", "Smaller", false, true), ("size:+", "Larger", false, true)]);
-            Row(330 + Shift - 80, 56, [("save", "Save", false, true), ("cancel", "Cancel", false, true), ("default", "Default", false, true)]);
+            Row(190, 56, [("size:-", "Smaller", false, true), ("size:+", "Larger", false, true)]);
+            Row(260, 56, [("save", "Save", false, true), ("cancel", "Cancel", false, true), ("default", "Default", false, true)]);
             return buttons;
         }
         var control = !view.Busy;
-        Row(150 + Shift, 52, [("codec:h264", "H.264", view.H264Selected, control), ("codec:hevc", "Default (HEVC)", !view.H264Selected, control)]);
-        // Bitrate: minus, the value, plus.
-        buttons.Add(new("rate:-", new(margin, 212 + Shift, 80, 46), "−", false, control && view.TargetMbps > 0));
-        buttons.Add(new("rate:+", new(Width - margin - 80, 212 + Shift, 80, 46), "+", false, control && view.TargetMbps > 0));
-        Row(268 + Shift, 44, [("rc:vbr", "VBR", view.RateControl == "vbr", control), ("rc:cbr", "CBR", view.RateControl == "cbr", control)]);
-        Row(318 + Shift, 36, [..Presets.Select(p => ($"preset:{p}", $"P{p}", view.Preset == p, control))]);
-        Row(360 + Shift, 30, [..VbvChoices.Select(v => ($"vbv:{v}", $"V{v}", view.VbvFrames == v, control))], margin + 76);
-        buttons.Add(new("reposition", new(margin, 360 + Shift, 64, 30), "Move", false, true));
+        Row(334, 56, [("codec:h264", "H.264", view.H264Selected, control), ("codec:hevc", "Default (HEVC)", !view.H264Selected, control)]);
+        if (view.OpenMenu.Length > 0)
+        {
+            buttons.Add(new("menu:close", new(Width - margin - 140, 396, 140, 34), "Close", false, true));
+            var rows = new List<(string Id, string Text, bool Active)>();
+            if (view.OpenMenu == "rc") rows.AddRange(RateControls.Select(o => ($"rc:{o.Id}", o.Text, view.RateControl == o.Id)));
+            else if (view.OpenMenu == "preset") rows.AddRange(Presets.Select(o => ($"preset:{o.Value}", o.Text, view.Preset == o.Value)));
+            else if (view.OpenMenu == "vbv") rows.AddRange(VbvChoices.Select(o => ($"vbv:{o.Value}", o.Text, view.VbvFrames == o.Value)));
+            for (var i = 0; i < rows.Count; i++)
+                buttons.Add(new(rows[i].Id, new(margin, 438 + i * 25, Width - 2 * margin, 23), rows[i].Text, rows[i].Active, control));
+            return buttons;
+        }
+        buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
+        Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
+                      ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
+        buttons.Add(new("applyhevc", new(margin, 540, 430, 52), "Also apply these to Default (HEVC)", view.ApplyHevc, true));
+        buttons.Add(new("reposition", new(margin + 430 + gap, 540, Width - 2 * margin - 430 - gap, 52), "Move", false, true));
         return buttons;
     }
 
@@ -100,16 +135,19 @@ public static class HudPanel
             var codecColor = view.Codec == "H.264" ? Color.FromArgb(110, 220, 140) : Color.White;
             using var codecBrush = new SolidBrush(view.Connected ? codecColor : Color.FromArgb(170, 178, 190));
             g.DrawString(view.Codec + (view.CodecVerified ? "" : " ?"), large, codecBrush, 18, 38);
-            var mbps = view.Mbps is { } m ? $"{m:0} Mbps" : "— Mbps";
-            var fps = view.Fps is { } f ? $"{f:0} fps" : "— fps";
-            g.DrawString($"{mbps}   {fps}", normal, white, 250, 52);
-            var late = view.Late + view.Dropped;
-            g.DrawString(view.Status.Length > 0 ? Trim(view.Status, 44) : (late > 0 ? $"{view.Late} late, {view.Dropped} dropped" : "Stream healthy"), small, grey, 22, 106);
-            if (view.Busy) g.DrawString("Applying…", small, accentBrush, 400, 14);
+            g.DrawString(view.Mbps is { } m ? $"{m:0} Mbps" : "— Mbps", large, white, 270, 38);
+            g.DrawString(view.Fps is { } f ? $"{f:0.0} fps" : "— fps", normal, white, 520, 56);
+            g.DrawString(Trim($"{(view.Average.Length > 0 ? view.Average + "    " : "")}target {view.TargetMbps} Mbps", 86), small, grey, 22, 96);
+            g.DrawString(Trim(view.Encoder, 86), small, grey, 22, 120);
+            g.DrawString(Trim(view.Health.Length > 0 ? view.Health : "Stream healthy", 86), small, grey, 22, 144);
+            g.DrawString(Trim(view.Status.Length > 0 ? view.Status : view.Note, 86), small, grey, 22, 168);
+            if (view.Busy) g.DrawString("Applying…", small, accentBrush, 520, 14);
         }
         if (!view.Repositioning) DrawGraph(g, view, small, accent);
+        if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         foreach (var button in Layout(view))
         {
+            if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
             var hot = hover == button.Id && button.Enabled;
             using var shape = Rounded(button.Bounds, 12);
             using var fill = new SolidBrush(button.Active ? Color.FromArgb(accent.R / 2, accent.G / 2, accent.B / 2)
@@ -117,16 +155,23 @@ public static class HudPanel
             g.FillPath(fill, shape);
             using var edge = new Pen(button.Active || hot ? accent : Color.FromArgb(70, 76, 90), button.Active ? 2.5f : 1.5f);
             g.DrawPath(edge, shape);
-            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
             var font = button.Bounds.Height < 40 ? small : normal;
             g.DrawString(button.Text, font, button.Enabled ? white : grey, button.Bounds, format);
         }
-        if (!view.Repositioning)
-        {
-            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString($"{view.TargetMbps} Mbps target", normal, white, new Rectangle(100, 212 + Shift, Width - 200, 46), format);
-        }
         return bitmap;
+    }
+
+    private static void DrawSlider(Graphics g, HudView view, bool hot, Font font, Brush text, Color accent)
+    {
+        g.DrawString($"Bitrate target   {view.TargetMbps} Mbps", font, text, SliderArea.Left + 4, SliderArea.Top);
+        using var rail = new Pen(Color.FromArgb(70, 76, 90), 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(rail, TrackLeft, TrackY, TrackRight, TrackY);
+        var x = SliderX(view.TargetMbps);
+        using var filled = new Pen(accent, 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(filled, TrackLeft, TrackY, x, TrackY);
+        using var knob = new SolidBrush(hot ? Color.White : Color.FromArgb(225, 232, 245));
+        g.FillEllipse(knob, x - 15, TrackY - 15, 30, 30);
     }
 
     private static void DrawGraph(Graphics g, HudView view, Font font, Color accent)

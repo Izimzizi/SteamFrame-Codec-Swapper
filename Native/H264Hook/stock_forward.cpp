@@ -1,6 +1,8 @@
 #define HOOK_BUILD
 #include <windows.h>
 #include <cstring>
+#include <cstdio>
+#include <string>
 #include "nvEncodeAPI11.h"
 #include "stock_forward.h"
 
@@ -29,8 +31,62 @@ int StockOpen(const void* open_params,void** encoder){
  if(factory){NV_ENCODE_API_FUNCTION_LIST fresh{};fresh.version=table.version;factory(&fresh);}
  return status(table.nvEncOpenEncodeSessionEx(&copy,encoder));
 }
-int StockInitialize(void* encoder,void* init){return ready?status(table.nvEncInitializeEncoder(encoder,static_cast<NV_ENC_INITIALIZE_PARAMS*>(init))):NV_ENC_ERR_INVALID_PTR;}
-int StockReconfigure(void* encoder,void* params){return ready?status(table.nvEncReconfigureEncoder(encoder,static_cast<NV_ENC_RECONFIGURE_PARAMS*>(params))):NV_ENC_ERR_INVALID_PTR;}
+// Optional rate-control overrides for the driver's own (HEVC) encoder, read from stock-options.txt in the tray's data folder:
+//   enabled=1  rate_control=vbr|cbr  preset=1..7  vbv=1..16
+// The file is checked about twice a second, so a change reaches the encoder SteamVR reconfigures before its next frame. Nothing is
+// touched unless enabled=1; the driver's own parameters are copied, never edited in place.
+namespace {
+struct StockOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;};
+StockOptions options;ULONGLONG options_checked=0;
+void load_options(){
+ const ULONGLONG now=GetTickCount64();if(options_checked&&now-options_checked<500)return;options_checked=now;
+ options=StockOptions{};char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
+ FILE* file=nullptr;const std::string path=std::string(base)+"\\SteamFrameTray\\stock-options.txt";
+ if(fopen_s(&file,path.c_str(),"r")||!file)return;
+ char line[96];
+ while(fgets(line,sizeof(line),file)){
+  int number=0;char word[16]{};
+  if(sscanf_s(line,"enabled=%d",&number)==1)options.enabled=number==1;
+  else if(sscanf_s(line,"rate_control=%15s",word,(unsigned)sizeof(word))==1)options.cbr=strcmp(word,"cbr")==0;
+  else if(sscanf_s(line,"preset=%d",&number)==1&&number>=1&&number<=7)options.preset=number;
+  else if(sscanf_s(line,"vbv=%d",&number)==1&&number>=1&&number<=16)options.vbv=number;
+ }
+ fclose(file);
+}
+GUID preset_guid(int preset){
+ switch(preset){case 1:return NV_ENC_PRESET_P1_GUID;case 3:return NV_ENC_PRESET_P3_GUID;case 4:return NV_ENC_PRESET_P4_GUID;
+  case 5:return NV_ENC_PRESET_P5_GUID;case 6:return NV_ENC_PRESET_P6_GUID;case 7:return NV_ENC_PRESET_P7_GUID;default:return NV_ENC_PRESET_P2_GUID;}
+}
+// Applies the options to a copy of the driver's init parameters and its encode configuration; returns whether it changed anything.
+bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool at_initialize){
+ load_options();if(!options.enabled||!source.encodeConfig)return false;
+ init=source;config=*source.encodeConfig;init.encodeConfig=&config;
+ auto& rc=config.rcParams;
+ rc.rateControlMode=options.cbr?NV_ENC_PARAMS_RC_CBR:NV_ENC_PARAMS_RC_VBR;
+ if(options.cbr&&rc.averageBitRate)rc.maxBitRate=rc.averageBitRate;
+ const uint32_t fps=init.frameRateDen?init.frameRateNum/init.frameRateDen:90;
+ if(rc.averageBitRate&&fps){rc.vbvBufferSize=rc.averageBitRate/fps*static_cast<uint32_t>(options.vbv);rc.vbvInitialDelay=0;}
+ if(at_initialize)init.presetGUID=preset_guid(options.preset);
+ return true;
+}
+}
+int StockInitialize(void* encoder,void* init){
+ if(!ready)return NV_ENC_ERR_INVALID_PTR;
+ auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
+ NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
+ if(original&&apply_options(*original,patched,config,true))return status(table.nvEncInitializeEncoder(encoder,&patched));
+ return status(table.nvEncInitializeEncoder(encoder,original));
+}
+int StockReconfigure(void* encoder,void* params){
+ if(!ready)return NV_ENC_ERR_INVALID_PTR;
+ auto* original=static_cast<NV_ENC_RECONFIGURE_PARAMS*>(params);
+ NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
+ if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
+  NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;
+  return status(table.nvEncReconfigureEncoder(encoder,&copy));
+ }
+ return status(table.nvEncReconfigureEncoder(encoder,original));
+}
 int StockRegister(void* encoder,const void* params,void** resource){
  if(!ready||!params||!resource)return NV_ENC_ERR_INVALID_PTR;
  auto copy=*static_cast<const NV_ENC_REGISTER_RESOURCE*>(params);

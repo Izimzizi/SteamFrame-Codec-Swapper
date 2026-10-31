@@ -7,7 +7,7 @@ namespace SteamFrameTray;
 /// <summary>Where the in-VR HUD sits and which controller carries it. Stored beside the tray settings as hud.json.</summary>
 public sealed class HudSettings
 {
-    public const float MinimumWidth = .10f, MaximumWidth = .50f, DefaultWidth = .22f;
+    public const float MinimumWidth = .10f, MaximumWidth = .50f, DefaultWidth = .30f;
 
     public bool Enabled { get; set; }
     /// <summary>"left" or "right".</summary>

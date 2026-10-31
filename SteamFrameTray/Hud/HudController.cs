@@ -6,6 +6,7 @@ public interface IHudActions
     Task SetCodecAsync(bool h264);
     Task SetBitrateAsync(int mbps);
     Task SetEncoderAsync(string rateControl, int preset, int vbvFrames);
+    Task SetApplyHevcAsync(bool apply);
 }
 
 /// <summary>
@@ -15,7 +16,7 @@ public interface IHudActions
 public sealed class HudController(IOverlayApi api, HudSettings settings, Func<HudView> readView, IHudActions actions, Action saveSettings, Func<bool> steamVrRunning, Action<string>? log = null) : IDisposable
 {
     private const string OverlayKey = "steamframe.tray.hud";
-    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(250), InteractionUpload = TimeSpan.FromMilliseconds(25);
+    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(250), InteractionUpload = TimeSpan.FromMilliseconds(25), SlideIdle = TimeSpan.FromMilliseconds(600), CommitHold = TimeSpan.FromSeconds(4);
 
     private ulong _overlay;
     private uint _attachedTo = IOverlayApi.NoDevice;
@@ -29,16 +30,22 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private float _draftWidth;
     private Grab? _grab;
     private string _note = "";
+    private string _menu = "";
+    private int? _sliding;                 // the bitrate under the laser while the slider is held
+    private int? _committed;               // the bitrate just chosen, shown until the tray reports it
+    private DateTime _committedAt, _lastSlideEvent, _clock;
 
     private sealed record Grab(uint Device, Pose DeviceAtGrab, Pose PanelAtGrab);
 
     public bool Repositioning => _repositioning;
     public bool Attached => _overlay != 0;
+    public string OpenMenu => _menu;
 
     /// <summary>Call about 30 times a second from the UI thread.</summary>
     public void Tick(DateTime? now = null)
     {
         var at = now ?? DateTime.UtcNow;
+        _clock = at;
         if (!settings.Enabled || !steamVrRunning()) { Teardown(); return; }
         if (!api.Connected)
         {
@@ -60,6 +67,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
         foreach (var overlayEvent in api.PollEvents(_overlay)) Handle(overlayEvent);
+        // A release can be missed (the laser left the panel): commit a held slider once its events stop.
+        if (_sliding is not null && at - _lastSlideEvent > SlideIdle) CommitSlider();
         if (_grab is not null) FollowGrab();
         var pose = _repositioning ? _draftPose : settings.Pose;
         var width = _repositioning ? _draftWidth : settings.WidthMeters;
@@ -97,7 +106,13 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         _attachedTo = device; _attachedPose = pose; _attachedWidth = width;
     }
 
-    private HudView View() => readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right" };
+    private HudView View()
+    {
+        var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu };
+        if (_sliding is { } held) return view with { TargetMbps = held };
+        if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
+        return view;
+    }
 
     private void Draw(DateTime at)
     {
@@ -115,10 +130,20 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     {
         var y = settings.FlipLaserY ? HudPanel.Height - e.Y : e.Y;
         var hit = HudPanel.HitTest(View(), e.X, y);
+        if (_sliding is not null)
+        {
+            // A held slider follows the laser's x anywhere on the panel; letting go commits.
+            if (e.Kind == OverlayEventKind.MouseUp) { CommitSlider(); return; }
+            if (e.Kind == OverlayEventKind.MouseMove) { _sliding = HudPanel.SliderValue(e.X); _lastSlideEvent = _clock; _hover = "slider"; }
+            return;
+        }
         switch (e.Kind)
         {
             case OverlayEventKind.MouseMove:
                 _hover = hit;
+                break;
+            case OverlayEventKind.MouseDown when hit == "slider":
+                _sliding = HudPanel.SliderValue(e.X); _lastSlideEvent = _clock;
                 break;
             case OverlayEventKind.MouseDown when hit == "grab":
                 if (_repositioning) BeginGrab(e.Device);
@@ -139,13 +164,11 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         switch (parts[0])
         {
             case "codec": Fire(() => actions.SetCodecAsync(parts[1] == "h264")); break;
-            case "rate":
-                var target = Math.Clamp(view.TargetMbps + (parts[1] == "+" ? HudPanel.BitrateStep : -HudPanel.BitrateStep), TrayController.MinimumMbps, TrayController.MaximumMbps);
-                if (target != view.TargetMbps) Fire(() => actions.SetBitrateAsync(target));
-                break;
-            case "rc": Fire(() => actions.SetEncoderAsync(parts[1], view.Preset, view.VbvFrames)); break;
-            case "preset": Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
-            case "vbv": Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
+            case "menu": _menu = parts[1] == "close" ? "" : parts[1]; _drawn = null; break;
+            case "applyhevc": Fire(() => actions.SetApplyHevcAsync(!view.ApplyHevc)); break;
+            case "rc": _menu = ""; Fire(() => actions.SetEncoderAsync(parts[1], view.Preset, view.VbvFrames)); break;
+            case "preset": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
+            case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
             case "reposition": StartRepositioning(); break;
             case "size": _draftWidth = Math.Clamp(_draftWidth * (parts[1] == "+" ? 1.12f : 1 / 1.12f), HudSettings.MinimumWidth, HudSettings.MaximumWidth); break;
             case "save": SavePlacement(); break;
@@ -157,9 +180,18 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
     }
 
+    private void CommitSlider()
+    {
+        if (_sliding is not { } chosen) return;
+        _sliding = null;
+        if (chosen == readView().TargetMbps) return;
+        _committed = chosen; _committedAt = _clock;
+        Fire(() => actions.SetBitrateAsync(chosen));
+    }
+
     private void StartRepositioning()
     {
-        _repositioning = true; _draftPose = settings.Pose; _draftWidth = settings.WidthMeters; _drawn = null;
+        _repositioning = true; _menu = ""; _draftPose = settings.Pose; _draftWidth = settings.WidthMeters; _drawn = null;
     }
 
     private void StopRepositioning()

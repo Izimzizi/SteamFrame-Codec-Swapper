@@ -15,6 +15,7 @@ public sealed partial class TrayApp
     {
         _hudSettings = HudSettings.Load(TrayData.HudPath);
         _hud = new HudHostClient(OnHudMessage, HudLog);
+        WriteStockOptions();
         _statsService.Sampled += (sample, _) => _lastSample = sample;
         _hudTimer.Tick += (_, _) => PushHudView();
         _hudTimer.Start();
@@ -69,6 +70,7 @@ public sealed partial class TrayApp
                     "codec" => actions.SetCodecAsync(message.H264),
                     "bitrate" => actions.SetBitrateAsync(message.Mbps),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
+                    "hevc" => actions.SetApplyHevcAsync(message.Apply),
                     _ => Task.CompletedTask
                 };
                 break;
@@ -81,9 +83,43 @@ public sealed partial class TrayApp
         var tray = _controller.Current;
         var status = tray.State is TrayState.Error or TrayState.Waiting ? tray.Message : "";
         return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false,
-            sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps) : null, tray.TargetMbps, tray.IsArmed,
+            sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps, 1) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
-            sample?.Health?.CompositorLate ?? 0, sample?.Health?.CompositorDropped ?? 0, false, "left", HudView.Pack(_statsService.Sampler.History));
+            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), sample is null ? "" : sample.Note ?? sample.CodecDetail ?? "",
+            _preferences.HookApplyToHevc);
+    }
+
+    // The same readouts as the monitor window, as one line each.
+    private string HudAverage() => _statsService.Sampler.RecentAverage is double average ? $"avg 60 s {average:0} Mbps" : "";
+
+    private static string HudEncoder(StatsSample? sample) => sample?.Config is { } c
+        ? $"encoder asked {c.AverageMbps:0} avg / {c.MaxMbps:0} peak Mbps ({c.RateControl}, {c.Preset}{(c.VbvSize > 0 ? $", VBV {c.VbvSize / 1e6:0.0} Mbit" : "")}{(c.Fps is double cf ? $", {cf:0} fps" : "")})"
+        : "";
+
+    private static string HudHealth(StatsSample? sample)
+    {
+        if (sample is null) return "";
+        var parts = new List<string>();
+        if (sample.Health is { } h)
+        {
+            parts.Add($"held back {h.HeldTotal} ({h.HeldLastMinute} in 60 s)");
+            if (h.CompositorAvailable) parts.Add($"PC {h.CompositorDropped} dropped, {h.CompositorLate} late");
+        }
+        if (sample.EncodeErrors > 0) parts.Add($"{sample.EncodeErrors} encode errors");
+        return string.Join("  ·  ", parts);
+    }
+
+    /// <summary>Saves the encoder options and hands them to the hook, which applies them to Default (HEVC) when that is switched on.</summary>
+    private async Task SaveEncoderOptionsAsync()
+    {
+        await _preferences.SaveAsync(TrayData.SettingsPath);
+        WriteStockOptions();
+    }
+
+    private void WriteStockOptions()
+    {
+        try { StockOptions.Write(TrayData.StockOptionsPath, _preferences); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { HudLog("Could not write stock-options.txt: " + error.Message); }
     }
 
     private void SaveHud() => _hudSettings.Save(TrayData.HudPath);
@@ -140,12 +176,18 @@ public sealed partial class TrayApp
 
         public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
 
+        public Task SetApplyHevcAsync(bool apply) => app.RunAsync(async () =>
+        {
+            app._preferences.HookApplyToHevc = apply;
+            await app.SaveEncoderOptionsAsync();
+        });
+
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames) => app.RunAsync(async () =>
         {
             app._preferences.HookRateControl = rateControl;
             app._preferences.HookPreset = preset;
             app._preferences.HookVbvFrames = vbvFrames;
-            await app._preferences.SaveAsync(TrayData.SettingsPath);
+            await app.SaveEncoderOptionsAsync();
             try { await app._controller.ApplyEncoderOptionsAsync(); }
             catch (Exception error) when (error is not OperationCanceledException) { HudLog("Encoder options not applied live: " + error.Message); }
         });

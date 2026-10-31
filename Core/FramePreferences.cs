@@ -30,6 +30,8 @@ public sealed class FramePreferences
     public int HookPreset { get; set; } = 2;
     /// <summary>Experiment: the hook's VBV buffer in frames of the average bitrate, 2 (the default, about 99% of the target in tests) to 16, 1 being the old behaviour.</summary>
     public int HookVbvFrames { get; set; } = 2;
+    /// <summary>Whether the rate control, preset and VBV above also apply to Default (HEVC), through the driver hook's stock-options.txt.</summary>
+    public bool HookApplyToHevc { get; set; }
     /// <summary>Keep H.264 applied across SteamVR restarts; the Frame password is then kept in Windows Credential Manager.</summary>
     public bool KeepH264 { get; set; }
     public int BitrateSetupVersion { get; set; }

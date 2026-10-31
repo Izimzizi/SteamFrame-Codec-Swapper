@@ -209,6 +209,7 @@ public sealed class HudControllerTests
         public readonly List<string> Calls = [];
         public Task SetCodecAsync(bool h264) { Calls.Add("codec " + h264); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
+        public Task SetApplyHevcAsync(bool apply) { Calls.Add("hevc " + apply); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
     }
 
@@ -226,10 +227,12 @@ public sealed class HudControllerTests
         // Laser click at a button's centre (GL space: y counts up from the bottom).
         public OverlayEvent Click(string id, OverlayEventKind kind = OverlayEventKind.MouseDown, uint device = 4)
         {
-            var b = HudPanel.Layout(View with { Repositioning = Hud.Repositioning }).Single(x => x.Id == id).Bounds;
+            var b = HudPanel.Layout(View with { Repositioning = Hud.Repositioning, OpenMenu = Hud.OpenMenu }).Single(x => x.Id == id).Bounds;
             return new(kind, device, b.X + b.Width / 2f, HudPanel.Height - (b.Y + b.Height / 2f));
         }
         public void Press(string id) { Api.Events.Enqueue(Click(id)); Tick(); }
+        // Laser at panel x on the slider's line (GL space).
+        public OverlayEvent Slide(OverlayEventKind kind, float x, uint device = 4) => new(kind, device, x, HudPanel.Height - (HudPanel.SliderArea.Top + 40));
     }
 
     [Fact]
@@ -247,7 +250,7 @@ public sealed class HudControllerTests
     {
         var rig = new Rig();
         rig.Tick();
-        Assert.Equal(["connect", "create", "laser 512x520", "show"], rig.Api.Calls);
+        Assert.Equal(["connect", "create", $"laser {HudPanel.Width}x{HudPanel.Height}", "show"], rig.Api.Calls);
         Assert.Equal(3u, rig.Api.LastDevice);
         Assert.Equal(HudSettings.DefaultPose, rig.Api.LastRelative);
         Assert.Equal(1, rig.Api.Uploads);
@@ -299,18 +302,64 @@ public sealed class HudControllerTests
         var rig = new Rig();
         rig.Tick();
         rig.Press("codec:h264"); rig.Press("codec:hevc");
-        rig.Press("rate:+"); rig.Press("rate:-");
-        rig.Press("rc:cbr"); rig.Press("preset:4"); rig.Press("vbv:8");
-        Assert.Equal(["codec True", "codec False", "rate 310", "rate 290", "enc cbr P2 V2", "enc vbr P4 V2", "enc vbr P2 V8"], rig.Actions.Calls);
+        rig.Press("menu:rc"); rig.Press("rc:cbr");
+        rig.Press("menu:preset"); rig.Press("preset:4");
+        rig.Press("menu:vbv"); rig.Press("vbv:8");
+        rig.Press("applyhevc");
+        Assert.Equal(["codec True", "codec False", "enc cbr P2 V2", "enc vbr P4 V2", "enc vbr P2 V8", "hevc True"], rig.Actions.Calls);
     }
 
     [Fact]
-    public void The_bitrate_buttons_stop_at_the_limits()
+    public void A_dropdown_replaces_the_controls_with_its_options_and_closes_after_a_choice_or_Close()
     {
         var rig = new Rig();
-        rig.View = rig.View with { TargetMbps = TrayController.MaximumMbps };
-        rig.Tick(); rig.Press("rate:+");
+        rig.Tick();
+        rig.Press("menu:preset");
+        Assert.Equal("preset", rig.Hud.OpenMenu);
+        var ids = HudPanel.Layout(rig.View with { OpenMenu = rig.Hud.OpenMenu }).Select(b => b.Id).ToArray();
+        Assert.DoesNotContain("slider", ids);
+        Assert.Equal(7, ids.Count(id => id.StartsWith("preset:")));
+        rig.Press("menu:close");
+        Assert.Equal("", rig.Hud.OpenMenu);
         Assert.Empty(rig.Actions.Calls);
+        rig.Press("menu:vbv"); rig.Press("vbv:1");
+        Assert.Equal("", rig.Hud.OpenMenu);
+    }
+
+    [Fact]
+    public void Dragging_the_slider_commits_one_bitrate_on_release()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseDown, HudPanel.SliderX(300)));
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseMove, HudPanel.SliderX(350)));
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseMove, HudPanel.SliderX(400)));
+        rig.Tick();
+        Assert.Empty(rig.Actions.Calls);                       // nothing is sent while the knob is held
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseUp, HudPanel.SliderX(400)));
+        rig.Tick();
+        Assert.Equal(["rate 400"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void A_slider_whose_release_never_arrives_commits_when_its_events_stop()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseDown, HudPanel.SliderX(300)));
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseMove, HudPanel.SliderX(450)));
+        rig.Tick();
+        rig.Tick();
+        Assert.Equal(["rate 450"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_slider_maps_the_panel_to_whole_steps_within_the_limits()
+    {
+        Assert.Equal(TrayController.MinimumMbps, HudPanel.SliderValue(-50));
+        Assert.Equal(TrayController.MaximumMbps, HudPanel.SliderValue(HudPanel.Width + 50));
+        foreach (var x in new[] { 100f, 217f, 333f, 480f }) Assert.Equal(0, HudPanel.SliderValue(x) % HudPanel.BitrateStep);
+        Assert.Equal(300, HudPanel.SliderValue(HudPanel.SliderX(300)));
     }
 
     [Fact]

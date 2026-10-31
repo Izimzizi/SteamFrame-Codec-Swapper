@@ -138,7 +138,7 @@ public sealed partial class TrayApp : ApplicationContext
                 item.Click += async (_, _) =>
                 {
                     set();
-                    await _preferences.SaveAsync(TrayData.SettingsPath);
+                    await SaveEncoderOptionsAsync();
                     var summary = $"{_preferences.HookRateControl.ToUpperInvariant()}, P{_preferences.HookPreset}, VBV {_preferences.HookVbvFrames} frame(s)";
                     try
                     {
@@ -153,7 +153,15 @@ public sealed partial class TrayApp : ApplicationContext
             group.DropDownOpening += (_, _) => { foreach (var (item, selected) in items) item.Checked = selected(); };
             return group;
         }
-        _rateMenu.DropDownItems.AddRange([
+        var applyToHevc = new ToolStripMenuItem("Also apply to Default (HEVC)");
+        applyToHevc.Click += async (_, _) =>
+        {
+            _preferences.HookApplyToHevc = !_preferences.HookApplyToHevc;
+            await SaveEncoderOptionsAsync();
+            Balloon("Encoder experiment", _preferences.HookApplyToHevc ? "Default (HEVC) now uses these options; SteamVR applies them the next time it configures the encoder." : "Default (HEVC) is left as SteamVR configures it.", ToolTipIcon.Info);
+        };
+        _rateMenu.DropDownOpening += (_, _) => applyToHevc.Checked = _preferences.HookApplyToHevc;
+        _rateMenu.DropDownItems.AddRange([applyToHevc, new ToolStripSeparator(),
             Group("Rate control", [("VBR (default)", () => _preferences.HookRateControl == "vbr", () => _preferences.HookRateControl = "vbr"),
                                    ("CBR", () => _preferences.HookRateControl == "cbr", () => _preferences.HookRateControl = "cbr")]),
             Group("Preset", [..new[] { 1, 2, 4, 6, 7 }.Select<int, (string, Func<bool>, Action)>(p =>
