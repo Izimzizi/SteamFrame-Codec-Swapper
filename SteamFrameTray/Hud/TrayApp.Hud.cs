@@ -62,6 +62,7 @@ public sealed partial class TrayApp
                 SaveHud();
                 break;
             case "action":
+                HudLog($"HUD button: {message.Kind} h264={message.H264} mbps={message.Mbps} {message.RateControl} P{message.Preset} V{message.VbvFrames}");
                 var actions = new HudActions(this);
                 _ = message.Kind switch
                 {
@@ -82,7 +83,7 @@ public sealed partial class TrayApp
         return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false,
             sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
-            sample?.Health?.CompositorLate ?? 0, sample?.Health?.CompositorDropped ?? 0, false, "left");
+            sample?.Health?.CompositorLate ?? 0, sample?.Health?.CompositorDropped ?? 0, false, "left", HudView.Pack(_statsService.Sampler.History));
     }
 
     private void SaveHud() => _hudSettings.Save(TrayData.HudPath);

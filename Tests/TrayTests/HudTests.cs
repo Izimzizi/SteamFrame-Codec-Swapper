@@ -147,6 +147,28 @@ public sealed class HudPanelTests
     }
 
     [Fact]
+    public void The_history_round_trips_and_keeps_its_gaps()
+    {
+        var packed = HudView.Pack([100.4, null, 250.6]);
+        Assert.Equal("100,-,251", packed);
+        Assert.Equal<double?>([100, null, 251], (HudView.Empty with { History = packed }).Series.ToArray());
+        Assert.Empty((HudView.Empty with { History = "" }).Series);
+    }
+
+    [Fact]
+    public void The_graph_is_drawn_inside_its_area_and_clear_of_the_buttons()
+    {
+        foreach (var button in HudPanel.Layout(View())) Assert.False(button.Bounds.IntersectsWith(HudPanel.GraphArea), button.Id);
+        var view = View() with { History = HudView.Pack(Enumerable.Range(0, 60).Select(i => (double?)(200 + i))) };
+        using var bitmap = HudPanel.Render(view, null);
+        var line = false;
+        for (var x = HudPanel.GraphArea.Left; x < HudPanel.GraphArea.Right && !line; x += 3)
+            for (var y = HudPanel.GraphArea.Top; y < HudPanel.GraphArea.Bottom; y++)
+                if (bitmap.GetPixel(x, y) is { G: > 200, R: < 140 }) { line = true; break; }
+        Assert.True(line, "no green graph line found");
+    }
+
+    [Fact]
     public void The_picture_is_the_declared_size_in_rgba()
     {
         using var bitmap = HudPanel.Render(View(), "codec:h264");
@@ -225,7 +247,7 @@ public sealed class HudControllerTests
     {
         var rig = new Rig();
         rig.Tick();
-        Assert.Equal(["connect", "create", "laser 512x400", "show"], rig.Api.Calls);
+        Assert.Equal(["connect", "create", "laser 512x520", "show"], rig.Api.Calls);
         Assert.Equal(3u, rig.Api.LastDevice);
         Assert.Equal(HudSettings.DefaultPose, rig.Api.LastRelative);
         Assert.Equal(1, rig.Api.Uploads);
@@ -388,5 +410,22 @@ public sealed class HudProtocolTests
     public void Garbage_is_ignored_not_thrown()
     {
         Assert.Null(HudMessage.Parse("{ nope"));
+    }
+}
+
+public sealed class GpuOverlayTextureTests
+{
+    [Fact]
+    public void A_texture_is_created_and_rewritten_in_place_on_a_machine_with_a_GPU()
+    {
+        using var texture = GpuOverlayTexture.TryCreate(HudPanel.Width, HudPanel.Height);
+        if (texture is null) return; // no Direct3D 11 hardware here
+        Assert.NotEqual(0, texture.Texture);
+        var first = texture.Texture;
+        using var bitmap = HudPanel.Render(HudView.Empty, null);
+        var pixels = HudPanel.ToRgba(bitmap);
+        texture.Update(pixels);
+        texture.Update(pixels);
+        Assert.Equal(first, texture.Texture);
     }
 }

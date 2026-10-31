@@ -227,6 +227,7 @@ public sealed partial class TrayApp : ApplicationContext
 
     private async Task ArmAsync()
     {
+        TrayLog("Arm requested");
         if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then choose H.264.", ToolTipIcon.Info); return; }
         await _controller.ArmAsync(AskPassword, ConfirmPatch, ConfirmArmRestart);
         if (_controller.Current.State is TrayState.Armed or TrayState.Waiting)
@@ -241,8 +242,24 @@ public sealed partial class TrayApp : ApplicationContext
         return Task.FromResult(answer == DialogResult.Yes);
     }
 
-    private async Task DisarmAsync() => await _controller.DisarmAsync(
-        () => Task.FromResult(PromptDialog.Ask("Frame password", "The Frame password is needed to restore SteamVR's stock settings.", true)));
+    private async Task DisarmAsync()
+    {
+        TrayLog("Disarm requested");
+        await _controller.DisarmAsync(
+            () => Task.FromResult(PromptDialog.Ask("Frame password", "The Frame password is needed to restore SteamVR's stock settings.", true)));
+    }
+
+    /// <summary>Who asked for a codec change, so a switch that goes back by itself can be traced.</summary>
+    private static void TrayLog(string what)
+    {
+        try
+        {
+            var callers = string.Join(" < ", new System.Diagnostics.StackTrace().GetFrames().Skip(2).Take(6).Select(f => f.GetMethod()?.Name ?? "?"));
+            Directory.CreateDirectory(TrayData.Root);
+            File.AppendAllText(Path.Combine(TrayData.Root, "tray.log"), DateTime.Now.ToString("HH:mm:ss.fff ") + what + " (" + callers + ")" + Environment.NewLine);
+        }
+        catch (IOException) { /* diagnostics only */ }
+    }
 
     private async Task SetPasswordAsync()
     {

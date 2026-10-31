@@ -15,7 +15,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     private const uint MouseMove = 300, MouseDown = 301, MouseUp = 302;
     // Slot numbers: position among the virtual methods of the interface class in openvr.h.
     private const int CreateOverlaySlot = 1, DestroyOverlaySlot = 3, ErrorNameSlot = 8, SetAlphaSlot = 16, SetWidthSlot = 22, SetTrackedDeviceRelativeSlot = 35,
-        ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62;
+        SetTextureSlot = 60, ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62;
     private const int GetPosesSlot = 12, ControllerIndexSlot = 18;
 
     private delegate* unmanaged<int*, int, uint> _init;
@@ -72,6 +72,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     {
         if (_overlay == 0 && _system == 0) return;
         _overlay = _system = 0;
+        _gpu?.Dispose(); _gpu = null;
         try { _shutdown(); } catch (Exception) { /* already gone with SteamVR */ }
     }
 
@@ -116,12 +117,37 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
 
     public void SetImage(ulong overlay, byte[] rgba, int width, int height)
     {
+        if (!_gpuFailed && TrySetTexture(overlay, rgba, width, height)) return;
         fixed (byte* pixels = rgba)
         {
             var result = ((delegate* unmanaged<nint, ulong, byte*, uint, uint, uint, int>)Slot(_overlay, SetRawSlot))(_overlay, overlay, pixels, (uint)width, (uint)height, 4);
             if (result != 0) log?.Invoke($"SetOverlayRaw failed ({Name(_overlay, result)})");
         }
     }
+
+    // One Direct3D texture, rewritten in place: SteamVR keeps showing it while it changes, so the panel does not flicker.
+    private bool TrySetTexture(ulong overlay, byte[] rgba, int width, int height)
+    {
+        try
+        {
+            _gpu ??= GpuOverlayTexture.TryCreate(width, height);
+            if (_gpu is null) { _gpuFailed = true; log?.Invoke("HUD: no Direct3D 11 device; using the slower image upload."); return false; }
+            _gpu.Update(rgba);
+            var texture = stackalloc nint[2];
+            texture[0] = _gpu.Texture;
+            texture[1] = 0; // ETextureType DirectX (0) and EColorSpace Auto (0)
+            var result = ((delegate* unmanaged<nint, ulong, nint*, int>)Slot(_overlay, SetTextureSlot))(_overlay, overlay, texture);
+            if (result == 0) return true;
+            log?.Invoke($"SetOverlayTexture failed ({Name(_overlay, result)}); using the slower image upload.");
+        }
+        catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException) { log?.Invoke("HUD: texture path unavailable: " + error.Message); }
+        _gpuFailed = true;
+        _gpu?.Dispose(); _gpu = null;
+        return false;
+    }
+
+    private GpuOverlayTexture? _gpu;
+    private bool _gpuFailed;
 
     public void SetVisible(ulong overlay, bool visible) =>
         ((delegate* unmanaged<nint, ulong, int>)Slot(_overlay, visible ? ShowSlot : HideSlot))(_overlay, overlay);
