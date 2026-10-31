@@ -15,7 +15,7 @@ public interface IHudActions
 public sealed class HudController(IOverlayApi api, HudSettings settings, Func<HudView> readView, IHudActions actions, Action saveSettings, Func<bool> steamVrRunning, Action<string>? log = null) : IDisposable
 {
     private const string OverlayKey = "steamframe.tray.hud";
-    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), MinimumUpload = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), MinimumUpload = TimeSpan.FromMilliseconds(500);
 
     private ulong _overlay;
     private uint _attachedTo = IOverlayApi.NoDevice;
@@ -45,6 +45,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             if (at < _nextConnect) return;
             if (!api.TryConnect(out var error)) { _nextConnect = at + ConnectRetry; if (error != _note) { _note = error; log?.Invoke("HUD: " + error); } return; }
             _note = "";
+            log?.Invoke("HUD: joined SteamVR");
         }
         if (!api.StillRunning()) { Teardown(); _nextConnect = at + ConnectRetry; return; }
         if (_overlay == 0 && !Create()) { _nextConnect = at + ConnectRetry; return; }
@@ -81,6 +82,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var handle = api.CreateOverlay(OverlayKey, "SteamFrame HUD");
         if (handle == 0) { log?.Invoke("HUD: the overlay could not be created."); return false; }
         _overlay = handle;
+        log?.Invoke("HUD: overlay created");
         api.SetAlpha(handle, 1f);
         api.EnableLaser(handle, HudPanel.Width, HudPanel.Height);
         _drawn = null; _attachedTo = IOverlayApi.NoDevice;
@@ -91,7 +93,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     {
         api.SetWidth(_overlay, width);
         api.AttachToDevice(_overlay, device, pose);
-        if (_attachedTo == IOverlayApi.NoDevice) api.SetVisible(_overlay, true);
+        if (_attachedTo == IOverlayApi.NoDevice) { api.SetVisible(_overlay, true); log?.Invoke($"HUD: shown on device {device}"); }
         _attachedTo = device; _attachedPose = pose; _attachedWidth = width;
     }
 

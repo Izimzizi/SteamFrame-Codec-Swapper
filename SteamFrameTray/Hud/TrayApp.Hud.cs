@@ -36,7 +36,7 @@ public sealed partial class TrayApp
         var sample = _lastSample;
         var tray = _controller.Current;
         var status = tray.State is TrayState.Error or TrayState.Waiting ? tray.Message : "";
-        return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false, sample?.Mbps, sample?.Fps, tray.TargetMbps, tray.IsArmed,
+        return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false, sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
             sample?.Health?.CompositorLate ?? 0, sample?.Health?.CompositorDropped ?? 0, false, "left");
     }

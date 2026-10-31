@@ -12,7 +12,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
 {
     private const string OverlayVersion = "IVROverlay_028", SystemVersion = "IVRSystem_026";
     private const int ApplicationOverlay = 2, StandingUniverse = 1, MouseInput = 1, MaxDevices = 64, EventSize = 64;
-    private const uint MouseMove = 300, MouseDown = 301, MouseUp = 302, QuitEvent = 700;
+    private const uint MouseMove = 300, MouseDown = 301, MouseUp = 302;
     // Slot numbers: position among the virtual methods of the interface class in openvr.h.
     private const int CreateOverlaySlot = 1, DestroyOverlaySlot = 3, ErrorNameSlot = 8, SetAlphaSlot = 16, SetWidthSlot = 22, SetTrackedDeviceRelativeSlot = 35,
         ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62;
@@ -22,7 +22,6 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     private delegate* unmanaged<void> _shutdown;
     private delegate* unmanaged<byte*, int*, nint> _getInterface;
     private nint _module, _overlay, _system;
-    private bool _shouldQuit;
 
     public bool Connected => _overlay != 0;
 
@@ -50,7 +49,6 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
             if (_overlay == 0 || _system == 0 || code != 0 || systemCode != 0) { Disconnect(); error = $"This SteamVR does not provide {OverlayVersion}/{SystemVersion} ({code}/{systemCode})."; return false; }
             var name = Marshal.PtrToStringAnsi(((delegate* unmanaged<nint, int, nint>)Slot(_overlay, ErrorNameSlot))(_overlay, 0));
             if (name != "VROverlayError_None") { Disconnect(); error = "The overlay interface layout is not the one this tray was built for."; return false; }
-            _shouldQuit = false;
             return true;
         }
         catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException or ArgumentException or InvalidOperationException)
@@ -75,17 +73,16 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         try { _shutdown(); } catch (Exception) { /* already gone with SteamVR */ }
     }
 
+    // SteamVR's own quit event is not polled: the process check is enough and avoids another native call into the runtime.
     public bool StillRunning()
     {
         if (!Connected) return false;
-        var buffer = stackalloc byte[EventSize];
-        // System events: SteamVR announces its exit here.
-        while (((delegate* unmanaged<nint, byte*, uint, byte>)Slot(_system, SystemPollEventSlot))(_system, buffer, EventSize) != 0)
-            if (*(uint*)buffer == QuitEvent) _shouldQuit = true;
-        return !_shouldQuit;
+        if (Environment.TickCount64 - _checkedAt >= 1000) { _checkedAt = Environment.TickCount64; _running = VrServerRunning(); }
+        return _running;
     }
 
-    private const int SystemPollEventSlot = 30;
+    private long _checkedAt;
+    private bool _running = true;
 
     public ulong CreateOverlay(string key, string name)
     {
@@ -157,7 +154,8 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay)
     {
         var events = new List<OverlayEvent>();
-        var buffer = stackalloc byte[EventSize];
+        // Generously sized: the runtime fills what it is told, but never trust a native writer with an exact fit.
+        var buffer = stackalloc byte[1024];
         while (events.Count < 64 && ((delegate* unmanaged<nint, ulong, byte*, uint, byte>)Slot(_overlay, PollOverlayEventSlot))(_overlay, overlay, buffer, EventSize) != 0)
         {
             var type = *(uint*)buffer;
