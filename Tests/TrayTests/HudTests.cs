@@ -366,3 +366,27 @@ public sealed class OpenVrOverlayApiTests
         Assert.False(System.Diagnostics.Process.GetProcessesByName("vrserver").Length > 0);
     }
 }
+
+public sealed class HudProtocolTests
+{
+    [Fact]
+    public void Views_and_settings_survive_a_trip_through_a_line()
+    {
+        var settings = new HudSettings { Enabled = true, Hand = "right" };
+        settings.SetPlacement(Pose.Rotation(0, -30, 0, new(0, .1f, 0)), .3f);
+        var view = HudView.Empty with { Connected = true, Codec = "H.264", Mbps = 312, TargetMbps = 300 };
+        var line = new HudMessage { Type = "view", View = view, Settings = settings }.ToLine();
+        Assert.DoesNotContain('\n', line);
+        var back = HudMessage.Parse(line)!;
+        Assert.Equal("view", back.Type);
+        Assert.Equal(view, back.View);
+        Assert.Equal("right", back.Settings!.Hand);
+        Assert.Equal(settings.Placement, back.Settings.Placement);
+    }
+
+    [Fact]
+    public void Garbage_is_ignored_not_thrown()
+    {
+        Assert.Null(HudMessage.Parse("{ nope"));
+    }
+}

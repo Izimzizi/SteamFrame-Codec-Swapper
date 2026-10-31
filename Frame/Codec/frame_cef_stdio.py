@@ -80,6 +80,7 @@ with socket.create_connection(('127.0.0.1', 8080), timeout=10) as connection:
                 continue
             details = result.get('result', {})
             if 'exceptionDetails' in details:
-                raise RuntimeError(details['exceptionDetails'].get('text', 'Evaluation failed'))
+                problem = details['exceptionDetails']
+                raise RuntimeError(str(problem.get('exception', {}).get('description') or problem.get('text', 'Evaluation failed'))[:300])
             print(json.dumps(details.get('result', {}).get('value')))
             break

@@ -6,6 +6,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         if (AskPass.TryAnswer(args)) return;
+        if (args.Contains("--hud-host")) { Environment.ExitCode = HudHost.Run(); return; }
         using var single = new Mutex(true, @"Local\SteamFrameTray.SingleInstance", out var first);
         if (!first) return;
         ApplicationConfiguration.Initialize();

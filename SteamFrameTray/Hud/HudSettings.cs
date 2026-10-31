@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SteamFrameTray;
 
@@ -20,9 +21,9 @@ public sealed class HudSettings
     /// <summary>Above the controller, tilted back toward the face of someone holding it out in front of them.</summary>
     public static Pose DefaultPose { get; } = Pose.Rotation(0, -50, 0, new Vector3(0, .07f, -.02f));
 
-    public bool IsLeft => !string.Equals(Hand, "right", StringComparison.OrdinalIgnoreCase);
+    [JsonIgnore] public bool IsLeft => !string.Equals(Hand, "right", StringComparison.OrdinalIgnoreCase);
 
-    public Pose Pose => Pose.TryFromMatrix34(Placement, out var pose) ? pose : DefaultPose;
+    [JsonIgnore] public Pose Pose => Pose.TryFromMatrix34(Placement, out var pose) ? pose : DefaultPose;
 
     public void SetPlacement(Pose pose, float widthMeters)
     {

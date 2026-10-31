@@ -59,6 +59,8 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         }
     }
 
+    public static bool IsVrServerRunning() => VrServerRunning();
+
     private static bool VrServerRunning()
     {
         var processes = System.Diagnostics.Process.GetProcessesByName("vrserver");
