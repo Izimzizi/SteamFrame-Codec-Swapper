@@ -15,7 +15,7 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 - **H.264 / Default (HEVC) switch.** The stock Steam Link client on the Frame hardcodes HEVC. The tray patches a copy of the client on the Frame and loads a hook into SteamVR's driver, so one choice flips both halves together. "Default (HEVC)" is the untouched stock stream.
 - **Up to 500 Mbps.** The bitrate slider covers 25–500 Mbps. Above 232 Mbps SteamVR's own driver needs the bitrate patch, which the tray can install and remove.
 - **Fast switching.** The SteamVR-side driver stays loaded and the SSH sessions to the Frame stay open, so going H.264 ↔ HEVC restarts only the Frame's stream (about 9 s end to end on the author's setup), not SteamVR.
-- **Encoder options.** Rate control (VBR / CBR), NVENC preset (P1–P7) and VBV buffer (1–16 frames of the average bitrate). They apply live to H.264 and, optionally, to Default (HEVC).
+- **Encoder options.** Rate control (VBR / CBR), NVENC preset (P1–P7) and VBV buffer (1–16 frames of the average bitrate). They apply live to H.264 and also to Default (HEVC).
 - **Stream monitor.** Encoded Mbps with a 60-second average, FPS, what the encoder was asked for, frames held back by the sender and dropped/late on the PC, encode errors, the active codec and a 60-second graph. It can also record a CSV run log.
 - **In-VR HUD.** A panel on a controller with the same readouts and laser-pointer controls (see [In-VR HUD](#in-vr-hud)).
 - **Connection modes.** Works with the dongle only, plain Wi-Fi only, or both at once (multilink).
@@ -54,7 +54,7 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 |---|---|
 | **H.264 / Default (HEVC)** | The codec switch. Choosing Default keeps the session open so switching back is fast. |
 | **Bitrate slider** | 25–500 Mbps, applied when you let go. SteamVR's own slider and the tray follow each other. |
-| **Encoder experiment** | Rate control, preset, VBV, and *Also apply to Default (HEVC)*. |
+| **Encoder experiment** | Rate control, preset and VBV, for both codecs. |
 | **Stream stats window** | The monitor. Double-clicking the tray icon opens/closes it. |
 | **Record stats log** | One CSV row per second, setup in `#` header lines. |
 | **In-VR HUD** | Show on a controller, attach left/right, reset position. |
@@ -73,7 +73,6 @@ Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-sec
 Turn on *In-VR HUD → Show on a controller*. When SteamVR is running the panel appears on the chosen controller. It is a SteamVR overlay driven by laser pointer:
 
 - the codec buttons, a **bitrate slider** (drag with the laser, applied on release), and three **dropdowns** — *Rate control*, *Preset*, *VBV* — each opening a list of options with a short description;
-- *Also apply these to Default (HEVC)* toggles whether those encoder options also reach the stock stream;
 - every readout the monitor has: codec, Mbps, 60 s average, FPS, target, encoder-asked line, held-back / dropped / late / errors, note and the 60 s graph;
 - **Move**: hold the trigger on the panel with the other hand's laser to carry it to a new spot on the controller, then *Save*, *Cancel*, or *Default* (reset); *Smaller/Larger* resize it.
 
@@ -81,7 +80,7 @@ Internals worth knowing: the HUD runs in its **own helper process** (`SteamFrame
 
 ### Encoder options and Default (HEVC)
 
-For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `stock-options.txt` (`enabled`, `rate_control`, `preset`, `vbv`); the hook re-reads it about twice a second and applies the values to SteamVR's own encoder configuration (rate control and VBV on every reconfigure, the preset only when the encoder is created). **Off by default**: with *Also apply to Default (HEVC)* off the stock stream is exactly what SteamVR configured. This HEVC path is covered by a native unit test but has not been confirmed on the headset yet.
+For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `stock-options.txt` (`rate_control`, `preset`, `vbv`); the hook re-reads it about twice a second and applies the values to SteamVR's own encoder configuration (rate control and VBV on every reconfigure, the preset only when the encoder is created). The defaults (VBR, P2, 2 frames) therefore apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. This HEVC path is covered by a native unit test but has not been confirmed on the headset yet.
 
 ## Where things live
 
@@ -131,7 +130,7 @@ Close a running tray before packaging. The tests do not modify your Steam config
 ## Known limitations
 
 - **H.264 wider than 1024 px** is not verified on the Frame; the bridge takes its limit from the GPU's H.264 caps (override with `h264-limit.txt`).
-- **HEVC option overrides** (*Also apply to Default (HEVC)*) are unit-tested natively but not yet confirmed on the headset; whether SteamVR accepts a preset change at encoder creation is unknown.
+- **HEVC option overrides** are unit-tested natively but not yet confirmed on the headset; whether SteamVR accepts a preset change at encoder creation is unknown.
 - **The HUD** has been tested on one controller setup; laser coordinates assume SteamVR's current GL-space convention (`FlipLaserY` in `hud.json` flips it). Dropdown rows are small targets.
 - **An unexplained close** right after reaching H.264 happened once before logging existed (likely an accidental HUD *Default (HEVC)* press); `tray.log` now records who asks for each change.
 - **The Steam UI on the Frame** can get stuck after repeated stream restarts; a restart of the Frame's Steam UI is the workaround, and it is not automated.
@@ -140,7 +139,7 @@ Close a running tray before packaging. The tests do not modify your Steam config
 
 ## Credits
 
-This project is a **fork** of the original **Steam Link VR settings editor / Steam Frame edition** by **[elliotttate](https://github.com/elliotttate)**, released under the MIT license. The original project provided the foundation this work started from: the SteamVR/Steam Link settings access, the bitrate patcher, the NVENC encoder probe, the streaming-health readers and the research notes under `docs/`.
+This project is a **fork** of the original **Steam Link VR settings editor / Steam Frame edition** by **[elliotttate](https://github.com/elliotttate)** ([elliotttate/SteamFrame-Advanced-Options](https://github.com/elliotttate/SteamFrame-Advanced-Options)), released under the MIT license. The original project provided the foundation this work started from: the SteamVR/Steam Link settings access, the bitrate patcher, the NVENC encoder probe, the streaming-health readers and the research notes under `docs/`.
 
 After forking it was **heavily modified**: the tray app, the H.264 hook and Frame client patcher, the supervisor, the permanent SteamVR driver, live H.264 ↔ HEVC switching with a kept session, the shared Frame debugger channel, dongle / Wi-Fi / multilink support, the encoder-option plumbing (including the HEVC overrides), the stream monitor changes and the in-VR HUD were built on top of it. Bugs in this fork are not the original author's.
 

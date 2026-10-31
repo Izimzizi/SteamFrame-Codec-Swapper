@@ -9,7 +9,7 @@ namespace SteamFrameTray;
 public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
-    string Average = "", string Encoder = "", string Health = "", string Note = "", bool ApplyHevc = false, string OpenMenu = "")
+    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "")
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -24,7 +24,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// applyhevc, reposition, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// reposition, save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -88,8 +88,7 @@ public static class HudPanel
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
         Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        buttons.Add(new("applyhevc", new(margin, 540, 430, 52), "Also apply these to Default (HEVC)", view.ApplyHevc, true));
-        buttons.Add(new("reposition", new(margin + 430 + gap, 540, Width - 2 * margin - 430 - gap, 52), "Move", false, true));
+        buttons.Add(new("reposition", new(margin, 540, Width - 2 * margin, 52), "Move the HUD", false, true));
         return buttons;
     }
 

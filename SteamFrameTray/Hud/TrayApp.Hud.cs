@@ -70,7 +70,6 @@ public sealed partial class TrayApp
                     "codec" => actions.SetCodecAsync(message.H264),
                     "bitrate" => actions.SetBitrateAsync(message.Mbps),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
-                    "hevc" => actions.SetApplyHevcAsync(message.Apply),
                     _ => Task.CompletedTask
                 };
                 break;
@@ -85,8 +84,7 @@ public sealed partial class TrayApp
         return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false,
             sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps, 1) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
-            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), sample is null ? "" : sample.Note ?? sample.CodecDetail ?? "",
-            _preferences.HookApplyToHevc);
+            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), sample is null ? "" : sample.Note ?? sample.CodecDetail ?? "");
     }
 
     // The same readouts as the monitor window, as one line each.
@@ -109,7 +107,7 @@ public sealed partial class TrayApp
         return string.Join("  ·  ", parts);
     }
 
-    /// <summary>Saves the encoder options and hands them to the hook, which applies them to Default (HEVC) when that is switched on.</summary>
+    /// <summary>Saves the encoder options and hands them to the hook, which applies them to Default (HEVC) too.</summary>
     private async Task SaveEncoderOptionsAsync()
     {
         await _preferences.SaveAsync(TrayData.SettingsPath);
@@ -175,12 +173,6 @@ public sealed partial class TrayApp
         });
 
         public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
-
-        public Task SetApplyHevcAsync(bool apply) => app.RunAsync(async () =>
-        {
-            app._preferences.HookApplyToHevc = apply;
-            await app.SaveEncoderOptionsAsync();
-        });
 
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames) => app.RunAsync(async () =>
         {

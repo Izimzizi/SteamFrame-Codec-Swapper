@@ -6,7 +6,6 @@ public interface IHudActions
     Task SetCodecAsync(bool h264);
     Task SetBitrateAsync(int mbps);
     Task SetEncoderAsync(string rateControl, int preset, int vbvFrames);
-    Task SetApplyHevcAsync(bool apply);
 }
 
 /// <summary>
@@ -165,7 +164,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         {
             case "codec": Fire(() => actions.SetCodecAsync(parts[1] == "h264")); break;
             case "menu": _menu = parts[1] == "close" ? "" : parts[1]; _drawn = null; break;
-            case "applyhevc": Fire(() => actions.SetApplyHevcAsync(!view.ApplyHevc)); break;
             case "rc": _menu = ""; Fire(() => actions.SetEncoderAsync(parts[1], view.Preset, view.VbvFrames)); break;
             case "preset": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
             case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;

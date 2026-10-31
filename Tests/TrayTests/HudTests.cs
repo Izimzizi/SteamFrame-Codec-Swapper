@@ -209,7 +209,6 @@ public sealed class HudControllerTests
         public readonly List<string> Calls = [];
         public Task SetCodecAsync(bool h264) { Calls.Add("codec " + h264); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
-        public Task SetApplyHevcAsync(bool apply) { Calls.Add("hevc " + apply); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
     }
 
@@ -305,8 +304,7 @@ public sealed class HudControllerTests
         rig.Press("menu:rc"); rig.Press("rc:cbr");
         rig.Press("menu:preset"); rig.Press("preset:4");
         rig.Press("menu:vbv"); rig.Press("vbv:8");
-        rig.Press("applyhevc");
-        Assert.Equal(["codec True", "codec False", "enc cbr P2 V2", "enc vbr P4 V2", "enc vbr P2 V8", "hevc True"], rig.Actions.Calls);
+        Assert.Equal(["codec True", "codec False", "enc cbr P2 V2", "enc vbr P4 V2", "enc vbr P2 V8"], rig.Actions.Calls);
     }
 
     [Fact]
