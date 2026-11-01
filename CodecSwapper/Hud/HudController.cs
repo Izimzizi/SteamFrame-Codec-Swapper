@@ -6,7 +6,7 @@ public interface IHudActions
     Task SetCodecAsync(bool h264);
     Task SetBitrateAsync(int mbps);
     Task SetEncoderAsync(string rateControl, int preset, int vbvFrames);
-    Task TurnOffAsync();
+    Task HideAsync();
 }
 
 /// <summary>
@@ -32,6 +32,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private Grab? _grab;
     private string _note = "";
     private string _menu = "";
+    private string _page = "";
     private bool _dashboard = true;
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
@@ -42,6 +43,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     public bool Repositioning => _repositioning;
     public bool Attached => _overlay != 0;
     public string OpenMenu => _menu;
+    public string Page => _page;
 
     /// <summary>Call about 30 times a second from the UI thread.</summary>
     public void Tick(DateTime? now = null)
@@ -86,7 +88,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private void UpdateDashboard(DateTime at)
     {
-        var open = api.DashboardVisible() || at - _laserAt < LaserHold;
+        var open = (!settings.ExpandOnHover && api.DashboardVisible()) || at - _laserAt < LaserHold;
         if (open == _dashboard) return;
         _dashboard = open;
         log?.Invoke(open ? "HUD: dashboard opened, controls shown" : "HUD: dashboard closed, readouts only");
@@ -94,7 +96,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         _drawn = null; _lastUpload = DateTime.MinValue;
         if (open) return;
         // Without input a half-finished interaction could never end: drop it.
-        _menu = ""; _sliding = null; _hover = null; _drawn = null;
+        _menu = ""; _page = ""; _sliding = null; _hover = null; _drawn = null;
         if (_repositioning) StopRepositioning();
     }
 
@@ -130,7 +132,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private HudView View()
     {
-        var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard };
+        var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover };
         if (_sliding is { } held) return view with { TargetMbps = held };
         if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
         return view;
@@ -150,7 +153,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
@@ -196,7 +199,13 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "preset": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
             case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
             case "reposition": StartRepositioning(); break;
-            case "hudoff": Fire(actions.TurnOffAsync); break;
+            case "hide": Fire(actions.HideAsync); break;
+            case "page": _page = parts[1] == "close" ? "" : parts[1]; _menu = ""; _drawn = null; break;
+            case "set":
+                if (parts[1] == "autoshow") settings.AutoShow = !settings.AutoShow;
+                else if (parts[1] == "expand") settings.ExpandOnHover = !settings.ExpandOnHover;
+                Persist(); _drawn = null;
+                break;
             case "size": _draftWidth = Math.Clamp(_draftWidth * (parts[1] == "+" ? 1.12f : 1 / 1.12f), HudSettings.MinimumWidth, HudSettings.MaximumWidth); break;
             case "save": SavePlacement(); break;
             case "cancel": StopRepositioning(); break;

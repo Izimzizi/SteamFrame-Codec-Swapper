@@ -9,7 +9,8 @@ namespace CodecSwapper;
 public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
-    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "")
+    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -24,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// reposition, hudoff, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow, set:expand, reposition, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -80,7 +81,16 @@ public static class HudPanel
             Row(260, 56, [("save", "Save", false, true), ("cancel", "Cancel", false, true), ("default", "Default", false, true)]);
             return buttons;
         }
+        if (view.Page == "settings")
+        {
+            buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
+            Row(70, 64, [("set:autoshow", $"Show when SteamVR starts: {(view.AutoShow ? "On" : "Off")}", view.AutoShow, true)]);
+            Row(150, 64, [("set:expand", $"Expand: {(view.ExpandOnHover ? "when the laser points at it" : "when the dashboard opens")}", false, true)]);
+            Row(230, 64, [("reposition", "Reposition HUD", false, true)]);
+            return buttons;
+        }
         var control = !view.Busy;
+        buttons.Add(new("page:settings", new(Width - margin - 44, 10, 44, 40), "⚙", false, true));
         Row(334, 56, [("codec:h264", "H.264", view.H264Selected, control), ("codec:hevc", "Default (HEVC)", !view.H264Selected, control)]);
         if (view.OpenMenu.Length > 0)
         {
@@ -96,7 +106,7 @@ public static class HudPanel
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
         Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        Row(540, 52, [("reposition", "Reposition", false, true), ("hudoff", "Turn off HUD", false, true)]);
+        Row(540, 52, [("hide", "Hide HUD", false, true)]);
         return buttons;
     }
 
@@ -117,6 +127,7 @@ public static class HudPanel
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         var accent = view.Repositioning ? Color.FromArgb(255, 170, 60) : Color.FromArgb(70, 160, 255);
         var compact = !view.Interactive && !view.Repositioning;
+        var settingsPage = view.Page == "settings" && view.Interactive && !view.Repositioning;
         using (var path = Rounded(new Rectangle(0, 0, Width - 1, (compact ? CompactHeight : Height) - 1), 26))
         {
             using var back = new SolidBrush(Color.FromArgb(235, 18, 20, 26));
@@ -128,15 +139,20 @@ public static class HudPanel
         using var large = new Font("Segoe UI Semibold", 30f);
         using var normal = new Font("Segoe UI", 13f);
         using var small = new Font("Segoe UI", 11f);
+        using var symbol = new Font("Segoe UI Symbol", 16f);
         using var white = new SolidBrush(Color.White);
         using var grey = new SolidBrush(Color.FromArgb(170, 178, 190));
         using var accentBrush = new SolidBrush(accent);
 
-        g.DrawString(view.Repositioning ? "Reposition the HUD" : "SteamFrame", title, accentBrush, 22, 14);
+        g.DrawString(view.Repositioning ? "Reposition the HUD" : settingsPage ? "HUD settings" : "SteamFrame", title, accentBrush, 22, 14);
         if (view.Repositioning)
         {
             g.DrawString("Hold the trigger on the panel with the other\nhand's laser and move it, then Save.", normal, white, 22, 62);
             g.DrawString($"Attached to the {view.Hand} controller.", small, grey, 22, 128);
+        }
+        else if (settingsPage)
+        {
+            g.DrawString("Hide HUD takes the panel away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With Show when SteamVR\nstarts off, the HUD stays hidden until you show it from the tray menu.", small, grey, 22, 316);
         }
         else
         {
@@ -154,12 +170,12 @@ public static class HudPanel
             g.DrawString(Trim(view.Encoder, 86), small, grey, 22, 120);
             g.DrawString(Trim(view.Health.Length > 0 ? view.Health : "Stream healthy", 86), small, grey, 22, 144);
             if (view.Status.Length > 0) g.DrawString(Trim(view.Status, 86), small, grey, 22, 168);
-            if (view.Busy) g.DrawString("Applying…", small, accentBrush, 520, 14);
+            if (view.Busy) g.DrawString("Applying…", small, accentBrush, 430, 14);
         }
-        if (!view.Repositioning) DrawGraph(g, view, small, accent);
+        if (!view.Repositioning && !settingsPage) DrawGraph(g, view, small, accent);
         if (compact) g.DrawString("Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
-        if (view.Notice.Length > 0 && !view.Repositioning) DrawNotice(g, view, small);
+        if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
         foreach (var button in Layout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
@@ -171,7 +187,7 @@ public static class HudPanel
             using var edge = new Pen(button.Active || hot ? accent : Color.FromArgb(70, 76, 90), button.Active ? 2.5f : 1.5f);
             g.DrawPath(edge, shape);
             using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-            var font = button.Bounds.Height < 40 ? small : normal;
+            var font = button.Id == "page:settings" ? symbol : button.Bounds.Height < 40 ? small : normal;
             g.DrawString(button.Text, font, button.Enabled ? white : grey, button.Bounds, format);
         }
         return bitmap;

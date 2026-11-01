@@ -13,6 +13,8 @@ public sealed partial class TrayApp
     private string _hudNotice = "";
     private bool _hudNoticeIsError;
     private DateTime _hudNoticeUntil;
+    private bool _steamVrSeen;
+    private long _steamVrCheckedAt;
 
     private void StartHud()
     {
@@ -20,8 +22,22 @@ public sealed partial class TrayApp
         _hud = new HudHostClient(OnHudMessage, HudLog) { Started = OnHudHelperStarted };
         WriteHevcOptions();
         _statsService.Sampled += (sample, _) => _lastSample = sample;
-        _hudTimer.Tick += (_, _) => PushHudView();
+        _steamVrSeen = OpenVrOverlayApi.IsVrServerRunning();
+        _hudTimer.Tick += (_, _) => { FollowSteamVrStart(); PushHudView(); };
         _hudTimer.Start();
+        ApplyHudEnabled();
+    }
+
+    /// <summary>Hide HUD lasts until SteamVR starts again; each start the HUD shows or stays hidden as the "Show when SteamVR starts" setting says. Polled here because a hidden HUD has no sampling to notice it.</summary>
+    private void FollowSteamVrStart()
+    {
+        if (Environment.TickCount64 - _steamVrCheckedAt < 1000) return;
+        _steamVrCheckedAt = Environment.TickCount64;
+        var running = OpenVrOverlayApi.IsVrServerRunning();
+        var started = running && !_steamVrSeen;
+        _steamVrSeen = running;
+        if (!started || _hudSettings.Enabled == _hudSettings.AutoShow) return;
+        _hudSettings.Enabled = _hudSettings.AutoShow;
         ApplyHudEnabled();
     }
 
@@ -66,6 +82,8 @@ public sealed partial class TrayApp
             case "settings" when message.Settings is not null:
                 _hudSettings.Placement = message.Settings.Placement;
                 _hudSettings.WidthMeters = message.Settings.WidthMeters;
+                _hudSettings.AutoShow = message.Settings.AutoShow;
+                _hudSettings.ExpandOnHover = message.Settings.ExpandOnHover;
                 SaveHud();
                 break;
             case "action":
@@ -75,7 +93,7 @@ public sealed partial class TrayApp
                 {
                     "codec" => actions.SetCodecAsync(message.H264),
                     "bitrate" => actions.SetBitrateAsync(message.Mbps),
-                    "hudoff" => actions.TurnOffAsync(),
+                    "hide" => actions.HideAsync(),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
                     _ => Task.CompletedTask
                 };
@@ -191,13 +209,12 @@ public sealed partial class TrayApp
         public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
 
         /// <summary>The HUD's own button: it vanishes with the HUD, so the way back is told on the desktop.</summary>
-        public Task TurnOffAsync()
+        public Task HideAsync()
         {
             app._hudSettings.Enabled = false;
-            app.SaveHud();
             app.ApplyHudEnabled();
-            app._icon.BalloonTipTitle = "VR HUD turned off";
-            app._icon.BalloonTipText = "Turn it back on from the tray menu: VR HUD > Show HUD on a controller.";
+            app._icon.BalloonTipTitle = "VR HUD hidden";
+            app._icon.BalloonTipText = (app._hudSettings.AutoShow ? "It comes back when SteamVR starts again, or now from" : "Show it again from") + " the tray menu: VR HUD > Show HUD on a controller.";
             app._icon.BalloonTipIcon = ToolTipIcon.Info;
             app._icon.ShowBalloonTip(6000);
             return Task.CompletedTask;

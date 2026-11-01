@@ -42,6 +42,7 @@ public static class HudHost
                     else if (message.Type == "settings" && message.Settings is not null)
                     {
                         settings.Enabled = message.Settings.Enabled; settings.Hand = message.Settings.Hand; settings.FlipLaserY = message.Settings.FlipLaserY;
+                        settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover;
                         // The helper owns the placement while the user is moving the HUD.
                         if (!hud.Repositioning) { settings.Placement = message.Settings.Placement; settings.WidthMeters = message.Settings.WidthMeters; }
                     }
@@ -69,7 +70,7 @@ public static class HudHost
     {
         public Task SetCodecAsync(bool h264) { send(new() { Type = "action", Kind = "codec", H264 = h264 }); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { send(new() { Type = "action", Kind = "bitrate", Mbps = mbps }); return Task.CompletedTask; }
-        public Task TurnOffAsync() { send(new() { Type = "action", Kind = "hudoff" }); return Task.CompletedTask; }
+        public Task HideAsync() { send(new() { Type = "action", Kind = "hide" }); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames)
         {
             send(new() { Type = "action", Kind = "encoder", RateControl = rateControl, Preset = preset, VbvFrames = vbvFrames });

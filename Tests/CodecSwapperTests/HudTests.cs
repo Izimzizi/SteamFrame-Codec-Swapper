@@ -213,7 +213,7 @@ public sealed class HudControllerTests
         public Task SetCodecAsync(bool h264) { Calls.Add("codec " + h264); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
-        public Task TurnOffAsync() { Calls.Add("hud off"); return Task.CompletedTask; }
+        public Task HideAsync() { Calls.Add("hud off"); return Task.CompletedTask; }
     }
 
     private sealed class Rig
@@ -230,7 +230,7 @@ public sealed class HudControllerTests
         // Laser click at a button's centre (GL space: y counts up from the bottom).
         public OverlayEvent Click(string id, OverlayEventKind kind = OverlayEventKind.MouseDown, uint device = 4)
         {
-            var b = HudPanel.Layout(View with { Repositioning = Hud.Repositioning, OpenMenu = Hud.OpenMenu }).Single(x => x.Id == id).Bounds;
+            var b = HudPanel.Layout(View with { Repositioning = Hud.Repositioning, OpenMenu = Hud.OpenMenu, Page = Hud.Page }).Single(x => x.Id == id).Bounds;
             return new(kind, device, b.X + b.Width / 2f, HudPanel.Height - (b.Y + b.Height / 2f));
         }
         public void Press(string id) { Api.Events.Enqueue(Click(id)); Tick(); }
@@ -327,12 +327,70 @@ public sealed class HudControllerTests
     }
 
     [Fact]
-    public void The_Turn_off_HUD_button_asks_the_tray_to_switch_the_HUD_off()
+    public void The_Hide_HUD_button_asks_the_tray_to_hide_the_HUD()
     {
         var rig = new Rig();
         rig.Tick();
-        rig.Press("hudoff");
+        rig.Press("hide");
         Assert.Equal(["hud off"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_cogwheel_opens_a_settings_page_with_the_options_and_Reposition_and_Back_returns()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        Assert.DoesNotContain(HudPanel.Layout(rig.View with { Interactive = true }), b => b.Id == "reposition");
+        rig.Press("page:settings");
+        Assert.Equal("settings", rig.Hud.Page);
+        rig.Press("set:autoshow");
+        Assert.False(rig.Settings.AutoShow);
+        rig.Press("reposition");
+        Assert.True(rig.Hud.Repositioning);
+        rig.Press("cancel");
+        Assert.Equal("settings", rig.Hud.Page);
+        rig.Press("page:close");
+        Assert.Equal("", rig.Hud.Page);
+        rig.Press("page:settings");
+        rig.Press("set:expand");
+        Assert.True(rig.Settings.ExpandOnHover);
+        Assert.Equal(2, rig.Saves);
+        using var bitmap = HudPanel.Render(HudView.Empty with { Connected = true, Interactive = true, Page = "settings" }, null);
+        Assert.Equal(HudPanel.Width, bitmap.Width);
+    }
+
+    [Fact]
+    public void Hiding_lasts_one_SteamVR_session_and_Show_when_SteamVR_starts_decides_the_next()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            new HudSettings { Enabled = false, AutoShow = true }.Save(file);
+            Assert.True(HudSettings.Load(file).Enabled);
+            new HudSettings { Enabled = true, AutoShow = false }.Save(file);
+            Assert.False(HudSettings.Load(file).Enabled);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public void With_expand_on_hover_the_controls_follow_the_laser_not_the_dashboard()
+    {
+        var rig = new Rig();
+        rig.Settings.ExpandOnHover = true;
+        rig.Tick();
+        rig.Api.Dashboard = true;
+        rig.Tick();
+        rig.Tick();
+        rig.Tick();
+        rig.Api.Events.Enqueue(rig.Click("codec:h264", OverlayEventKind.MouseMove));
+        rig.Api.Events.Enqueue(rig.Click("codec:h264"));
+        rig.Tick();
+        Assert.Equal(["codec True"], rig.Actions.Calls);
+        rig.Tick(); rig.Tick();
+        rig.Api.Events.Enqueue(rig.Click("codec:hevc"));
+        rig.Tick();
+        Assert.Equal(["codec True"], rig.Actions.Calls);
     }
 
     [Fact]
@@ -367,7 +425,7 @@ public sealed class HudControllerTests
         rig.Tick(); rig.Tick();
         Assert.Empty(rig.Actions.Calls);                       // the held slider was dropped, not committed
         rig.Api.Dashboard = true;
-        rig.Tick(); rig.Press("reposition");
+        rig.Tick(); rig.Press("page:settings"); rig.Press("reposition");
         Assert.True(rig.Hud.Repositioning);
         rig.Api.Dashboard = false;
         rig.Tick();
@@ -451,7 +509,7 @@ public sealed class HudControllerTests
         rig.Api.Poses[3] = Pose.Identity;                          // the carrying (left) controller
         rig.Api.Poses[4] = Pose.Rotation(0, 0, 0, new(1, 0, 0));   // the other hand holding the laser
         rig.Tick();
-        rig.Press("reposition");
+        rig.Press("page:settings"); rig.Press("reposition");
         Assert.True(rig.Hud.Repositioning);
         // Trigger on the panel body, then the other hand moves 10 cm up.
         rig.Api.Events.Enqueue(new(OverlayEventKind.MouseDown, 4, 5, 395));
@@ -474,7 +532,7 @@ public sealed class HudControllerTests
         var rig = new Rig();
         rig.Settings.SetPlacement(Pose.Rotation(0, 0, 0, new(.3f, .3f, .3f)), .3f);
         rig.Tick();
-        rig.Press("reposition"); rig.Press("size:+");
+        rig.Press("page:settings"); rig.Press("reposition"); rig.Press("size:+");
         rig.Press("cancel");
         Assert.Equal(.3f, rig.Settings.WidthMeters);
         Assert.Equal(.3f, rig.Api.LastWidth);
@@ -489,7 +547,7 @@ public sealed class HudControllerTests
     {
         var rig = new Rig();
         rig.Api.Poses[3] = Pose.Identity;
-        rig.Tick(); rig.Press("reposition");
+        rig.Tick(); rig.Press("page:settings"); rig.Press("reposition");
         rig.Api.Events.Enqueue(new(OverlayEventKind.MouseDown, 3, 5, 395)); rig.Tick();
         rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 1, 0)); rig.Tick();
         Assert.Equal(HudSettings.DefaultPose, rig.Api.LastRelative);

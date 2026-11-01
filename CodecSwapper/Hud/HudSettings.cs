@@ -9,8 +9,12 @@ public sealed class HudSettings
 {
     public const float MinimumWidth = .10f, MaximumWidth = .50f, DefaultWidth = .2135f;
 
-    /// <summary>On unless the user turned it off (from the HUD itself or the tray menu).</summary>
+    /// <summary>Whether the HUD is showing right now. Not remembered: at start-up and whenever SteamVR starts it becomes <see cref="AutoShow"/>; Hide HUD and the tray menu change it for the current SteamVR session only.</summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>Whether the HUD appears by itself when SteamVR starts.</summary>
+    public bool AutoShow { get; set; } = true;
+    /// <summary>The full panel with its controls appears when the laser points at the HUD, instead of when the dashboard opens.</summary>
+    public bool ExpandOnHover { get; set; }
     /// <summary>"left" or "right".</summary>
     public string Hand { get; set; } = "left";
     /// <summary>The HUD's pose in its controller's space as a row-major 3x4; null means the default placement.</summary>
@@ -46,6 +50,7 @@ public sealed class HudSettings
         {
             var loaded = JsonSerializer.Deserialize<HudSettings>(File.ReadAllText(path));
             if (loaded is null) return new();
+            loaded.Enabled = loaded.AutoShow;
             loaded.Hand = loaded.IsLeft ? "left" : "right";
             loaded.WidthMeters = float.IsFinite(loaded.WidthMeters) ? Math.Clamp(loaded.WidthMeters, MinimumWidth, MaximumWidth) : DefaultWidth;
             return loaded;
