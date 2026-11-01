@@ -153,14 +153,13 @@ internal static class PatcherHarness
                 path = await Copy("simulated-update");
                 await patcher.ApplyAsync(path); await patcher.RestoreAsync(path);
                 var oldBackup = BitratePatcher.GetBackupPath(path); var oldReceipt = oldBackup + ".patch.json";
-                var oldReceiptBytes = await File.ReadAllBytesAsync(oldReceipt);
                 await File.WriteAllBytesAsync(path, current); // Simulate Steam updating only our temporary target.
                 status = await patcher.InspectAsync(path);
                 Check(status.State == BitratePatchState.Original && status.BackupPath != oldBackup && status.CanApply, "Steam update receives separate backup namespace");
                 status = await patcher.ApplyAsync(path);
                 Check(Hash(await File.ReadAllBytesAsync(path)) == BitratePatcher.SupportedCurrentPatchedSha256, "current build exact patched output");
                 Check((await File.ReadAllBytesAsync(status.BackupPath)).SequenceEqual(current), "current build exact backup");
-                Check((await File.ReadAllBytesAsync(oldBackup)).SequenceEqual(fixture) && (await File.ReadAllBytesAsync(oldReceipt)).SequenceEqual(oldReceiptBytes), "older build backup and receipt preserved through update");
+                Check(!File.Exists(oldBackup) && !File.Exists(oldReceipt) && File.Exists(status.BackupPath) && File.Exists(status.ReceiptPath), "older build backup and receipt removed once the updated driver is patched");
                 var currentPatchedTime = File.GetLastWriteTimeUtc(path); await patcher.ApplyAsync(path);
                 Check(File.GetLastWriteTimeUtc(path) == currentPatchedTime, "current apply idempotency");
                 await File.WriteAllBytesAsync(status.BackupPath, fixture);

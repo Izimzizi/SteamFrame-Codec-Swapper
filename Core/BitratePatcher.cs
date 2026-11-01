@@ -70,9 +70,26 @@ public sealed class BitratePatcher
             await EnsureBackupAsync(status.BackupPath, original, plan, cancellationToken);
             await EnsureReceiptAsync(status.ReceiptPath, plan, cancellationToken);
             await ReplaceGuardedAsync(full, status.BackupPath, patched, plan, false, cancellationToken);
+            DeleteStaleBackups(full, status.BackupPath);
             return await InspectCoreAsync(full, CancellationToken.None);
         }
         finally { OperationGate.Release(); }
+    }
+    /// <summary>Every SteamVR update that overwrites the driver leaves its old original behind; once the new one is patched with its own backup, the backups of other driver versions can never be restored again and are removed (best effort).</summary>
+    private static void DeleteStaleBackups(string path, string keepBackup)
+    {
+        var directory = Path.GetDirectoryName(path)!; var name = Path.GetFileName(path);
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { keepBackup, keepBackup + ".patch.json" };
+        foreach (var pattern in new[] { name + ".steam-frame-bitrate-*.bak", name + ".steam-frame-bitrate-*.bak.patch.json" })
+        {
+            string[] files;
+            try { files = Directory.GetFiles(directory, pattern); } catch (IOException) { continue; } catch (UnauthorizedAccessException) { continue; }
+            foreach (var file in files)
+            {
+                if (keep.Contains(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) continue;
+                try { File.Delete(file); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
     }
     public async Task<BitratePatchStatus> RestoreAsync(string path, CancellationToken cancellationToken = default)
     {

@@ -128,14 +128,14 @@ public sealed class BranchCompatibilityTests
         var betaStatus = await patcher.ApplyAsync(path, token);
         Assert.NotEqual(stableStatus.BackupPath, betaStatus.BackupPath);
         Assert.Equal(PatchManifest.SupportedCurrentPatchedSha256, betaStatus.Sha256);
-        Assert.Equal(stableBytes, await File.ReadAllBytesAsync(stableStatus.BackupPath, token));
+        Assert.False(File.Exists(stableStatus.BackupPath)); // the superseded build's backup is cleaned up
         await NewPatcher().RestoreAsync(path, token);
         Assert.Equal(betaBytes, await File.ReadAllBytesAsync(path, token));
         await File.WriteAllBytesAsync(path, stableBytes, token);
         Assert.Equal(PatchManifest.SupportedStablePatchedSha256, (await NewPatcher().ApplyAsync(path, token)).Sha256);
         await patcher.RestoreAsync(path, token);
         Assert.Equal(stableBytes, await File.ReadAllBytesAsync(path, token));
-        Assert.Equal(betaBytes, await File.ReadAllBytesAsync(betaStatus.BackupPath, token));
+        Assert.False(File.Exists(betaStatus.BackupPath));
     }
 
     private static BitratePatcher NewPatcher(bool running = false) => new(PatchManifest.LoadSupported(), () => running);
