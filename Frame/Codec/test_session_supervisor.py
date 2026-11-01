@@ -161,17 +161,17 @@ class KeepModeTests(unittest.TestCase):
    for config in (dict(base,target_mbps=501),dict(base,rate_control='abr'),dict(base,preset=9)):
     with self.assertRaises(ValueError):service.Supervisor(pathlib.Path(directory),config)
  def test_authenticate_adopts_a_leftover_h264_mount_and_prepares_a_stock_client(self):
-  for client,expected in ((service.CLIENT_H264_SHA,'adopt'),(service.CLIENT_STOCK_SHA,'prepare')):
+  for client,expected in (('h264','adopt'),('stock','prepare')):
    instance=self.make()
-   inventory={'current_driver':'qcom-iris','client_sha256':client}
+   inventory={'client_kind':client}
    with patch.object(instance,'start_root'),patch.object(instance,'action',side_effect=[inventory,{}]) as action:
     instance.authenticate('pw')
    self.assertEqual(action.call_args_list[1].args[0],expected)
-   self.assertEqual(instance.frame_mounted,client==service.CLIENT_H264_SHA)
+   self.assertEqual(instance.frame_mounted,client=='h264')
  def test_authenticate_refuses_an_unknown_client(self):
   instance=self.make()
-  with patch.object(instance,'start_root'),patch.object(instance,'action',return_value={'current_driver':'qcom-iris','client_sha256':'59231d5b'}):
-   with self.assertRaisesRegex(RuntimeError,'Another codec trial'):instance.authenticate('pw')
+  with patch.object(instance,'start_root'),patch.object(instance,'action',return_value={'client_kind':'unknown'}):
+   with self.assertRaisesRegex(RuntimeError,'not recognised'):instance.authenticate('pw')
  def test_steamvr_exit_keeps_h264_and_does_not_restore_the_frame(self):
   instance=self.make();instance.experimental=True;instance.watch=MagicMock();instance.pid=7
   with patch.object(instance,'update') as update,patch.object(instance,'save_host_settings') as save,patch.object(instance,'recover') as recover:
@@ -208,23 +208,23 @@ class KeepModeTests(unittest.TestCase):
   instance=self.make();actions=[]
   def action(name):
    actions.append(name)
-   return {'inventory':{'client_sha256':service.CLIENT_STOCK_SHA,'current_driver':'qcom-iris'},'client-h264':{'mounted':True}}[name]
+   return {'inventory':{'client_kind':'stock'},'client-h264':{'mounted':True}}[name]
   with patch.object(instance,'action',side_effect=action),patch.object(instance,'cef'):
    instance.ensure_frame()
   self.assertEqual(actions,['inventory','inventory','client-h264']);self.assertTrue(instance.frame_mounted)
  def test_ensure_frame_leaves_a_mounted_client_alone_and_refuses_unknown_clients(self):
   instance=self.make()
-  with patch.object(instance,'action',return_value={'client_sha256':service.CLIENT_H264_SHA,'current_driver':'qcom-iris'}) as action:
+  with patch.object(instance,'action',return_value={'client_kind':'h264'}) as action:
    instance.ensure_frame()
   action.assert_called_once_with('inventory')
-  with patch.object(instance,'action',return_value={'client_sha256':'other','current_driver':'qcom-iris'}):
+  with patch.object(instance,'action',return_value={'client_kind':'unknown'}):
    with self.assertRaisesRegex(RuntimeError,'client changed'):instance.ensure_frame()
  def test_renewal_hands_the_mount_to_a_new_session_then_detaches_the_old_one(self):
   instance=self.make();old=instance.root;calls=[]
   fresh=MagicMock()
   def start_root(password):instance.root=fresh;instance.root_started=123.0
   def action(name):
-   calls.append(name);return {'client_sha256':service.CLIENT_H264_SHA} if name=='inventory' else {}
+   calls.append(name);return {'client_kind':'h264'} if name=='inventory' else {}
   with patch.object(instance,'start_root',side_effect=start_root),patch.object(instance,'action',side_effect=action):
    instance.swap_root()
   self.assertEqual(calls,['inventory','adopt']);self.assertIs(instance.root,fresh)
@@ -295,7 +295,7 @@ class SessionLifecycleTests(unittest.TestCase):
   self.assertEqual(arguments[-3:],['cbr','4','3'])
  def test_restore_after_steamvr_exit_does_not_relaunch_it(self):
   instance=self.make();instance.experimental=True
-  inventory={'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
+  inventory={'inventory':{'client_trial_active':False}}
   with patch.object(instance,'stop_server') as stop,patch.object(instance,'cef'),patch.object(instance,'action',return_value=inventory),\
        patch.object(instance,'save_host_settings') as save,patch.object(instance,'start_server') as start:
    instance.recover(restart=False)
@@ -303,7 +303,7 @@ class SessionLifecycleTests(unittest.TestCase):
   self.assertFalse(instance.experimental)
  def test_restore_without_an_active_experiment_leaves_steamvr_running(self):
   instance=self.make();instance.experimental=False
-  inventory={'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
+  inventory={'inventory':{'client_trial_active':False}}
   with patch.object(instance,'stop_server') as stop,patch.object(instance,'action',return_value=inventory),\
        patch.object(instance,'save_host_settings') as save,patch.object(instance,'start_server') as start:
    instance.recover()
@@ -508,7 +508,7 @@ class LiveModeTests(LiveRateTests):
   instance.cef=lambda which:calls.append('cef '+which)
   def action(name):
    calls.append('frame '+name)
-   if name=='rollback':return {'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
+   if name=='rollback':return {'inventory':{'client_trial_active':False}}
    return {'mounted':True}
   instance.action=action
   instance.verify_stock=lambda *a:calls.append('verify stock') if fail!='stock' else (_ for _ in ()).throw(RuntimeError('no stream'))
@@ -565,7 +565,7 @@ class DriverSessionTests(LiveModeTests):
    if action=='mode':info['mode']=arguments[0];return {'code':0}
    raise AssertionError(action)
   instance.stats=stats;instance.stop_frame_stream=lambda:True;instance.wait_decoder_idle=lambda *a:None;instance.cef=lambda w:calls.append('cef '+w)
-  instance.action=lambda n:{'mounted':True,'inventory':{'current_driver':'qcom-iris','client_trial_active':False}}
+  instance.action=lambda n:{'mounted':True,'inventory':{'client_trial_active':False}}
   instance.verify_stream=lambda *a:calls.append('verify h264');instance.current_refresh=lambda:90
   with patch.object(service.Supervisor,'server_pid',return_value=4242),patch.object(service,'ProcessWatch'),patch.object(service.Supervisor,'server_alive',return_value=True),       patch.object(instance,'update'),patch.object(instance,'log'),patch.object(service.time,'sleep'),patch.object(instance,'save_host_settings') as save,patch.object(instance,'start_server') as start:
    instance.start_driver_session()

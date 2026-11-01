@@ -2,28 +2,18 @@
 
 Password is consumed by sudo before this process starts. This program never
 receives, records or reports it. EOF/time limit unmounts the patched client if one is
-mounted. Boot-volume module and firmware files are only read, never changed.
+mounted. Nothing on the boot volume is read or changed; the Steam Link client is patched in a copy that is bind-mounted over it.
 """
 import hashlib,json,os,pathlib,select,shutil,signal,stat,struct,subprocess,sys,time
 
 LAB=pathlib.Path('/tmp/steam-frame-av1-lab-20261011')
 RUN=pathlib.Path('/run/steam-frame-av1-lab-20261012')
-# Frame kernel builds the session recognises, with the stock decoder module's fingerprint.
-BUILDS={
- '6.18.0-ge66bc2ca6f8c':{'stock':'7a5647a009d60068965a476a887c2c73a51bedcec22727d71f010e9165d64a86'},
- '6.18.0-g83913f38113c':{'stock':'bdf95ec2ebb52b600aeeb2f8be5aa278abc4f14b25b45cb4e6b96907b732757d'}}
-FIRMWARE_SHA='7b829fc1c8ce7cca836d10e898b99c5bcbd86e22073b690147168c9d0a5de378'
-_running=getattr(os,'uname',lambda:None)()
-RELEASE=_running.release if _running and _running.release in BUILDS else '6.18.0-ge66bc2ca6f8c'
-BASE=pathlib.Path('/lib/modules')/RELEASE/'kernel/drivers/media/platform/qcom/vcodec/iris/iris.ko'
-FW=pathlib.Path('/lib/firmware/qcom/vpu/vpu33_4v.mbn')
-HASHES={'stock':BUILDS[RELEASE]['stock'],'firmware':FIRMWARE_SHA}
 client_active=False
 detached=False
 client_codec='HEVC'
 CLIENT=pathlib.Path('/opt/steamvr/tools/vrlink/bin/linuxarm64/vrlink')
-CLIENT_STOCK_SHA='31addef0c9553d3770b5570487699e96d70271d4073cd6c03b080fdee6ae2153'
-CLIENT_H264_SHA='12a19ed7744ddb79e871bbb235ceb04b6d2c163eda06fbadd319c69f2294d831'
+stock_sha=None   # fingerprints of the stock client and its patched copy, learned when the copy is staged or adopted
+h264_sha=None
 def run(args,timeout=15):
  p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
  return {'code':p.returncode,'out':p.stdout[:20000],'err':p.stderr[:4000]}
@@ -49,98 +39,109 @@ def opens():
      names.append({'pid':int(p.name),'comm':(p/'comm').read_text().strip(),'device':target});break
   except (OSError,ProcessLookupError):pass
  return names
-def require_supported_kernel():
- if os.uname().release not in BUILDS:
-  raise RuntimeError('Unsupported Frame kernel '+os.uname().release+'; supported: '+', '.join(BUILDS))
-def inventory():
- require_supported_kernel()
- return {'uid':os.geteuid(),'release':os.uname().release,'stock_sha256':digest(BASE),
-  'firmware_sha256':digest(FW),  'open_decoder_users':opens(),'decoder_nodes':decoder_nodes(),'platform_device':video_path().name,
-  'current_driver':(video_path()/'driver').resolve().name if (video_path()/'driver').exists() else None,
-  'stock_loaded':pathlib.Path('/sys/module/iris').exists(),'client_trial_active':client_active,
-  'client_sha256':digest(CLIENT),'client_codec':client_codec}
-
-def make_client(original,codec):
- if hashlib.sha256(original).hexdigest()!=CLIENT_STOCK_SHA:raise RuntimeError('Client fingerprint changed')
- if original[:6]!=b'\x7fELF\x02\x01' or struct.unpack_from('<H',original,18)[0]!=183:raise RuntimeError('Expected AArch64 ELF64 client')
- phoff=struct.unpack_from('<Q',original,32)[0];entry,count=struct.unpack_from('<HH',original,54)
- if entry!=56 or phoff+entry*count>len(original):raise RuntimeError('Invalid ELF program headers')
+def code_segments(data):
+ """The executable loadable segments of an AArch64 ELF64 file as (file offset, virtual address, size)."""
+ if data[:6]!=b'\x7fELF\x02\x01' or struct.unpack_from('<H',data,18)[0]!=183:raise RuntimeError('Expected AArch64 ELF64 client')
+ phoff=struct.unpack_from('<Q',data,32)[0];entry,count=struct.unpack_from('<HH',data,54)
+ if entry!=56 or phoff+entry*count>len(data):raise RuntimeError('Invalid ELF program headers')
  segments=[]
  for i in range(count):
   position=phoff+i*entry
-  if struct.unpack_from('<I',original,position)[0]==1:
-   offset,va=struct.unpack_from('<QQ',original,position+8);size=struct.unpack_from('<Q',original,position+32)[0]
-   if offset+size>len(original):raise RuntimeError('Invalid ELF load range')
+  kind,flags=struct.unpack_from('<II',data,position)
+  if kind==1 and flags&1:
+   offset,va=struct.unpack_from('<QQ',data,position+8);size=struct.unpack_from('<Q',data,position+32)[0]
+   if offset+size>len(data):raise RuntimeError('Invalid ELF load range')
    segments.append((offset,va,size))
+ return segments
+def find_codec_sites(data,fourcc):
+ """File offsets of the instruction pairs that load a four-character codec name into one register: a move of its low half, then within eight instructions a move-keep of its high half."""
+ low=int.from_bytes(fourcc[:2],'little');high=int.from_bytes(fourcc[2:],'little');sites=[]
+ for start,_,size in code_segments(data):
+  words=struct.unpack_from('<%dI'%(size//4),data,start)
+  for i,word in enumerate(words):
+   if word&0xFFE00000!=0x52800000 or (word>>5)&0xFFFF!=low:continue
+   register=word&31
+   for k in range(1,9):
+    if i+k>=len(words):break
+    follow=words[i+k]
+    if follow&0xFFE00000==0x72A00000 and (follow>>5)&0xFFFF==high and follow&31==register:
+     sites.append((start+4*i,start+4*(i+k)));break
+ return sites
+def client_kind(data):
+ """'stock' (exactly one place loads the HEVC name), 'h264' (exactly one loads H264 and none HEVC) or 'unknown'."""
+ hevc,h264=find_codec_sites(data,b'HEVC'),find_codec_sites(data,b'H264')
+ if len(hevc)==1 and not h264:return 'stock'
+ if len(h264)==1 and not hevc:return 'h264'
+ return 'unknown'
+def inventory():
+ data=CLIENT.read_bytes()
+ try:
+  node=video_path();driver=(node/'driver').resolve().name if (node/'driver').exists() else None;nodes=decoder_nodes()
+ except RuntimeError:driver,nodes=None,[]   # an unfamiliar kernel: decoder users cannot be listed, the client patch does not need them
+ return {'uid':os.geteuid(),'release':os.uname().release,'open_decoder_users':opens() if nodes else [],'decoder_nodes':nodes,
+  'current_driver':driver,'client_trial_active':client_active,
+  'client_sha256':hashlib.sha256(data).hexdigest(),'client_kind':client_kind(data),'client_codec':client_codec}
+
+def make_client(original,codec):
+ """The stock client with its one HEVC name load changed to H264; refuses unless there is exactly one such place."""
  if codec!='H.264':raise RuntimeError('Unknown codec patch')
+ if client_kind(original)!='stock':raise RuntimeError('Client layout not recognised: expected exactly one HEVC codec setting')
+ (low_at,high_at),=find_codec_sites(original,b'HEVC')
  value=int.from_bytes(b'H264','little');modified=bytearray(original)
- for va,before,after in ((0x32e7c,0x52800003|(0x4548<<5),0x52800003|((value&0xffff)<<5)),
-                         (0x32e88,0x72a00003|(0x4356<<5),0x72a00003|((value>>16)<<5))):
-  ranges=[offset+va-start for offset,start,size in segments if start<=va and va+4<=start+size]
-  if len(ranges)!=1 or struct.unpack_from('<I',original,ranges[0])[0]!=before:raise RuntimeError('Client instruction layout changed')
-  struct.pack_into('<I',modified,ranges[0],after)
- expected=CLIENT_H264_SHA
- if hashlib.sha256(modified).hexdigest()!=expected:raise RuntimeError('Generated client fingerprint differs')
+ for position,part in ((low_at,value&0xFFFF),(high_at,value>>16)):
+  word=struct.unpack_from('<I',original,position)[0]
+  struct.pack_into('<I',modified,position,(word&~(0xFFFF<<5))|(part<<5))
+ if client_kind(bytes(modified))!='h264':raise RuntimeError('Patched client did not verify')
  return modified
 def stage(out,data,mode):
  # A bind-mounted client executes from its staged file, so a matching file is left untouched.
  if out.exists() and hashlib.sha256(out.read_bytes()).hexdigest()==hashlib.sha256(data).hexdigest():return
  out.write_bytes(data);out.chmod(mode)
 def prepare():
- require_supported_kernel()
- if os.uname().release!=RELEASE:raise RuntimeError('Kernel changed; rebuild/review required')
+ global stock_sha,h264_sha
  if RUN.exists():
   info=RUN.lstat()
   if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0:raise RuntimeError('Invalid root staging directory')
  else:RUN.mkdir(mode=0o700)
  RUN.chmod(0o700)
- for name,path in [('stock',BASE),('firmware',FW)]:
-  fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
-  with os.fdopen(fd,'rb') as f:data=f.read()
-  if hashlib.sha256(data).hexdigest()!=HASHES[name]:raise RuntimeError(name+' fingerprint changed')
-  stage(RUN/(name+'.bin'),data,0o600)
- (RUN/'prepared.json').write_text(json.dumps({'release':RELEASE,'hashes':HASHES,'boot_changes':False,'prepared_utc':time.time()}))
  original=CLIENT.read_bytes()
- if hashlib.sha256(original).hexdigest()!=CLIENT_STOCK_SHA:raise RuntimeError('Client fingerprint changed')
- for name,data in [('client-stock',original),('client-h264',make_client(original,'H.264'))]:
+ patched=bytes(make_client(original,'H.264'))
+ for name,data in [('client-stock',original),('client-h264',patched)]:
   stage(RUN/(name+'.bin'),data,0o755)
- return {'prepared':True,'files':2,'persistent_changes':False,'rollback':'stock module and firmware fingerprint verified; reboot uses stock boot/module files'}
+ stock_sha,h264_sha=hashlib.sha256(original).hexdigest(),hashlib.sha256(patched).hexdigest()
+ (RUN/'prepared.json').write_text(json.dumps({'client_stock_sha256':stock_sha,'client_h264_sha256':h264_sha,'boot_changes':False,'prepared_utc':time.time()}))
+ return {'prepared':True,'files':2,'persistent_changes':False,'client_stock_sha256':stock_sha,'client_h264_sha256':h264_sha}
 def rollback():
  client_stock()
- logs=[];node=video_path()
- if not pathlib.Path('/sys/module/iris').exists():logs.append(run(['modprobe','iris']))
- # The original module's probe attaches automatically after reload.
- stock_driver=pathlib.Path('/sys/bus/platform/drivers/qcom-iris')
- if not (node/'driver').exists() and stock_driver.exists():(stock_driver/'bind').write_text(node.name)
- return {'operations':logs,'inventory':inventory()}
+ return {'inventory':inventory()}
 
 def client_h264():
  global client_active,client_codec
- if (video_path()/'driver').resolve().name!='qcom-iris':raise RuntimeError('Matching hardware decoder must be active')
  busy=opens()
  if busy:raise RuntimeError('Stop stream before client trial (decoder held by '+', '.join(sorted({u['comm'] for u in busy}))+')')
  source=RUN/'client-h264.bin'
- if digest(CLIENT)!=CLIENT_STOCK_SHA or digest(source)!=CLIENT_H264_SHA:raise RuntimeError('Client fingerprint changed')
+ if not stock_sha or digest(CLIENT)!=stock_sha or digest(source)!=h264_sha:raise RuntimeError('Client fingerprint changed')
  result=run(['mount','--bind',str(source),str(CLIENT)])
  if result['code']:return result
  client_active=True
  client_codec='H.264'
- if digest(CLIENT)!=CLIENT_H264_SHA:raise RuntimeError('Client bind did not take effect')
- return {'mounted':True,'codec':'H.264','sha256':CLIENT_H264_SHA,'persistent_changes':False}
+ if digest(CLIENT)!=h264_sha:raise RuntimeError('Client bind did not take effect')
+ return {'mounted':True,'codec':'H.264','sha256':h264_sha,'persistent_changes':False}
 def bind_mounted(path):
  with open('/proc/self/mountinfo') as f:
   return any(len(line.split())>4 and line.split()[4]==str(path) for line in f)
 def adopt():
  """Take over an H.264 client bind mount left by an earlier administrator session (keep mode)."""
- global client_active,client_codec
+ global client_active,client_codec,stock_sha,h264_sha
  if client_active:return {'adopted':True,'already':True}
- require_supported_kernel()
  if not RUN.exists() or RUN.lstat().st_uid!=0 or not (RUN/'prepared.json').exists():raise RuntimeError('No staged session to adopt')
- if digest(CLIENT)!=CLIENT_H264_SHA or not bind_mounted(CLIENT):raise RuntimeError('No H.264 client mount to adopt')
- if digest(RUN/'client-h264.bin')!=CLIENT_H264_SHA or digest(RUN/'client-stock.bin')!=CLIENT_STOCK_SHA:raise RuntimeError('Staged client files changed')
- if (video_path()/'driver').resolve().name!='qcom-iris':raise RuntimeError('Expected stock qcom-iris binding')
+ try:recorded=json.loads((RUN/'prepared.json').read_text());stock,h264=recorded['client_stock_sha256'],recorded['client_h264_sha256']
+ except (ValueError,KeyError,TypeError):raise RuntimeError('Staged session record unreadable')
+ if digest(CLIENT)!=h264 or not bind_mounted(CLIENT):raise RuntimeError('No H.264 client mount to adopt')
+ if digest(RUN/'client-h264.bin')!=h264 or digest(RUN/'client-stock.bin')!=stock:raise RuntimeError('Staged client files changed')
+ stock_sha,h264_sha=stock,h264
  client_active=True;client_codec='H.264'
- return {'adopted':True,'sha256':CLIENT_H264_SHA}
+ return {'adopted':True,'sha256':h264_sha}
 def detach():
  """Let the H.264 client mount outlive this session; a newer session adopts or removes it."""
  global detached
@@ -155,7 +156,7 @@ def client_stock():
  for process in pathlib.Path('/proc').glob('[0-9]*'):
   try:
    executable=process/'exe'
-   if (process/'comm').read_text().strip() in ('vrlink','vrlinkrunthread') and digest(executable)==CLIENT_H264_SHA:
+   if (process/'comm').read_text().strip() in ('vrlink','vrlinkrunthread') and digest(executable)==h264_sha:
     os.kill(int(process.name),signal.SIGTERM)
     stopped.append(int(process.name))
   except (OSError,ProcessLookupError):pass
@@ -165,8 +166,8 @@ def client_stock():
  if result['code']:raise RuntimeError('Temporary client unmount failed')
  client_active=False
  client_codec='HEVC'
- if digest(CLIENT)!=CLIENT_STOCK_SHA:raise RuntimeError('Stock client fingerprint did not return')
- return {'restored':True,'sha256':CLIENT_STOCK_SHA}
+ if digest(CLIENT)!=stock_sha:raise RuntimeError('Stock client fingerprint did not return')
+ return {'restored':True,'sha256':stock_sha}
 def main():
  if os.geteuid()!=0:raise RuntimeError('Administrator authentication did not succeed')
  actions={'inventory':inventory,'prepare':prepare,'rollback':rollback,'client-h264':client_h264,'client-stock':client_stock,

@@ -16,8 +16,7 @@ H264_MAXIMUM_MBPS=500
 TRAY_CHECK_SECONDS=5       # how often the tray process is checked; if it is gone the session restores stock and ends
 RESTORE_RETRY_SECONDS=600  # how long a restore keeps trying when the Frame is unreachable at the end
 ENCODER_RATE_CONTROLS=('vbr','cbr')
-CLIENT_STOCK_SHA='31addef0c9553d3770b5570487699e96d70271d4073cd6c03b080fdee6ae2153'
-CLIENT_H264_SHA='12a19ed7744ddb79e871bbb235ceb04b6d2c163eda06fbadd319c69f2294d831'
+FRAME_CLIENT_UNRECOGNISED="The Frame's Steam Link client was not recognised (it does not have exactly one HEVC codec setting to change), so H.264 is not available on this Frame version. Default (HEVC) keeps working."
 kernel=c.WinDLL('kernel32',use_last_error=True)
 kernel.CreateToolhelp32Snapshot.argtypes=[c.c_uint32,c.c_uint32];kernel.CreateToolhelp32Snapshot.restype=c.c_void_p
 kernel.OpenProcess.argtypes=[c.c_uint32,c.c_int,c.c_uint32];kernel.OpenProcess.restype=c.c_void_p
@@ -275,9 +274,9 @@ class Supervisor:
  def authenticate(self,password):
   self.start_root(password)
   inventory=self.action('inventory')
-  mounted=inventory['client_sha256']==CLIENT_H264_SHA
-  if inventory['current_driver']!='qcom-iris' or inventory['client_sha256'] not in (CLIENT_STOCK_SHA,CLIENT_H264_SHA):
-   raise RuntimeError('Another codec trial is active. Restore it before starting this session.')
+  mounted=inventory['client_kind']=='h264'
+  if inventory['client_kind'] not in ('stock','h264'):
+   raise RuntimeError(FRAME_CLIENT_UNRECOGNISED)
   # An H.264 client mount left by an earlier session is taken over, never rewritten while it may be running.
   self.action('adopt' if mounted else 'prepare')
   self.frame_mounted=mounted
@@ -287,7 +286,7 @@ class Supervisor:
   old=(self.root,self.root_replies,self.root_started)
   try:
    self.start_root(self.password)
-   if self.action('inventory')['client_sha256']!=CLIENT_H264_SHA:raise RuntimeError('The H.264 client mount is missing.')
+   if self.action('inventory')['client_kind']!='h264':raise RuntimeError('The H.264 client mount is missing.')
    self.action('adopt')
   except Exception:
    fresh=self.root
@@ -371,7 +370,7 @@ class Supervisor:
   self.stop_frame_stream()
   self.stop_server();time.sleep(2);self.wait_decoder_idle()
   recovered=self.action('rollback')['inventory']
-  if recovered['current_driver']!='qcom-iris' or recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
+  if recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
   self.phase='host settings';self.save_host_settings(target)
   self.phase='Frame codec activation'
   if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
@@ -480,7 +479,7 @@ class Supervisor:
    touched[0]=True;self.phase='Frame codec activation'
    if wanted=='stock':
     recovered=self.action('rollback')['inventory']
-    if recovered['current_driver']!='qcom-iris' or recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
+    if recovered['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
     self.frame_mounted=False
    else:
     if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
@@ -560,7 +559,7 @@ class Supervisor:
   while time.monotonic()<deadline:
    receiver=self.action('inventory')
    seen='Frame decoder '+str(receiver.get('current_driver'))+', '+str(receiver.get('open_decoder_users'))+' decoder user(s)'
-   if receiver['current_driver']=='qcom-iris' and receiver['open_decoder_users']:
+   if receiver['open_decoder_users']:
     state=self.stats();identity=self.stats('identity')
     seen+='; encoder initializes '+str(state.get('initializes'))+', frames '+str(state.get('locks'))+', source '+str(state.get('source_fps_num'))+'/'+str(state.get('source_fps_den'))+', expected '+str(fps)+' Hz'
     self.check_encoder_errors(state,target,fps)
@@ -578,7 +577,7 @@ class Supervisor:
    self.stop_server()
    self.stop_frame_stream()
   restored=self.action('rollback')['inventory']
-  if restored['current_driver']!='qcom-iris' or restored['client_trial_active']:raise RuntimeError('Stock codec restoration could not be confirmed.')
+  if restored['client_trial_active']:raise RuntimeError('Stock codec restoration could not be confirmed.')
   if self.experimental:
    self.save_host_settings(None)
    if restart:self.start_server(0,hook=False);self.cef('start')
@@ -626,9 +625,9 @@ class Supervisor:
   if self.root is None or self.root.poll() is not None:
    self.root=None;self.authenticate(self.password)
   inventory=self.action('inventory')
-  if inventory['client_sha256']==CLIENT_H264_SHA:self.frame_mounted=True;return
-  if inventory['client_sha256']!=CLIENT_STOCK_SHA or inventory['current_driver']!='qcom-iris':
-   raise RuntimeError('The Frame client changed; keep mode cannot continue safely.')
+  if inventory['client_kind']=='h264':self.frame_mounted=True;return
+  if inventory['client_kind']!='stock':
+   raise RuntimeError('The Frame client changed; keep mode cannot continue safely. '+FRAME_CLIENT_UNRECOGNISED)
   self.stop_frame_stream();self.wait_decoder_idle()
   if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
   self.frame_mounted=True
