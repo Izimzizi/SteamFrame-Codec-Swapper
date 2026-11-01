@@ -106,6 +106,7 @@ int StockInitialize(void* encoder,void* init){
 int StockReconfigure(void* encoder,void* params){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_RECONFIGURE_PARAMS*>(params);
+ if(original&&original->reInitEncodeParams.encodeWidth){initialized_width=original->reInitEncodeParams.encodeWidth;initialized_height=original->reInitEncodeParams.encodeHeight;}
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;
