@@ -28,6 +28,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private static readonly TimeSpan LaserHold = TimeSpan.FromSeconds(1), HoverHold = TimeSpan.FromMilliseconds(200);
     private bool _repositioning;
     private bool _leftByEvent;
+    private long _expandedAt;                // Stopwatch ticks when the panel was told to expand, until its picture is uploaded
     private Pose _draftPose;
     private float _draftWidth;
     private Grab? _grab;
@@ -99,6 +100,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         _dashboard = open;
         log?.Invoke(open ? "HUD: controls shown" : "HUD: readouts only" + (settings.ExpandOnHover ? (_leftByEvent ? " (laser left)" : " (no laser movement)") : ""));
         _leftByEvent = false;
+        _expandedAt = open ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         // The picture changes shape, so it is redrawn at once instead of waiting for the next data refresh.
         _drawn = null; _lastUpload = DateTime.MinValue;
         if (open) return;
@@ -157,6 +159,11 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         using var bitmap = HudPanel.Render(view, _hover);
         api.SetImage(_overlay, HudPanel.ToRgba(bitmap), HudPanel.Width, HudPanel.Height);
         _drawn = view; _drawnHover = _hover; _lastUpload = at;
+        if (_expandedAt != 0 && view.Interactive)
+        {
+            log?.Invoke($"HUD: expanded picture handed to SteamVR {System.Diagnostics.Stopwatch.GetElapsedTime(_expandedAt).TotalMilliseconds:0} ms after the laser event was read");
+            _expandedAt = 0;
+        }
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
