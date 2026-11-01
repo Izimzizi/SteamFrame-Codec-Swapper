@@ -135,7 +135,7 @@ Close a running tray before packaging. The tests do not modify your Steam config
 ## Known limitations
 
 - **H.264 wider than 1024 px** is not verified on the Frame; the bridge takes its limit from the GPU's H.264 caps (override with `h264-limit.txt`).
-- **HEVC option overrides:** rate control and buffer are confirmed live on the headset. The preset reaching the HEVC encoder (sent on every reconfigure since the first Frame test showed no effect from sending it only at creation) is unit-tested natively and awaiting a headset check: P1 and P7 should differ in encode time.
+- **HEVC option overrides** are confirmed live on the headset: rate control, buffer and preset (P1 to P7 moved the Video Encode load from about 7% to 16% and the measured encode time, without a restart).
 - **The HUD** has been tested on one controller setup; laser coordinates assume SteamVR's current GL-space convention (`FlipLaserY` in `hud.json` flips it). Dropdown rows are small targets.
 - **An unexplained close** right after reaching H.264 happened once before logging existed (likely an accidental HUD *Default (HEVC)* press); `tray.log` now records who asks for each change.
 - **The Steam UI on the Frame** can get stuck after repeated stream restarts; a restart of the Frame's Steam UI is the workaround, and it is not automated.
