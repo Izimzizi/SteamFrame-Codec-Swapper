@@ -54,7 +54,7 @@ public sealed class HudSettingsTests : IDisposable
     [Fact]
     public void Missing_or_damaged_files_give_the_defaults()
     {
-        Assert.False(HudSettings.Load(_file).Enabled);
+        Assert.True(HudSettings.Load(_file).Enabled);
         File.WriteAllText(_file, "{ not json");
         var loaded = HudSettings.Load(_file);
         Assert.True(loaded.IsLeft);
@@ -211,6 +211,7 @@ public sealed class HudControllerTests
         public Task SetCodecAsync(bool h264) { Calls.Add("codec " + h264); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
+        public Task TurnOffAsync() { Calls.Add("hud off"); return Task.CompletedTask; }
     }
 
     private sealed class Rig
@@ -309,6 +310,40 @@ public sealed class HudControllerTests
         rig.Api.Dashboard = true;
         rig.Press("codec:h264");
         Assert.Equal(["codec True"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void A_dashboard_SteamVR_does_not_report_is_recognised_when_the_laser_moves_over_the_panel()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Api.Dashboard = false;   // already open when the HUD joined, but reported closed
+        rig.Api.Events.Enqueue(rig.Click("codec:h264", OverlayEventKind.MouseMove));
+        rig.Api.Events.Enqueue(rig.Click("codec:h264"));
+        rig.Tick();
+        Assert.Equal(["codec True"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_Turn_off_HUD_button_asks_the_tray_to_switch_the_HUD_off()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Press("hudoff");
+        Assert.Equal(["hud off"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_slider_marks_350_and_a_click_near_the_mark_lands_exactly_on_it()
+    {
+        Assert.Equal(350, HudPanel.SliderValue(HudPanel.SliderX(350)));
+        Assert.Equal(350, HudPanel.SliderValue(HudPanel.SliderX(338)));
+        Assert.Equal(350, HudPanel.SliderValue(HudPanel.SliderX(364)));
+        Assert.Equal(330, HudPanel.SliderValue(HudPanel.SliderX(330)));
+        Assert.Equal(375, HudPanel.SliderValue(HudPanel.SliderX(375)));
+        using var bitmap = HudPanel.Render(HudView.Empty with { Connected = true, Interactive = true, TargetMbps = 200, RateControl = "vbr", Preset = 2, VbvFrames = 2 }, null);
+        var mark = bitmap.GetPixel((int)HudPanel.SliderX(HudPanel.MarkerMbps), 446 - 12);
+        Assert.True(mark.R > 200 && mark.G > 150 && mark.B < 130, $"expected an amber mark at 350 Mbps, found {mark}");
     }
 
     [Fact]

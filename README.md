@@ -58,7 +58,7 @@ A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that strea
 | **Encoder settings** | Rate control, preset and VBV, for both codecs. |
 | **Stream monitor** | The monitor. Double-clicking the tray icon opens/closes it. |
 | **Record stream log** | One CSV row per second, setup in `#` header lines. |
-| **VR HUD** | Show HUD on a controller, attach left/right, reset position. |
+| **VR HUD** | Show or hide the HUD (on by default), attach left/right, reset position. |
 | **Start with Windows** | Re-arms at login if it was armed. |
 | **Frame connection…**, **Password** | Reopen setup; set or forget the stored Frame password. |
 | **Bitrate limit patch**, **SteamVR driver** | Install/remove the 500 Mbps patch and the SteamVR driver. |
@@ -71,9 +71,9 @@ Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-sec
 
 ### VR HUD
 
-Turn on *VR HUD → Show HUD on a controller*. When SteamVR is running the panel appears on the chosen controller. SteamVR only passes laser input to overlays while its **dashboard is open**, so the HUD has two states: with the dashboard closed (while playing) it shows the readouts only and cannot press anything, so it can never steal input from a game; with the dashboard open it adds the controls. It is a SteamVR overlay driven by laser pointer:
+The HUD is **on by default**: when SteamVR is running the panel appears on the chosen controller. Its *Turn off HUD* button (or *VR HUD → Show HUD on a controller* in the tray menu) switches it off, and the same menu item brings it back. SteamVR only passes laser input to overlays while its **dashboard is open**, so the HUD has two states: with the dashboard closed (while playing) it shows the readouts only and cannot press anything, so it can never steal input from a game; with the dashboard open it adds the controls. It is a SteamVR overlay driven by laser pointer:
 
-- the codec buttons, a **bitrate slider** (drag with the laser, applied on release), and three **dropdowns** — *Rate control*, *Preset*, *VBV* — each opening a list of options with a short description;
+- the codec buttons, a **bitrate slider** (drag with the laser, applied on release; an amber mark at 350 Mbps, the top of SteamVR's own slider, pulls a click near it onto exactly 350), and three **dropdowns** — *Rate control*, *Preset*, *VBV* — each opening a list of options with a short description;
 - every readout the monitor has: codec, Mbps, 60 s average, FPS, target, encoder-asked line, held-back / dropped / late / errors, note and the 60 s graph;
 - **Move**: hold the trigger on the panel with the other hand's laser to carry it to a new spot on the controller, then *Save*, *Cancel*, or *Default* (reset); *Smaller/Larger* resize it.
 

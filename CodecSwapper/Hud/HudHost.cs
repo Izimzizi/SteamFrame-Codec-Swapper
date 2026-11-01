@@ -69,6 +69,7 @@ public static class HudHost
     {
         public Task SetCodecAsync(bool h264) { send(new() { Type = "action", Kind = "codec", H264 = h264 }); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { send(new() { Type = "action", Kind = "bitrate", Mbps = mbps }); return Task.CompletedTask; }
+        public Task TurnOffAsync() { send(new() { Type = "action", Kind = "hudoff" }); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames)
         {
             send(new() { Type = "action", Kind = "encoder", RateControl = rateControl, Preset = preset, VbvFrames = vbvFrames });

@@ -9,7 +9,8 @@ public sealed class HudSettings
 {
     public const float MinimumWidth = .10f, MaximumWidth = .50f, DefaultWidth = .30f;
 
-    public bool Enabled { get; set; }
+    /// <summary>On unless the user turned it off (from the HUD itself or the tray menu).</summary>
+    public bool Enabled { get; set; } = true;
     /// <summary>"left" or "right".</summary>
     public string Hand { get; set; } = "left";
     /// <summary>The HUD's pose in its controller's space as a row-major 3x4; null means the default placement.</summary>

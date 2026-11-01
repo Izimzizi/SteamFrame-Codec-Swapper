@@ -75,6 +75,7 @@ public sealed partial class TrayApp
                 {
                     "codec" => actions.SetCodecAsync(message.H264),
                     "bitrate" => actions.SetBitrateAsync(message.Mbps),
+                    "hudoff" => actions.TurnOffAsync(),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
                     _ => Task.CompletedTask
                 };
@@ -188,6 +189,19 @@ public sealed partial class TrayApp
         });
 
         public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
+
+        /// <summary>The HUD's own button: it vanishes with the HUD, so the way back is told on the desktop.</summary>
+        public Task TurnOffAsync()
+        {
+            app._hudSettings.Enabled = false;
+            app.SaveHud();
+            app.ApplyHudEnabled();
+            app._icon.BalloonTipTitle = "VR HUD turned off";
+            app._icon.BalloonTipText = "Turn it back on from the tray menu: VR HUD > Show HUD on a controller.";
+            app._icon.BalloonTipIcon = ToolTipIcon.Info;
+            app._icon.ShowBalloonTip(6000);
+            return Task.CompletedTask;
+        }
 
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames) => app.RunAsync(async () =>
         {

@@ -24,11 +24,13 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// reposition, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// reposition, hudoff, save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
     public const int Width = 640, Height = 624, BitrateStep = 5, SnapMbps = 50, SnapReachMbps = 8;
+    /// <summary>The top of SteamVR's own bitrate slider, marked on the HUD's slider; a click close to it lands exactly on it.</summary>
+    public const int MarkerMbps = 350, MarkerReachMbps = 15;
     /// <summary>With the dashboard closed there is no input, so only the readouts are drawn, centred in the picture so the panel stays where it was.</summary>
     private const int CompactHeight = 372, CompactOffset = (Height - CompactHeight) / 2;
     public static readonly Rectangle GraphArea = new(20, 200, Width - 40, 120);
@@ -50,6 +52,7 @@ public static class HudPanel
         var t = Math.Clamp((x - TrackLeft) / (TrackRight - TrackLeft), 0f, 1f);
         var raw = TrayController.MinimumMbps + t * (TrayController.MaximumMbps - TrayController.MinimumMbps);
         var value = Math.Clamp((int)Math.Round(raw / BitrateStep) * BitrateStep, TrayController.MinimumMbps, TrayController.MaximumMbps);
+        if (Math.Abs(value - MarkerMbps) <= MarkerReachMbps) return MarkerMbps;
         var nearest = (int)Math.Round(value / (double)SnapMbps) * SnapMbps;
         return Math.Abs(value - nearest) <= SnapReachMbps && nearest >= TrayController.MinimumMbps ? nearest : value;
     }
@@ -93,7 +96,7 @@ public static class HudPanel
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
         Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        buttons.Add(new("reposition", new(margin, 540, Width - 2 * margin, 52), "Reposition", false, true));
+        Row(540, 52, [("reposition", "Reposition", false, true), ("hudoff", "Turn off HUD", false, true)]);
         return buttons;
     }
 
@@ -190,6 +193,12 @@ public static class HudPanel
         g.DrawString($"Bitrate target   {view.TargetMbps} Mbps", font, text, SliderArea.Left + 4, SliderArea.Top);
         using var rail = new Pen(Color.FromArgb(70, 76, 90), 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         g.DrawLine(rail, TrackLeft, TrackY, TrackRight, TrackY);
+        var marker = SliderX(MarkerMbps);
+        using var markerPen = new Pen(Color.FromArgb(255, 200, 80), 3);
+        g.DrawLine(markerPen, marker, TrackY - 15, marker, TrackY + 15);
+        using var markerBrush = new SolidBrush(Color.FromArgb(255, 200, 80));
+        using var centred = new StringFormat { Alignment = StringAlignment.Center };
+        g.DrawString(MarkerMbps.ToString(), font, markerBrush, marker, TrackY - 40, centred);
         var x = SliderX(view.TargetMbps);
         using var filled = new Pen(accent, 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         g.DrawLine(filled, TrackLeft, TrackY, x, TrackY);

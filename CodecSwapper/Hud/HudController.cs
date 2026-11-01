@@ -6,6 +6,7 @@ public interface IHudActions
     Task SetCodecAsync(bool h264);
     Task SetBitrateAsync(int mbps);
     Task SetEncoderAsync(string rateControl, int preset, int vbvFrames);
+    Task TurnOffAsync();
 }
 
 /// <summary>
@@ -23,7 +24,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private float _attachedWidth;
     private HudView? _drawn;
     private string? _drawnHover, _hover;
-    private DateTime _lastUpload = DateTime.MinValue, _nextConnect = DateTime.MinValue;
+    private DateTime _lastUpload = DateTime.MinValue, _nextConnect = DateTime.MinValue, _laserAt = DateTime.MinValue;
+    private static readonly TimeSpan LaserHold = TimeSpan.FromSeconds(1);
     private bool _repositioning;
     private Pose _draftPose;
     private float _draftWidth;
@@ -53,6 +55,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             if (!api.TryConnect(out var error)) { _nextConnect = at + ConnectRetry; if (error != _note) { _note = error; log?.Invoke("HUD: " + error); } return; }
             _note = "";
             log?.Invoke("HUD: joined SteamVR");
+            log?.Invoke("HUD: SteamVR reports the dashboard " + (api.DashboardVisible() ? "open" : "closed") + " at join");
         }
         if (!api.StillRunning()) { Teardown(); _nextConnect = at + ConnectRetry; return; }
         if (_overlay == 0 && !Create()) { _nextConnect = at + ConnectRetry; return; }
@@ -66,9 +69,11 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
-        UpdateDashboard(at);
         // The laser only reaches the HUD while the dashboard is open; anything else is ignored so a stray event can never press a button.
+        // SteamVR does not always report a dashboard that was already open when the HUD joined, so the laser moving over the panel counts as proof it is open (a click alone never does).
         var events = api.PollEvents(_overlay);
+        if (events.Any(e => e.Kind == OverlayEventKind.MouseMove)) _laserAt = at;
+        UpdateDashboard(at);
         if (_dashboard) foreach (var overlayEvent in events) Handle(overlayEvent);
         // A release can be missed (the laser left the panel): commit a held slider once its events stop.
         if (_sliding is not null && at - _lastSlideEvent > SlideIdle) CommitSlider();
@@ -81,7 +86,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private void UpdateDashboard(DateTime at)
     {
-        var open = api.DashboardVisible();
+        var open = api.DashboardVisible() || at - _laserAt < LaserHold;
         if (open == _dashboard) return;
         _dashboard = open;
         log?.Invoke(open ? "HUD: dashboard opened, controls shown" : "HUD: dashboard closed, readouts only");
@@ -191,6 +196,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "preset": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
             case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
             case "reposition": StartRepositioning(); break;
+            case "hudoff": Fire(actions.TurnOffAsync); break;
             case "size": _draftWidth = Math.Clamp(_draftWidth * (parts[1] == "+" ? 1.12f : 1 / 1.12f), HudSettings.MinimumWidth, HudSettings.MaximumWidth); break;
             case "save": SavePlacement(); break;
             case "cancel": StopRepositioning(); break;
