@@ -116,6 +116,9 @@ int main(int argc,char** argv){
    if(i%10==5){NV_ENC_RECONFIGURE_PARAMS change{};change.version=NV_ENC_RECONFIGURE_PARAMS_VER;change.reInitEncodeParams=init;
     check(api.nvEncReconfigureEncoder(encoder,&change),"legacy reconfigure");}
   }
+  // The identity names the codec of the frames actually encoded, not the mode that was asked for.
+  HookTrialIdentity identity{sizeof(identity),1};
+  if(HookGetLegacyIdentity(&identity)||identity.codec!=3)throw std::runtime_error("The identity does not report the stock HEVC frames that were encoded");
   // SteamVR ends a stream with an end-of-stream picture that has no input and no output buffer; it goes to whichever encoder ran last.
   auto end_of_stream=[&](const char* where){
    NV_ENC_PIC_PARAMS eos{};eos.version=NV_ENC_PIC_PARAMS_VER;eos.encodePicFlags=NV_ENC_PIC_FLAG_EOS;eos.completionEvent=event;
@@ -125,6 +128,7 @@ int main(int argc,char** argv){
   end_of_stream("end of stream after stock frames");
   if(HookSetLegacyMode(0))throw std::runtime_error("Switch back after EOS refused");
   end_of_stream("end of stream after H.264 frames");
+  if(HookGetLegacyIdentity(&identity)||identity.codec!=2)throw std::runtime_error("The identity does not follow the switch back to H.264");
   if(HookGetLegacySwitchInfo(&info)||info.stock_encodes!=stock_expected+2||info.stock_locks!=stock_expected||info.switches!=switches+1||info.stock_errors)
    throw std::runtime_error("Counters disagree: stock encodes "+std::to_string(info.stock_encodes)+" of "+std::to_string(stock_expected+2)+", errors "+std::to_string(info.stock_errors)+", last status "+std::to_string(info.last_stock_status));
   HookBridgeStats stats{sizeof(stats),1};

@@ -89,6 +89,8 @@ void note_encoded(VOutput* output,const char* codec){
 }
 struct VMapped{void* real=nullptr;int on=0;uint32_t format=0;};
 int active_mode=0; // 0 H.264, 1 stock HEVC
+// The codec that actually produced the last frame (2 H.264, 3 HEVC; 0 until a frame follows a mode change). The mode is only what was asked for.
+uint32_t last_codec=0;
 HookSwitchInfo switch_info{sizeof(HookSwitchInfo),1};
 struct State {
  void* stock=nullptr;int last_encoded=-1;
@@ -385,6 +387,7 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
  if(!eos){if(session->last_encoded<0)session->last_encoded=on;
   else if(session->last_encoded!=on){extra_flags=NV_ENC_PIC_FLAG_FORCEIDR|NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;session->last_encoded=on;}}
  if(known_output){output->last=on;output->started=ticks();}
+ if(!eos)last_codec=on?3u:2u;
  NVENCSTATUS status;
  if(on){
   status=static_cast<NVENCSTATUS>(StockEncode(session->stock,source,eos?nullptr:mapped->real,real_output,extra_flags));++switch_info.stock_encodes;++stats.encodes;
@@ -529,7 +532,7 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  if(!output||output->size!=sizeof(HookTrialIdentity)||output->version!=1)return -1;
  std::lock_guard<std::mutex> lock(mutex);
  // The identity layout is shared with the managed reader: codec 2 is H.264, the only codec this hook produces.
- *output={sizeof(HookTrialIdentity),1,active_mode==1?3u:2u,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};
+ *output={sizeof(HookTrialIdentity),1,last_codec?last_codec:active_mode==1?3u:2u,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};
  // On the driver's own HEVC the queued H.264 options mean nothing: report what its encoder was actually given.
  uint32_t cbr=0,preset=0,vbv=0;
  if(active_mode==1&&StockAppliedOptions(&cbr,&preset,&vbv)){output->rate_control=cbr;if(preset)output->preset=preset;output->vbv_frames=vbv;}
@@ -547,7 +550,7 @@ extern "C" int HOOK_CALL HookSetLegacyMode(uint32_t mode){
   if(!StockReady())return -2;
   for(auto& entry:sessions)if(!entry.second.stock)return -3;
  }
- if(active_mode!=int(mode)){active_mode=int(mode);++switch_info.switches;}
+ if(active_mode!=int(mode)){active_mode=int(mode);last_codec=0;++switch_info.switches;}
  return 0;
 }
 extern "C" int HOOK_CALL HookGetLegacySwitchInfo(HookSwitchInfo* output){

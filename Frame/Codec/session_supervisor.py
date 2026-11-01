@@ -443,7 +443,8 @@ class Supervisor:
     if state['errors']:raise RuntimeError('Encoder errors after the live switch ('+seen+').')
     if identity['codec']=='HEVC' and state['locks']:
      before=state['locks'];time.sleep(.5)
-     if self.stats()['locks']>before:return
+     # The codec is read again after frames kept coming: the hook reports the codec of the frames it really encoded.
+     if self.stats()['locks']>before and self.stats('identity')['codec']=='HEVC':return
    time.sleep(.5)
   raise RuntimeError('The stock HEVC stream did not start ('+seen+').')
  def hook_mode(self,mode):
@@ -565,7 +566,7 @@ class Supervisor:
     self.check_encoder_errors(state,target,fps)
     if state['initializes'] and state['locks'] and identity['codec']=='H.264' and state['source_fps_num']==fps*state['source_fps_den']:
      before=state['locks'];time.sleep(.5)
-     if self.stats()['locks']>before:ready=True;break
+     if self.stats()['locks']>before and self.stats('identity')['codec']=='H.264':ready=True;break
    time.sleep(.5)
   if not ready:raise RuntimeError('Matching hardware stream did not start ('+seen+').')
  def recover(self,restart=True):
