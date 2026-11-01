@@ -59,7 +59,7 @@ public sealed class BitratePatcher
         try
         {
             var status = await InspectCoreAsync(full, cancellationToken); RequireSupported(status);
-            if (status.IsPatched) return status;
+            if (status.IsPatched) { if (status.BackupState == BitrateBackupState.VerifiedOriginal) DeleteStaleBackups(full, status.BackupPath); return status; }
             EnsureVrServerStopped();
             var original = await ReadBoundedAsync(full, cancellationToken);
             var plan = await ResolvePlanAsync(full, original, cancellationToken);
