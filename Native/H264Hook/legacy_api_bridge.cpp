@@ -96,6 +96,9 @@ struct State {
  void* stock=nullptr;int last_encoded=-1;
  std::unordered_set<VResource*> resources;std::unordered_set<VOutput*> outputs;std::unordered_set<VMapped*> mapped;
  uint32_t width=0,height=0;
+ // False when this session runs the driver's own HEVC only: its pictures are larger than the H.264 encoder can take, so the
+ // H.264 encoder beside it was never initialized and nothing is asked of it.
+ bool h264=false;
  std::unordered_map<void*,std::vector<int8_t>> maps;
  // The host reconfigures before every frame; the codec preset is fixed per session.
  bool baseline_ready=false;
@@ -145,8 +148,11 @@ NVENCSTATUS NVENCAPI caps(void* encoder,GUID codec,NV_ENC_CAPS_PARAM* source,int
    // SteamVR initializes at the advertised maximum before choosing the packed
  // stream layout, so advertise no more than the H.264 encoder can take. There is no other clamp: the width SteamVR
  // chooses is the width that is encoded (an optional lower limit can be configured).
- if(result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_WIDTH_MAX)*output=int(std::min(uint32_t(*output),width_limit()));
- if(result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_HEIGHT_MAX)*output=int(std::min(uint32_t(*output),height_limit()));
+ // While the driver's own HEVC is selected nothing is encoded as H.264, so SteamVR is told the real sizes and lays its stream out
+ // as it would without this driver (the packed frame is four times the stream width tall, which H.264 cannot take beyond 1024 wide).
+ bool h264_codec;{std::lock_guard<std::mutex> lock(mutex);h264_codec=active_mode!=1;}
+ if(h264_codec&&result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_WIDTH_MAX)*output=int(std::min(uint32_t(*output),width_limit()));
+ if(h264_codec&&result==NV_ENC_SUCCESS&&output&&copy.capsToQuery==NV_ENC_CAPS_HEIGHT_MAX)*output=int(std::min(uint32_t(*output),height_limit()));
  return result;
 }
 NVENCSTATUS preset_common(void* encoder,GUID codec,GUID preset,NV_ENC_TUNING_INFO tuning,NV_ENC_PRESET_CONFIG* source,bool extended){
@@ -220,6 +226,16 @@ NVENCSTATUS NVENCAPI initialize(void* encoder,NV_ENC_INITIALIZE_PARAMS* source){
   stats.width=source->encodeWidth;stats.height=source->encodeHeight;
   stats.source_fps_num=source->frameRateNum;stats.source_fps_den=source->frameRateDen;
   stats.source_async=source->enableEncodeAsync;}
+ // Default (HEVC) at a size the H.264 encoder cannot take: only the driver's own encoder is initialized.
+ void* stock_only=nullptr;
+ {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);
+  if(active_mode==1&&found!=sessions.end()&&found->second.stock&&(source->encodeWidth>width_limit()||source->encodeHeight>height_limit()))stock_only=found->second.stock;}
+ if(stock_only){
+  const auto result=static_cast<NVENCSTATUS>(StockInitialize(stock_only,source));
+  std::lock_guard<std::mutex> lock(mutex);stats.last_status=result;stats.initialize_status=result;stats.initialize_error[0]=0;
+  if(result==NV_ENC_SUCCESS)++stats.initializes;else{++stats.errors;++switch_info.stock_errors;}
+  return result;
+ }
  NV_ENC_INITIALIZE_PARAMS copy{};NV_ENC_CONFIG config{};
  if(!configure(encoder,*source,copy,config)){
   std::lock_guard<std::mutex> lock(mutex);stats.initialize_status=NV_ENC_ERR_INVALID_PARAM;
@@ -232,7 +248,7 @@ NVENCSTATUS NVENCAPI initialize(void* encoder,NV_ENC_INITIALIZE_PARAMS* source){
   if(status!=NV_ENC_SUCCESS&&api.nvEncGetLastErrorString){const auto* error=api.nvEncGetLastErrorString(encoder);
    if(error)strncpy_s(stats.initialize_error,error,_TRUNCATE);}
   if(status==NV_ENC_SUCCESS){auto found=sessions.find(encoder);if(found==sessions.end())return NV_ENC_ERR_INVALID_ENCODERDEVICE;
-   found->second.width=copy.encodeWidth;found->second.height=copy.encodeHeight;
+   found->second.width=copy.encodeWidth;found->second.height=copy.encodeHeight;found->second.h264=true;
    if(found->second.stock&&StockInitialize(found->second.stock,source)){
     // The stock session cannot take SteamVR's own parameters: this session streams H.264 only.
     ++switch_info.stock_errors;StockDestroy(found->second.stock);found->second.stock=nullptr;
@@ -283,23 +299,25 @@ NVENCSTATUS reconfigure_h264(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
  return status;
 }
 NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
- const auto h264=reconfigure_h264(encoder,source);
+ bool h264_session=true;
+ {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())h264_session=found->second.h264;}
+ const auto h264=h264_session?reconfigure_h264(encoder,source):NV_ENC_SUCCESS;
  void* stock=nullptr;int mode=0;
  {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())stock=found->second.stock;mode=active_mode;}
  if(!stock)return h264;
  // The stock encoder follows SteamVR's own reconfigure requests unchanged, so a switch finds it already at the right size and rate.
  const auto result=StockReconfigure(stock,source);
  if(result){std::lock_guard<std::mutex> lock(mutex);++switch_info.stock_errors;}
- return mode==1?static_cast<NVENCSTATUS>(result):h264;
+ return mode==1||!h264_session?static_cast<NVENCSTATUS>(result):h264;
 }
 State* find_session(void* encoder){auto found=sessions.find(encoder);return found==sessions.end()?nullptr:&found->second;}
 NVENCSTATUS NVENCAPI create_output(void* encoder,NV_ENC_CREATE_BITSTREAM_BUFFER* source){
  NV_ENC_CREATE_BITSTREAM_BUFFER copy{};
  if(!upgrade(source,copy,old_common,NV_ENC_CREATE_BITSTREAM_BUFFER_VER))return NV_ENC_ERR_INVALID_VERSION;
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
- const auto status=api.nvEncCreateBitstreamBuffer(encoder,&copy);
+ const auto status=session->h264?api.nvEncCreateBitstreamBuffer(encoder,&copy):NV_ENC_SUCCESS;
  if(status!=NV_ENC_SUCCESS)return status;
- auto* output=new VOutput{copy.bitstreamBuffer,nullptr,0};
+ auto* output=new VOutput{session->h264?copy.bitstreamBuffer:nullptr,nullptr,0};
  if(session->stock&&StockCreateOutput(session->stock,source,&output->stock)){output->stock=nullptr;++switch_info.stock_errors;}
  session->outputs.insert(output);source->bitstreamBuffer=output;
  return status;
@@ -308,16 +326,16 @@ NVENCSTATUS NVENCAPI destroy_output(void* encoder,NV_ENC_OUTPUT_PTR handle){
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
  auto* output=static_cast<VOutput*>(handle);if(!session->outputs.erase(output))return NV_ENC_ERR_INVALID_PTR;
  if(output->stock)StockDestroyOutput(session->stock,output->stock);
- const auto status=api.nvEncDestroyBitstreamBuffer(encoder,output->h264);
+ const auto status=output->h264?api.nvEncDestroyBitstreamBuffer(encoder,output->h264):NV_ENC_SUCCESS;
  session->maps.erase(output);delete output;return status;
 }
 NVENCSTATUS NVENCAPI register_resource(void* encoder,NV_ENC_REGISTER_RESOURCE* source){
  NV_ENC_REGISTER_RESOURCE copy{};
  if(!upgrade(source,copy,old_register,NV_ENC_REGISTER_RESOURCE_VER))return NV_ENC_ERR_INVALID_VERSION;
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
- const auto status=api.nvEncRegisterResource(encoder,&copy);
+ const auto status=session->h264?api.nvEncRegisterResource(encoder,&copy):NV_ENC_SUCCESS;
  if(status!=NV_ENC_SUCCESS)return status;
- auto* resource=new VResource{copy.registeredResource,nullptr};
+ auto* resource=new VResource{session->h264?copy.registeredResource:nullptr,nullptr};
  if(session->stock&&StockRegister(session->stock,source,&resource->stock)){resource->stock=nullptr;++switch_info.stock_errors;}
  session->resources.insert(resource);source->registeredResource=resource;
  return status;
@@ -326,7 +344,7 @@ NVENCSTATUS NVENCAPI unregister_resource(void* encoder,NV_ENC_REGISTERED_PTR han
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
  auto* resource=static_cast<VResource*>(handle);if(!session->resources.erase(resource))return NV_ENC_ERR_INVALID_PTR;
  if(resource->stock)StockUnregister(session->stock,resource->stock);
- const auto status=api.nvEncUnregisterResource(encoder,resource->h264);
+ const auto status=resource->h264?api.nvEncUnregisterResource(encoder,resource->h264):NV_ENC_SUCCESS;
  delete resource;return status;
 }
 NVENCSTATUS NVENCAPI map_resource(void* encoder,NV_ENC_MAP_INPUT_RESOURCE* source){
@@ -335,7 +353,8 @@ NVENCSTATUS NVENCAPI map_resource(void* encoder,NV_ENC_MAP_INPUT_RESOURCE* sourc
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
  auto* resource=static_cast<VResource*>(source->registeredResource);if(!session->resources.count(resource))return NV_ENC_ERR_INVALID_PTR;
  // The codec is chosen here, per frame: the mapped handle remembers which session it belongs to.
- const int on=(active_mode==1&&session->stock&&resource->stock)?1:0;
+ const int on=((active_mode==1||!session->h264)&&session->stock&&resource->stock)?1:0;
+ if(!on&&!session->h264)return NV_ENC_ERR_INVALID_PTR;
  void* real=nullptr;uint32_t format=0;NVENCSTATUS status;
  if(on)status=static_cast<NVENCSTATUS>(StockMap(session->stock,source,resource->stock,&real,&format));
  else{copy.registeredResource=resource->h264;status=api.nvEncMapInputResource(encoder,&copy);real=copy.mappedResource;format=copy.mappedBufferFmt;}
@@ -353,8 +372,8 @@ NVENCSTATUS NVENCAPI unmap_resource(void* encoder,NV_ENC_INPUT_PTR handle){
 NVENCSTATUS event_common(void* encoder,NV_ENC_EVENT_PARAMS* source,bool registration){
  NV_ENC_EVENT_PARAMS copy{};
  if(!upgrade(source,copy,old_common,NV_ENC_EVENT_PARAMS_VER))return NV_ENC_ERR_INVALID_VERSION;
- const auto status=registration?api.nvEncRegisterAsyncEvent(encoder,&copy):api.nvEncUnregisterAsyncEvent(encoder,&copy);
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);
+ const auto status=session&&!session->h264?NV_ENC_SUCCESS:registration?api.nvEncRegisterAsyncEvent(encoder,&copy):api.nvEncUnregisterAsyncEvent(encoder,&copy);
  // The completion event is a plain handle: both sessions may be given it, and only the one that encodes the frame signals it.
  if(session&&session->stock){const auto stock_status=StockEvent(session->stock,source,registration?1:0);
   // The driver refuses to register the same event with a second session, yet signals it for the frames that session encodes
@@ -379,7 +398,7 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
  // An end-of-stream picture carries neither input nor output; it goes to the encoder that encoded last.
  const bool known_output=session->outputs.count(output)!=0;
  if(!eos&&(!session->mapped.count(mapped)||!known_output))return NV_ENC_ERR_INVALID_PTR;
- const int on=!eos?mapped->on:(session->last_encoded==1&&session->stock?1:0);
+ const int on=!eos?mapped->on:((session->last_encoded==1||!session->h264)&&session->stock?1:0);
  void* real_output=!known_output?nullptr:on?output->stock:output->h264;
  if(!eos&&!real_output)return NV_ENC_ERR_INVALID_PARAM;
  // The first picture a session encodes after a switch starts a fresh sequence: its decoder has seen nothing of this stream.
