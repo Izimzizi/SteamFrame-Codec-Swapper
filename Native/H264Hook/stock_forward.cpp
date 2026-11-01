@@ -93,7 +93,7 @@ void StockEncodeSize(uint32_t* width,uint32_t* height){*width=initialized_width;
 int StockInitialize(void* encoder,void* init){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
- if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;}
+ if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;trace("initialize: picture %ux%u",initialized_width,initialized_height);}
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){
@@ -172,5 +172,5 @@ int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv){
  if(!applied_any)return 0;
  *cbr=applied_cbr?1:0;*preset=static_cast<uint32_t>(applied_preset);*vbv=static_cast<uint32_t>(applied_vbv);return 1;
 }
-int StockDestroy(void* encoder){return ready?status(table.nvEncDestroyEncoder(encoder)):NV_ENC_ERR_INVALID_PTR;}
+int StockDestroy(void* encoder){if(ready)trace("encoder session destroyed");return ready?status(table.nvEncDestroyEncoder(encoder)):NV_ENC_ERR_INVALID_PTR;}
 }
