@@ -2,11 +2,9 @@
 
 A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that streams **H.264 at up to 500 Mbps** from SteamVR, switches between H.264 and the stock HEVC stream while you play, and shows what the stream is doing, both in a monitor window and on an **in-VR HUD** attached to a controller.
 
-> ## ⚠️ Heavily work in progress
+> ## Status: 1.0.0
 >
-> This project changes how SteamVR's streaming driver and the Steam Frame's Steam Link client behave, and it is developed against one hardware setup. Expect rough edges, behavior that changes from commit to commit, and things that only worked on the author's PC.
-> Several parts are **untested on real hardware** (listed under [Known limitations](#known-limitations)). Nothing here is signed, supported by Valve, or guaranteed to survive a SteamVR or Steam Link update.
-> Back up what matters, keep the Frame's stock client restorable (Disarm / Default (HEVC) does this), and do not run it on a machine you cannot afford to fiddle with.
+> H.264 streaming, live switching, the encoder options, the stream monitor and the VR HUD work on the author's setup (Windows 11, NVIDIA GPU, SteamVR 2.17 to 2.18, Frame software 0.4.5, 0.5.6 beta and 0.6.0 preview). This is an unofficial tool: it changes how SteamVR's streaming driver and the Steam Frame's Steam Link client behave, it is not supported by Valve, and a SteamVR or Steam Link update can break it. Keep the stock client restorable (Disarm / Default (HEVC) does this) and expect to install the bitrate patch again after each SteamVR update.
 
 > **Platform:** Windows 11 x64 · SteamVR with the Steam Link VR driver · NVIDIA GPU (NVENC) · Steam Frame in Developer Mode, reachable over SSH (Wi-Fi, the dongle, or both).
 
@@ -40,11 +38,13 @@ A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that strea
 
 ## Install and first run
 
+Download `CodecSwapper.zip` from the [Releases page](https://github.com/Izimzizi/SteamFrame-Codec-Swapper/releases).
+
 1. On the Frame: turn on Developer Mode and set a user password (Developer → Set User Password).
 2. Extract the whole zip. `CodecSwapper.exe` needs the `CodecLab` and `Native` folders beside it. It is unsigned, so Windows SmartScreen may warn (More info → Run anyway).
 3. The **Setup / connection check** opens by itself. The address is `frame` over Wi-Fi, or `10.35.78.1` with the dongle. It shows the Frame's host key fingerprint to trust once, creates the app's own SSH key and asks for the Frame password once to authorize that key. The password goes to Windows Credential Manager only after the Frame accepts it; it is never written to settings, files or command lines. Windows' optional **OpenSSH Client** feature is required.
 4. **Required for H.264:** tray menu → **SteamVR driver** → *Install* (choosing H.264 without it offers to install it, or tells you what to do if SteamVR is running; SteamVR is never restarted by the tray). The tray also brings an out-of-date driver up to date at start when SteamVR is closed.
-   Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) so that bitrates above 232 Mbps actually stream (the tray asks for it above 350). The patch keeps one backup of the original `driver_vrlink.dll` next to it; after a SteamVR update, installing the patch again removes the backups of older driver versions.
+   Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) so that bitrates above 232 Mbps actually stream (the tray asks for it above 350). The patch keeps one backup of the original `driver_vrlink.dll` next to it; a SteamVR update overwrites the patched driver, so install the patch again after each update, which also removes the backups of older driver versions.
 5. Choose **H.264** in the tray menu (or on the HUD). With SteamVR closed the choice is remembered and applied when SteamVR starts; the tray never launches SteamVR itself.
 
 ## Using it
@@ -71,7 +71,7 @@ Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-sec
 
 ### VR HUD
 
-The HUD is **on by default**: when SteamVR is running the panel appears on the chosen controller. Its *Hide HUD* button (or *VR HUD → Show HUD on a controller* in the tray menu) hides it until SteamVR starts again; the same tray item brings it back at once. The cogwheel at the top right opens the **HUD settings** page: *Show the HUD when SteamVR starts* (On/Off; Off = it stays hidden until you show it from the tray menu), *Show the controls when* (the dashboard opens, or the laser points at the HUD), and *Reposition HUD*. SteamVR only passes laser input to overlays while its **dashboard is open**, so the HUD has two states: with the dashboard closed (while playing) it shows the readouts only and cannot press anything, so it can never steal input from a game; with the dashboard open it adds the controls. It is a SteamVR overlay driven by laser pointer:
+The HUD is **on by default**: when SteamVR is running the panel appears on the chosen controller. Its *Hide HUD* button (or *VR HUD → Show HUD on a controller* in the tray menu) hides it until SteamVR starts again; the same tray item brings it back at once. The cogwheel at the top right (visible even while the panel is collapsed) opens the **HUD settings** page: *Show the HUD when SteamVR starts* (On/Off; Off = it stays hidden until you show it from the tray menu), *Show the controls when* (the dashboard opens, or the laser points at the HUD), and *Reposition HUD*. SteamVR only passes laser input to overlays while its **dashboard is open**, so the HUD has two states: with the dashboard closed (while playing) it shows the readouts only and cannot press anything, so it can never steal input from a game; with the dashboard open it adds the controls. It is a SteamVR overlay driven by laser pointer:
 
 - the codec buttons, a **bitrate slider** (drag with the laser, applied on release; an amber mark at 350 Mbps, the top of SteamVR's own slider, pulls a click near it onto exactly 350), and three **dropdowns** — *Rate control*, *Preset*, *VBV* — each opening a list of options with a short description;
 - every readout the monitor has: codec, Mbps, 60 s average, FPS, target, encoder-asked line, encode time (right of the average), held-back / dropped / late / errors and the 60 s graph (the monitor window also shows the status note);
@@ -136,14 +136,13 @@ Close a running tray before packaging. The tests do not modify your Steam config
 
 ## Known limitations
 
-- **H.264 wider than 1024 px** is not verified on the Frame; the bridge takes its limit from the GPU's H.264 caps (override with `h264-limit.txt`).
+- **H.264 size limit.** The bridge takes its size limit from the GPU's H.264 caps (override with `h264-limit.txt`); 1344 px width was used successfully on the preview Frame.
 - **HEVC option overrides** are confirmed live on the headset: rate control, buffer and preset (P1 to P7 moved the Video Encode load from about 7% to 16% and the measured encode time, without a restart).
-- **The HUD** has been tested on one controller setup; laser coordinates assume SteamVR's current GL-space convention (`FlipLaserY` in `hud.json` flips it). Dropdown rows are small targets.
-- **An unexplained close** right after reaching H.264 happened once before logging existed (likely an accidental HUD *Default (HEVC)* press); `tray.log` now records who asks for each change.
-- **The Steam UI on the Frame** can get stuck after repeated stream restarts; a restart of the Frame's Steam UI is the workaround, and it is not automated.
+- **The HUD** has been tested on one controller setup; laser coordinates assume SteamVR's current GL-space convention (`FlipLaserY` in `hud.json` flips it).
+- **The Steam UI on the Frame** can occasionally get stuck after repeated stream restarts; restarting it on the Frame is the workaround.
 - **Frame updates.** The client patch is found by its instructions, not by a fixed file hash, so Frame updates that keep the client's layout need no new release (checked on SteamOS 0.4.5, 0.5.6 beta and 0.6.0 preview). If the client changes so that there is not exactly one place to patch, H.264 is refused with a message and Default (HEVC) keeps working. The Frame's kernel version is not checked.
 - **Updates.** A SteamVR or Steam Link update can change the driver layout the hook and bitrate patch rely on; the patch refuses unrecognized drivers rather than guessing.
-- **Not done yet:** a "Save Frame log" menu item, user docs for the HUD beyond this README, signed binaries.
+- **Not signed:** Windows SmartScreen warns on first run. A first-run guide on the HUD is planned.
 
 ## Credits
 

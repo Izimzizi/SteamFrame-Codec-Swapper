@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — renamed to SteamFrame Codec Swapper
+## 1.0.0 — SteamFrame Codec Swapper
+
+First release of the fork: a tray app that streams H.264 up to 500 Mbps to the Steam Frame, switches live between H.264 and the stock HEVC stream, sets rate control, NVENC preset and VBV buffer for both codecs, shows the stream in a monitor window (including encode time) and on an in-VR HUD with a settings page. The Frame's client patch is found automatically, so Frame updates that keep the client layout need no new release. The entries below this one are the upstream project's history.
 
 - The app is now **CodecSwapper.exe** (project folder `CodecSwapper/`, data in `%LOCALAPPDATA%\CodecSwapper`, supervisor `session_supervisor.py`, package script `Package-CodecSwapper.ps1`). Older entries below use the old names.
 - Menu wording: SteamVR driver (was Permanent PC driver), Encoder settings, Stream monitor, Record stream log, Frame connection…, Bitrate limit patch, VR HUD.
