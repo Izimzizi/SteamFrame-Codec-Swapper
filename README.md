@@ -79,6 +79,8 @@ Turn on *VR HUD → Show HUD on a controller*. When SteamVR is running the panel
 
 Because the HUD is drawn on the PC and streamed, the Frame's own dashboard and Steam window are drawn over it; the PC's windows are inside the stream, so the HUD stays in front of those. Moving the HUD off the area the Frame's windows cover is the workaround. (Drawing it on the Frame instead was tried and dropped: it needs an SSH round trip per update, so it lags.)
 
+Only things that are not working are announced: a warning or error from the tray (the SteamVR driver is missing or out of date, the bitrate patch is needed, an action failed) is shown as an amber or red banner on the HUD for about 14 seconds as well as in a desktop balloon. Successful changes say nothing. The helper exits when SteamVR does and is restarted by the tray, which gives it its settings again, so the HUD comes back by itself when SteamVR restarts.
+
 Internals worth knowing: the HUD runs in its **own helper process** (`CodecSwapper.exe --hud-host`) because it talks to SteamVR's native overlay API and a native fault there must not take the tray down; the helper restarts itself. The picture is written into one Direct3D 11 texture, so it updates without flicker. It never starts SteamVR.
 
 ### Encoder options and Default (HEVC)

@@ -106,7 +106,6 @@ public sealed partial class TrayApp : ApplicationContext
         _forgetPassword.Click += async (_, _) => await RunAsync(() =>
         {
             _controller.ForgetPassword();
-            Balloon("Frame password", "The stored password was removed. You will be asked for it the next time you choose H.264.", ToolTipIcon.Info);
             return Task.CompletedTask;
         });
         _password.DropDownItems.AddRange([_setPassword, _forgetPassword]);
@@ -152,13 +151,9 @@ public sealed partial class TrayApp : ApplicationContext
                 {
                     set();
                     await SaveEncoderOptionsAsync();
-                    var summary = $"{_preferences.HookRateControl.ToUpperInvariant()}, P{_preferences.HookPreset}, VBV {_preferences.HookVbvFrames} frame(s)";
-                    try
-                    {
-                        if (await _controller.ApplyEncoderOptionsAsync()) Balloon("Encoder settings", $"{summary} is applied to the running encoder.", ToolTipIcon.Info);
-                        else Balloon("Encoder settings", $"{summary} is used the next time you switch to H.264.", ToolTipIcon.Info);
-                    }
-                    catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder settings", $"Saved ({summary}) for the next switch to H.264. {error.Message}", ToolTipIcon.Warning); }
+                    if (WarnWithoutDriver()) return;
+                    try { await _controller.ApplyEncoderOptionsAsync(); }
+                    catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder settings", "Saved, but not applied to the running encoder: " + error.Message, ToolTipIcon.Warning); }
                 };
                 items.Add((item, selected));
                 group.DropDownItems.Add(item);
@@ -189,14 +184,14 @@ public sealed partial class TrayApp : ApplicationContext
             install.Enabled = _driver.PackageAvailable && current != SteamVrDriverState.Installed;
             remove.Enabled = current != SteamVrDriverState.NotInstalled;
         }
-        async Task Do(Action action, string done)
+        async Task Do(Action action)
         {
-            try { await Task.Run(action); Balloon("SteamVR driver", done, ToolTipIcon.Info); }
+            try { await Task.Run(action); }
             catch (Exception error) when (error is not OperationCanceledException) { Balloon("SteamVR driver", error.Message, ToolTipIcon.Warning); }
             Refresh();
         }
-        install.Click += async (_, _) => await RunAsync(() => Do(_driver.Install, "Installed. It takes effect the next time SteamVR starts."));
-        remove.Click += async (_, _) => await RunAsync(() => Do(_driver.Remove, "Removed. SteamVR no longer loads it."));
+        install.Click += async (_, _) => await RunAsync(() => Do(_driver.Install));
+        remove.Click += async (_, _) => await RunAsync(() => Do(_driver.Remove));
         _driverMenu.DropDownOpening += (_, _) => Refresh();
         _driverMenu.DropDownItems.AddRange([state, new ToolStripSeparator(), install, remove]);
     }
@@ -207,17 +202,14 @@ public sealed partial class TrayApp : ApplicationContext
         try { _controller.RequestCloseNoWait(); } catch (Exception) { }
     }
 
-    private async Task ChangeTargetAsync(int mbps) =>
-        Report(await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch));
+    private async Task ChangeTargetAsync(int mbps) => await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch);
 
-    private void Report(ChangeOutcome outcome)
+    /// <summary>Rate control, preset and VBV reach the encoder only through the SteamVR driver; without it a change does nothing, so say so (on the HUD too). True when it did.</summary>
+    private bool WarnWithoutDriver()
     {
-        switch (outcome)
-        {
-            case ChangeOutcome.AppliedLive: Balloon("Bitrate changed", _controller.Current.Message, ToolTipIcon.Info); break;
-            case ChangeOutcome.Reapplied when _controller.Current.State is TrayState.Armed or TrayState.Waiting: Balloon("H.264 re-applied", _controller.Current.Message, ToolTipIcon.Info); break;
-            case ChangeOutcome.Declined: Balloon("Saved", "The new setting is used the next time you switch to H.264.", ToolTipIcon.Info); break;
-        }
+        if (_driver.Inspect() == SteamVrDriverState.Installed) return false;
+        Balloon("Encoder settings", "Encoder settings only work through the SteamVR driver, which is not installed (or not this version), so they have no effect yet. Close SteamVR, then use the tray menu: SteamVR driver > Install.", ToolTipIcon.Warning);
+        return true;
     }
 
     private static Task<string?> AskPassword() =>
@@ -233,11 +225,9 @@ public sealed partial class TrayApp : ApplicationContext
     private async Task ArmAsync()
     {
         TrayLog("Arm requested");
-        if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then choose H.264.", ToolTipIcon.Info); return; }
+        if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then choose H.264.", ToolTipIcon.Warning); return; }
         if (!await EnsureDriverAsync()) return;
         await _controller.ArmAsync(AskPassword, ConfirmPatch);
-        if (_controller.Current.State is TrayState.Armed or TrayState.Waiting)
-            Balloon("H.264", _controller.Current.Message, ToolTipIcon.Info);
     }
 
     /// <summary>H.264 works through the SteamVR driver. Missing or out of date: offer to install it, or say what to do if SteamVR is holding the old one.</summary>
@@ -298,7 +288,6 @@ public sealed partial class TrayApp : ApplicationContext
         var text = PromptDialog.Ask("Frame password", "Enter the Frame user password to store in Windows Credential Manager.", true);
         if (string.IsNullOrEmpty(text)) return;
         _controller.SavePassword(text);
-        Balloon("Frame password", "Stored. It is checked against the Frame the next time you choose H.264.", ToolTipIcon.Info);
     }
 
     private async Task RefreshPatchMenuAsync()
@@ -321,7 +310,7 @@ public sealed partial class TrayApp : ApplicationContext
             var state = await _patch.InspectAsync();
             if (state.VrServerRunning) throw new InvalidOperationException("Close SteamVR first.");
             var done = install ? await _patch.ApplyAsync() : await _patch.RestoreAsync();
-            Balloon("Bitrate limit patch", install ? (done.IsPatched ? "Installed. Bitrates up to 500 Mbps are available." : done.Message) : (done.IsPatched ? done.Message : "Removed. SteamVR is back to its own ceiling."), ToolTipIcon.Info);
+            if (done.IsPatched != install) Balloon("Bitrate limit patch", done.Message, ToolTipIcon.Warning);
         }
         catch (UnauthorizedAccessException)
         {
@@ -376,7 +365,7 @@ public sealed partial class TrayApp : ApplicationContext
 
     private async Task RunAsync(Func<Task> action)
     {
-        if (_busy) { Balloon("SteamFrame Codec Swapper", "Another action is still running.", ToolTipIcon.Info); return; }
+        if (_busy) { Balloon("SteamFrame Codec Swapper", "Another action is still running.", ToolTipIcon.Warning); return; }
         _busy = true;
         try { await action(); }
         catch (OperationCanceledException) { }

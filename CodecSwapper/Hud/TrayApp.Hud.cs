@@ -17,7 +17,7 @@ public sealed partial class TrayApp
     private void StartHud()
     {
         _hudSettings = HudSettings.Load(AppData.HudPath);
-        _hud = new HudHostClient(OnHudMessage, HudLog);
+        _hud = new HudHostClient(OnHudMessage, HudLog) { Started = OnHudHelperStarted };
         WriteHevcOptions();
         _statsService.Sampled += (sample, _) => _lastSample = sample;
         _hudTimer.Tick += (_, _) => PushHudView();
@@ -43,6 +43,9 @@ public sealed partial class TrayApp
         }
         else _hud.Stop();
     }
+
+    /// <summary>A helper that has just (re)started knows nothing: it exits when SteamVR does and is restarted, so it is given the settings and the current view again.</summary>
+    private void OnHudHelperStarted() { PushHudSettings(); _sentView = null; }
 
     private void PushHudSettings() => _hud?.Send(new() { Type = "settings", Settings = _hudSettings });
 
@@ -79,10 +82,10 @@ public sealed partial class TrayApp
         }
     }
 
-    /// <summary>Anything the tray tells the user in a desktop balloon is also written on the HUD for a while, since the headset hides the desktop.</summary>
+    /// <summary>Warnings and errors the tray tells the user in a desktop balloon are also written on the HUD for a while, since the headset hides the desktop. Confirmations are not.</summary>
     private void ShowOnHud(string title, string text, ToolTipIcon icon)
     {
-        if (!_hudSettings.Enabled) return;
+        if (!_hudSettings.Enabled || icon is not (ToolTipIcon.Warning or ToolTipIcon.Error)) return;
         _hudNotice = (title.Length > 0 ? title + ": " : "") + text;
         _hudNoticeIsError = icon == ToolTipIcon.Error;
         _hudNoticeUntil = DateTime.UtcNow.AddSeconds(icon is ToolTipIcon.Warning or ToolTipIcon.Error ? 14 : 7);
@@ -160,7 +163,6 @@ public sealed partial class TrayApp
             _hudSettings.Enabled = !_hudSettings.Enabled;
             Save();
             ApplyHudEnabled();
-            if (_hudSettings.Enabled) Balloon("VR HUD", "The HUD appears on the " + (_hudSettings.IsLeft ? "left" : "right") + " controller once SteamVR is running. Use its Move button to place it.", ToolTipIcon.Info);
         };
         left.Click += (_, _) => { _hudSettings.Hand = "left"; Save(); };
         right.Click += (_, _) => { _hudSettings.Hand = "right"; Save(); };
@@ -193,6 +195,7 @@ public sealed partial class TrayApp
             app._preferences.HookPreset = preset;
             app._preferences.HookVbvFrames = vbvFrames;
             await app.SaveEncoderOptionsAsync();
+            if (app.WarnWithoutDriver()) return;
             try { if (!await app._controller.ApplyEncoderOptionsAsync()) HudLog("Encoder options saved; there is no live session to apply them to."); }
             catch (Exception error) when (error is not OperationCanceledException) { HudLog("Encoder options not applied live: " + error.Message); }
         });

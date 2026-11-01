@@ -14,6 +14,9 @@ public sealed class HudHostClient(Action<HudMessage> onMessage, Action<string> l
 
     public bool Running => _process is { HasExited: false };
 
+    /// <summary>Called each time a helper process has been started, including the automatic restarts.</summary>
+    public Action? Started { get; set; }
+
     public void Start()
     {
         _wanted = true;
@@ -27,6 +30,7 @@ public sealed class HudHostClient(Action<HudMessage> onMessage, Action<string> l
             process.EnableRaisingEvents = true;
             process.Exited += (_, _) => _ui.Post(_ => OnExited(process), null);
             _ = Task.Run(() => Pump(process));
+            Started?.Invoke();
         }
         catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { log("HUD helper could not start: " + error.Message); }
     }
