@@ -175,6 +175,7 @@ public static class HudPanel
             if (view.Busy) g.DrawString("Applying…", small, accentBrush, 430, 14);
         }
         if (!view.Repositioning && !settingsPage) DrawGraph(g, view, small, accent);
+        if (compact) { using var cogFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center }; g.DrawString("⚙", symbol, grey, new Rectangle(Width - 20 - 44, 10, 44, 40), cogFormat); }   // the cogwheel stays visible when collapsed, as an invitation to point at the HUD
         if (compact) g.DrawString(view.ExpandOnHover ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
