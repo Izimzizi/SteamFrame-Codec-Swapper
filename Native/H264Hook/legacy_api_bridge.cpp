@@ -74,7 +74,9 @@ void write_timing(const char* codec){
  FILETIME now{};GetSystemTimeAsFileTime(&now);
  const unsigned long long unix_ms=((static_cast<unsigned long long>(now.dwHighDateTime)<<32|now.dwLowDateTime)-116444736000000000ULL)/10000ULL;
  FILE* file=nullptr;if(fopen_s(&file,temporary.c_str(),"w")||!file)return;
- fprintf(file,"unix_ms=%llu\ncodec=%s\nframes=%u\navg_ms=%.2f\nmax_ms=%.2f\n",unix_ms,codec,timing_frames,timing_sum/timing_frames,timing_max);fclose(file);
+ uint32_t width=stats.width,height=stats.height;
+ if(!strcmp(codec,"HEVC"))StockEncodeSize(&width,&height);
+ fprintf(file,"unix_ms=%llu\ncodec=%s\nframes=%u\navg_ms=%.2f\nmax_ms=%.2f\nwidth=%u\nheight=%u\n",unix_ms,codec,timing_frames,timing_sum/timing_frames,timing_max,width,height);fclose(file);
  MoveFileExA(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING);
 }
 void note_encoded(VOutput* output,const char* codec){

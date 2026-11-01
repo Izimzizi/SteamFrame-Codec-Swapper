@@ -18,6 +18,14 @@ public sealed class EncodeTimingTests
     }
 
     [Fact]
+    public void The_encoded_size_is_read_and_shown_when_the_hook_reports_it()
+    {
+        var timing = EncodeTiming.Parse(File(Now.AddSeconds(-1)) + "width=1344\nheight=1408\n", Now);
+        Assert.Equal(1344, timing!.Width);
+        Assert.Equal("1344\u00d71408  \u00b7  encode 2.3 ms avg / 3.4 ms max", timing.Describe());
+    }
+
+    [Fact]
     public void A_stale_or_future_reading_is_ignored_because_the_stream_stopped()
     {
         Assert.Null(EncodeTiming.Parse(File(Now.AddSeconds(-10)), Now));

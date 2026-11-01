@@ -88,9 +88,12 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  return true;
 }
 }
+static uint32_t initialized_width=0,initialized_height=0;
+void StockEncodeSize(uint32_t* width,uint32_t* height){*width=initialized_width;*height=initialized_height;}
 int StockInitialize(void* encoder,void* init){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
+ if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;}
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){

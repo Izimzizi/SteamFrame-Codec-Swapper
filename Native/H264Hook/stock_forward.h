@@ -24,6 +24,8 @@ int StockDestroy(void* encoder);
 // The options the driver's own encoder is running with, for the monitor: rate control and buffer as last applied, the preset it was created with
 // (0 when the encoder was created before the options were switched on). Returns 0 when no option has been applied.
 int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv);
+// The picture size the driver's encoder was initialized with (0 x 0 before the first initialize).
+void StockEncodeSize(uint32_t* width,uint32_t* height);
 #ifdef __cplusplus
 }
 #endif
