@@ -191,11 +191,11 @@ public sealed partial class TrayApp
 
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames) => app.RunAsync(async () =>
         {
+            if (app.WarnWithoutDriver()) return;
             app._preferences.HookRateControl = rateControl;
             app._preferences.HookPreset = preset;
             app._preferences.HookVbvFrames = vbvFrames;
             await app.SaveEncoderOptionsAsync();
-            if (app.WarnWithoutDriver()) return;
             try { if (!await app._controller.ApplyEncoderOptionsAsync()) HudLog("Encoder options saved; there is no live session to apply them to."); }
             catch (Exception error) when (error is not OperationCanceledException) { HudLog("Encoder options not applied live: " + error.Message); }
         });

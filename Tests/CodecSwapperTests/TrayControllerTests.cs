@@ -261,7 +261,7 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Above_232_Mbps_the_bitrate_patch_is_required_first()
+    public async Task Above_350_Mbps_the_bitrate_patch_is_required_first()
     {
         var rig = new Rig();
         rig.Vault.Stored = "pw"; rig.Prefs.CodecTargetMbps = 450; rig.Patch.State = BitratePatchState.Original; rig.Codec.AfterSwitch = Live(target: 450);
@@ -280,10 +280,10 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Bitrates_up_to_232_never_touch_the_driver()
+    public async Task Bitrates_up_to_350_never_touch_the_driver()
     {
         var rig = new Rig();
-        rig.Vault.Stored = "pw"; rig.Prefs.CodecTargetMbps = 232; rig.Codec.AfterSwitch = Live(target: 232);
+        rig.Vault.Stored = "pw"; rig.Prefs.CodecTargetMbps = 350; rig.Codec.AfterSwitch = Live(target: 350);
         await rig.Arm();
         Assert.Empty(rig.Patch.Calls);
     }
@@ -535,7 +535,7 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task A_live_change_above_232_still_needs_the_bitrate_patch()
+    public async Task A_live_change_above_350_still_needs_the_bitrate_patch()
     {
         var rig = new Rig();
         rig.Prefs.KeepH264 = true; rig.Codec.Status = LiveRate(); rig.Patch.State = BitratePatchState.Original;
@@ -543,6 +543,16 @@ public sealed class TrayControllerTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Change(450, allowPatch: false));
         Assert.Empty(rig.Codec.Rates); Assert.Empty(rig.Live.Applied);
         Assert.Equal(["inspect"], rig.Patch.Calls);
+    }
+
+    [Fact]
+    public async Task A_live_change_up_to_350_is_made_without_the_patch_or_a_question()
+    {
+        var rig = new Rig();
+        rig.Prefs.KeepH264 = true; rig.Codec.Status = LiveRate(); rig.Patch.State = BitratePatchState.Original;
+        await rig.Controller.RefreshAsync();
+        await rig.Change(300, allowPatch: false);
+        Assert.Equal([300], rig.Live.Applied); Assert.Empty(rig.Patch.Calls);
     }
 
     [Fact]

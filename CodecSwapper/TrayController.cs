@@ -22,7 +22,11 @@ public sealed record TraySnapshot(TrayState State, string Message, int TargetMbp
 public sealed class TrayController
 {
     /// <summary>The unpatched Steam Link driver caps SteamVR's target here; above it the bitrate patch is required.</summary>
-    public const int PatchFreeMaxMbps = 232;
+    /// <summary>SteamVR's own streaming slider goes to this; up to here a bitrate is set without asking for the patch.</summary>
+    public const int PatchFreeMaxMbps = 350;
+
+    /// <summary>What the unpatched Steam Link driver actually streams at most; above it a bitrate is accepted but has no effect until the patch is installed.</summary>
+    public const int StockCeilingMbps = 232;
     public const int MinimumMbps = 25, MaximumMbps = 500;
 
     private readonly ICodecService _codec;

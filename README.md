@@ -13,7 +13,7 @@ A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that strea
 ## What it does
 
 - **H.264 / Default (HEVC) switch.** The stock Steam Link client on the Frame hardcodes HEVC. The tray patches a copy of the client on the Frame and loads a hook into SteamVR's driver, so one choice flips both halves together. "Default (HEVC)" is the untouched stock stream.
-- **Up to 500 Mbps.** The bitrate slider covers 25–500 Mbps. Above 232 Mbps SteamVR's own driver needs the bitrate patch, which the tray can install and remove.
+- **Up to 500 Mbps.** The bitrate slider covers 25–500 Mbps. SteamVR's own driver streams at most 232 Mbps and its own slider stops at 350: the tray sets any bitrate up to 350 Mbps without the patch (with a warning above 232 that it has no effect yet), and asks for the bitrate patch, which it can install and remove, only above 350.
 - **Fast switching.** The SteamVR-side driver stays loaded and the SSH sessions to the Frame stay open, so going H.264 ↔ HEVC restarts only the Frame's stream (about 9 s end to end on the author's setup), not SteamVR.
 - **Encoder options.** Rate control (VBR / CBR), NVENC preset (P1–P7) and VBV buffer (1–16 frames of the average bitrate). They apply live to H.264 and also to Default (HEVC).
 - **Stream monitor.** Encoded Mbps with a 60-second average, FPS, what the encoder was asked for, frames held back by the sender and dropped/late on the PC, encode errors, the active codec and a 60-second graph. It can also record a CSV run log.
@@ -44,7 +44,7 @@ A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that strea
 2. Extract the whole zip. `CodecSwapper.exe` needs the `CodecLab` and `Native` folders beside it. It is unsigned, so Windows SmartScreen may warn (More info → Run anyway).
 3. The **Setup / connection check** opens by itself. The address is `frame` over Wi-Fi, or `10.35.78.1` with the dongle. It shows the Frame's host key fingerprint to trust once, creates the app's own SSH key and asks for the Frame password once to authorize that key. The password goes to Windows Credential Manager only after the Frame accepts it; it is never written to settings, files or command lines. Windows' optional **OpenSSH Client** feature is required.
 4. **Required for H.264:** tray menu → **SteamVR driver** → *Install* (choosing H.264 without it offers to install it, or tells you what to do if SteamVR is running; SteamVR is never restarted by the tray). The tray also brings an out-of-date driver up to date at start when SteamVR is closed.
-   Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) to allow more than 232 Mbps.
+   Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) so that bitrates above 232 Mbps actually stream (the tray asks for it above 350).
 5. Choose **H.264** in the tray menu (or on the HUD). With SteamVR closed the choice is remembered and applied when SteamVR starts; the tray never launches SteamVR itself.
 
 ## Using it

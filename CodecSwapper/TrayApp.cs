@@ -149,9 +149,9 @@ public sealed partial class TrayApp : ApplicationContext
                 var item = new ToolStripMenuItem(text);
                 item.Click += async (_, _) =>
                 {
+                    if (WarnWithoutDriver()) return;
                     set();
                     await SaveEncoderOptionsAsync();
-                    if (WarnWithoutDriver()) return;
                     try { await _controller.ApplyEncoderOptionsAsync(); }
                     catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder settings", "Saved, but not applied to the running encoder: " + error.Message, ToolTipIcon.Warning); }
                 };
@@ -202,7 +202,22 @@ public sealed partial class TrayApp : ApplicationContext
         try { _controller.RequestCloseNoWait(); } catch (Exception) { }
     }
 
-    private async Task ChangeTargetAsync(int mbps) => await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch);
+    private async Task ChangeTargetAsync(int mbps)
+    {
+        await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch);
+        await WarnAboveStockCeilingAsync(mbps);
+    }
+
+    /// <summary>SteamVR accepts bitrates up to 350 Mbps, but its unpatched driver streams at most 232: the setting changes and the user is told it will not show yet.</summary>
+    private async Task WarnAboveStockCeilingAsync(int mbps)
+    {
+        if (mbps <= TrayController.StockCeilingMbps) return;
+        BitratePatchStatus state;
+        try { state = await _patch.InspectAsync(); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException) { return; }
+        if (state.IsPatched || !state.IsSupported) return;
+        Balloon("Bitrate above " + TrayController.StockCeilingMbps + " Mbps", $"{mbps} Mbps is set, but SteamVR's unpatched driver streams at most {TrayController.StockCeilingMbps} Mbps. Close SteamVR, then use the tray menu: Bitrate limit patch > Install.", ToolTipIcon.Warning);
+    }
 
     /// <summary>Rate control, preset and VBV reach the encoder only through the SteamVR driver; without it a change does nothing, so say so (on the HUD too). True when it did.</summary>
     private bool WarnWithoutDriver()
@@ -228,6 +243,7 @@ public sealed partial class TrayApp : ApplicationContext
         if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then choose H.264.", ToolTipIcon.Warning); return; }
         if (!await EnsureDriverAsync()) return;
         await _controller.ArmAsync(AskPassword, ConfirmPatch);
+        if (_controller.Current.State is TrayState.Armed or TrayState.Waiting) await WarnAboveStockCeilingAsync(_controller.TargetMbps);
     }
 
     /// <summary>H.264 works through the SteamVR driver. Missing or out of date: offer to install it, or say what to do if SteamVR is holding the old one.</summary>
