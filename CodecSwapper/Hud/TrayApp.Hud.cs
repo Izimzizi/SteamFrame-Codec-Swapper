@@ -103,9 +103,9 @@ public sealed partial class TrayApp
     // The same readouts as the monitor window, as one line each.
     private string HudAverage() => _statsService.Sampler.RecentAverage is double average ? $"avg 60 s {average:0} Mbps" : "";
 
-    private static string HudEncoder(StatsSample? sample) => sample?.Config is { } c
+    private static string HudEncoder(StatsSample? sample) => (sample?.Config is { } c
         ? $"encoder asked {c.AverageMbps:0} avg / {c.MaxMbps:0} peak Mbps ({c.RateControl}, {c.Preset}{(c.VbvSize > 0 ? $", VBV {c.VbvSize / 1e6:0.0} Mbit" : "")}{(c.Fps is double cf ? $", {cf:0} fps" : "")})"
-        : "";
+        : "") + (sample?.Timing is { } t ? (sample.Config is null ? "" : "  ·  ") + t.Describe() : "");
 
     private static string HudHealth(StatsSample? sample)
     {

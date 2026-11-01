@@ -20,6 +20,8 @@ public sealed record StatsSample(DateTimeOffset At, double? Mbps, double? Fps, s
     public double? AverageQp { get; init; }
     public uint? LastFrameQp { get; init; }
     public uint? LastFrameBytes { get; init; }
+    /// <summary>Encoder time per frame over the last second, while the hook is writing it.</summary>
+    public EncodeTiming? Timing { get; init; }
 }
 
 /// <summary>
@@ -37,14 +39,15 @@ public sealed class StatsSampler
     private readonly Func<bool>? _monitorAllowed;
     private readonly RateTracker _rate = new();
     private readonly List<double?> _history = [];
+    private readonly Func<DateTimeOffset, EncodeTiming?>? _timing;
     private int _monitorPid;
     private DateTimeOffset _nextMonitorAttempt;
     private string? _monitorNote;
     private (string Generation, ulong Sum, ulong Samples)? _qp;
 
-    public StatsSampler(Func<Task<EncoderSnapshot>> read, Func<Task<EncoderSnapshot>> startMonitor, Func<DateTimeOffset>? now = null, Func<Task<HealthReading?>>? health = null, Func<bool>? monitorAllowed = null)
+    public StatsSampler(Func<Task<EncoderSnapshot>> read, Func<Task<EncoderSnapshot>> startMonitor, Func<DateTimeOffset>? now = null, Func<Task<HealthReading?>>? health = null, Func<bool>? monitorAllowed = null, Func<DateTimeOffset, EncodeTiming?>? timing = null)
     {
-        _read = read; _startMonitor = startMonitor; _now = now ?? (() => DateTimeOffset.UtcNow); _health = health; _monitorAllowed = monitorAllowed;
+        _read = read; _startMonitor = startMonitor; _now = now ?? (() => DateTimeOffset.UtcNow); _health = health; _monitorAllowed = monitorAllowed; _timing = timing;
     }
 
     /// <summary>The most recent Mbps readings, oldest first; null entries are gaps.</summary>
@@ -78,10 +81,12 @@ public sealed class StatsSampler
             try { health = await _health(); }
             catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { }
         }
-        return new(_now(), mbps, fps, codec.Value, codec.Verified, codec.Detail, snapshot.ProcessId != 0, snapshot.EncodeErrors, note)
+        var at = _now();
+        return new(at, mbps, fps, codec.Value, codec.Verified, codec.Detail, snapshot.ProcessId != 0, snapshot.EncodeErrors, note)
         {
             Config = ConfigOf(snapshot), Health = health, EncodedFrames = snapshot.EncodedFrames, EncodedBytes = snapshot.EncodedBytes,
             AverageQp = QpOf(snapshot), LastFrameQp = snapshot.LastFrameQp, LastFrameBytes = snapshot.LastFrameBytes,
+            Timing = _timing?.Invoke(at),
         };
     }
 

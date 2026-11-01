@@ -1,4 +1,4 @@
-param([switch]$CapsOnly,[string]$OutputDirectory)
+param([switch]$CapsOnly,[string]$OutputDirectory,[string[]]$ExtraDefines=@())
 $ErrorActionPreference = 'Stop'
 $labVswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $labVs = & $labVswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -21,7 +21,7 @@ try {
  & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\codec_caps.obj" "/Fe:$labOutput\codec_caps.exe" "$PSScriptRoot\codec_caps.cpp" d3d11.lib
  if($LASTEXITCODE){throw 'Codec capability query compilation failed'}
  if($CapsOnly){return}
- & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 /LD "/I$PSScriptRoot\..\vendor" "/I$PSScriptRoot\..\vendor\minhook\include" "/Fo:$labOutput\\" "/Fe:$labOutput\SteamFrameH264Hook.dll" "$PSScriptRoot\legacy_picture.cpp" "$PSScriptRoot\stock_forward.cpp" "$PSScriptRoot\legacy_api_bridge.cpp" "$PSScriptRoot\hook_entry.cpp" "$PSScriptRoot\..\vendor\minhook\src\hook.c" "$PSScriptRoot\..\vendor\minhook\src\buffer.c" "$PSScriptRoot\..\vendor\minhook\src\trampoline.c" "$PSScriptRoot\..\vendor\minhook\src\hde\hde64.c" d3d11.lib /link "/IMPLIB:$labOutput\SteamFrameH264Hook.lib"
+ & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 /LD $ExtraDefines "/I$PSScriptRoot\..\vendor" "/I$PSScriptRoot\..\vendor\minhook\include" "/Fo:$labOutput\\" "/Fe:$labOutput\SteamFrameH264Hook.dll" "$PSScriptRoot\legacy_picture.cpp" "$PSScriptRoot\stock_forward.cpp" "$PSScriptRoot\legacy_api_bridge.cpp" "$PSScriptRoot\hook_entry.cpp" "$PSScriptRoot\..\vendor\minhook\src\hook.c" "$PSScriptRoot\..\vendor\minhook\src\buffer.c" "$PSScriptRoot\..\vendor\minhook\src\trampoline.c" "$PSScriptRoot\..\vendor\minhook\src\hde\hde64.c" d3d11.lib /link "/IMPLIB:$labOutput\SteamFrameH264Hook.lib"
  if($LASTEXITCODE){throw 'Hook DLL compilation failed'}
  & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot" "/Fo:$labOutput\hook_control.obj" "/Fe:$labOutput\hook_control.exe" "$PSScriptRoot\hook_control.cpp" psapi.lib
  if($LASTEXITCODE){throw 'Hook controller compilation failed'}
@@ -39,6 +39,8 @@ try {
   & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\\" "/Fe:$labOutput\hevc_options_test.exe" "$PSScriptRoot\hevc_options_test.cpp" "$PSScriptRoot\stock_forward.cpp"
   if($LASTEXITCODE){throw 'HEVC options test compilation failed'}
  }
+ & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\preset_probe.obj" "/Fe:$labOutput\preset_probe.exe" "$PSScriptRoot\preset_probe.cpp" d3d11.lib
+ if($LASTEXITCODE){throw 'Preset probe compilation failed'}
  # The same DLL doubles as a SteamVR external driver: driver.vrdrivermanifest + bin\win64\driver_steamframe.dll.
  $labDriver = Join-Path $labOutput 'Driver'
  New-Item -ItemType Directory -Path (Join-Path $labDriver 'bin\win64') -Force | Out-Null

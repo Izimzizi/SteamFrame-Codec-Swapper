@@ -67,7 +67,7 @@ A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that strea
 
 ### Stream monitor
 
-Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-second average, FPS (one decimal), target, "encoder asked for X avg / Y peak (rate control, preset, VBV, fps)", frames the sender held back (total and last 60 s) plus PC dropped/late frames, encode errors, a status note and the 60-second graph. While the monitor or HUD is open on **stock HEVC** the tray injects a read-only probe into `vrserver` to read encoder statistics; it is not injected otherwise.
+Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-second average, FPS (one decimal), target, "encoder asked for X avg / Y peak (rate control, preset, VBV, fps)", **encode time** (average and worst milliseconds per frame over the last second, measured inside the hook from submitting a picture to its bitstream being ready; this is how to see the effect of the preset), frames the sender held back (total and last 60 s) plus PC dropped/late frames, encode errors, a status note and the 60-second graph. While the monitor or HUD is open on **stock HEVC** the tray injects a read-only probe into `vrserver` to read encoder statistics; it is not injected otherwise.
 
 ### VR HUD
 
@@ -83,7 +83,7 @@ Internals worth knowing: the HUD runs in its **own helper process** (`CodecSwapp
 
 ### Encoder options and Default (HEVC)
 
-For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `hevc-options.txt` (`rate_control`, `preset`, `vbv`); the hook reads it whenever SteamVR creates its encoder. Changing an option while streaming HEVC therefore restarts the Frame's stream so SteamVR builds a new encoder (the picture drops for a few seconds, as in a codec switch). The defaults (VBR, P2, 2 frames) apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. This HEVC path is covered by unit tests but has not been confirmed on the headset yet.
+For **H.264** the options are queued on the hook and applied to the running encoder on SteamVR's next reconfigure, with no restart. For **Default (HEVC)** the tray writes `hevc-options.txt` (`rate_control`, `preset`, `vbv`); the hook reads it about twice a second and applies it to every reconfigure SteamVR makes (before each frame), including the preset, which SteamVR's own reconfigures would otherwise reset. A change of rate control, buffer or preset asks the encoder for one rate-control reset and a keyframe. The hook writes a line to `hevc-hook.log` when the HEVC encoder is created and on each change, so you can see what reached NVENC. The defaults (VBR, P2, 2 frames) apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. To judge a preset, compare the encode time (and the Video Encode load in Task Manager) at P1 and P7: on a recent NVIDIA GPU the picture differs little, the encode time does.
 
 ## Where things live
 
@@ -135,7 +135,7 @@ Close a running tray before packaging. The tests do not modify your Steam config
 ## Known limitations
 
 - **H.264 wider than 1024 px** is not verified on the Frame; the bridge takes its limit from the GPU's H.264 caps (override with `h264-limit.txt`).
-- **HEVC option overrides** are unit-tested natively but not yet confirmed on the headset; whether SteamVR accepts a preset change at encoder creation is unknown.
+- **HEVC option overrides:** rate control and buffer are confirmed live on the headset. The preset reaching the HEVC encoder (sent on every reconfigure since the first Frame test showed no effect from sending it only at creation) is unit-tested natively and awaiting a headset check: P1 and P7 should differ in encode time.
 - **The HUD** has been tested on one controller setup; laser coordinates assume SteamVR's current GL-space convention (`FlipLaserY` in `hud.json` flips it). Dropdown rows are small targets.
 - **An unexplained close** right after reaching H.264 happened once before logging existed (likely an accidental HUD *Default (HEVC)* press); `tray.log` now records who asks for each change.
 - **The Steam UI on the Frame** can get stuck after repeated stream restarts; a restart of the Frame's Steam UI is the workaround, and it is not automated.

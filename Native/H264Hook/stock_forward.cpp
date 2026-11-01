@@ -70,7 +70,7 @@ GUID preset_guid(int preset){
   case 5:return NV_ENC_PRESET_P5_GUID;case 6:return NV_ENC_PRESET_P6_GUID;case 7:return NV_ENC_PRESET_P7_GUID;default:return NV_ENC_PRESET_P2_GUID;}
 }
 // Applies the options to a copy of the driver's init parameters and its encode configuration; returns whether it changed anything.
-bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool at_initialize){
+bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool){
  load_options();if(!options.enabled||!source.encodeConfig)return false;
  init=source;config=*source.encodeConfig;init.encodeConfig=&config;
  auto& rc=config.rcParams;
@@ -78,10 +78,12 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  if(options.cbr&&rc.averageBitRate)rc.maxBitRate=rc.averageBitRate;
  const uint32_t fps=init.frameRateDen?init.frameRateNum/init.frameRateDen:90;
  if(rc.averageBitRate&&fps){rc.vbvBufferSize=rc.averageBitRate/fps*static_cast<uint32_t>(options.vbv);rc.vbvInitialDelay=0;}
- if(at_initialize)init.presetGUID=preset_guid(options.preset);
- // A changed rate control or buffer needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
- const int signature=(options.cbr?1000:0)+options.vbv;
- applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;if(at_initialize)applied_preset=options.preset;
+ // SteamVR reconfigures before every frame with its own preset, and the encoder follows the preset it is given each time, so the chosen
+ // one is named on every call, not only when the encoder is created.
+ init.presetGUID=preset_guid(options.preset);
+ // A changed rate control, buffer or preset needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
+ const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000;
+ applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
  return true;
 }
@@ -91,7 +93,11 @@ int StockInitialize(void* encoder,void* init){
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
- if(original&&apply_options(*original,patched,config,true))return status(table.nvEncInitializeEncoder(encoder,&patched));
+ if(original&&apply_options(*original,patched,config,true)){
+  trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d)",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode));
+  return status(table.nvEncInitializeEncoder(encoder,&patched));
+ }
+ trace("initialize: left alone (options off or no encode configuration: config=%d)",original&&original->encodeConfig?1:0);
  return status(table.nvEncInitializeEncoder(encoder,original));
 }
 int StockReconfigure(void* encoder,void* params){
@@ -103,7 +109,7 @@ int StockReconfigure(void* encoder,void* params){
   if(signature_changed){copy.resetEncoder=1;copy.forceIDR=1;}
   const auto result=table.nvEncReconfigureEncoder(encoder,&copy);
   if(signature_changed||reconfigure_calls<5){
-   trace("reconfigure: driver rc=%d vbv=%u avg=%u -> rc=%d vbv=%u, reset=%d, result=%d",static_cast<int>(original->reInitEncodeParams.encodeConfig->rcParams.rateControlMode),
+   trace("reconfigure: preset P%d, driver rc=%d vbv=%u avg=%u -> rc=%d vbv=%u, reset=%d, result=%d",applied_preset,static_cast<int>(original->reInitEncodeParams.encodeConfig->rcParams.rateControlMode),
     original->reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize,original->reInitEncodeParams.encodeConfig->rcParams.averageBitRate,
     static_cast<int>(config.rcParams.rateControlMode),config.rcParams.vbvBufferSize,signature_changed?1:0,static_cast<int>(result));
   }

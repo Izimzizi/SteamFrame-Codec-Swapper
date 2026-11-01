@@ -7,6 +7,7 @@ public static class AppData
     public static string SettingsPath => Path.Combine(Root, "settings.json");
     public static string HudPath => Path.Combine(Root, "hud.json");
     public static string HevcOptionsPath => Path.Combine(Root, "hevc-options.txt");
+    public static string EncodeTimingPath => Path.Combine(Root, "encode-timing.txt");
     public static string HudLogPath => Path.Combine(Root, "hud.log");
     public static string SessionDirectory => Path.Combine(Root, "CodecSession");
     public static string KnownHosts => Path.Combine(Root, "known_hosts");

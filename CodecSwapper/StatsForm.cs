@@ -64,7 +64,7 @@ public sealed class StatsForm : Form
         _dropped.Text = sample.Health is { } h
             ? $"dropped frames (sender held back): {h.HeldTotal} total / {h.HeldLastMinute} in last 60 s" + (h.CompositorAvailable ? $"    PC: {h.CompositorDropped} dropped, {h.CompositorLate} late" : "")
             : "";
-        _errors.Text = sample.EncodeErrors > 0 ? $"encode errors {sample.EncodeErrors}" : "";
+        _errors.Text = (sample.Timing is { } t ? t.Describe() + (sample.EncodeErrors > 0 ? "    " : "") : "") + (sample.EncodeErrors > 0 ? $"encode errors {sample.EncodeErrors}" : "");
         _note.Text = (_service.Recording ? $"Recording to {_service.LogPath}\n" : "") + (sample.Note ?? sample.CodecDetail);
         foreach (var label in new[] { _encoder, _dropped, _errors, _note }) label.Visible = label.Text.Length > 0;
         _graph.Update(_service.Sampler.History, tray.TargetMbps);

@@ -14,7 +14,7 @@ public sealed class RunLog : IDisposable
         "time", "elapsed_s", "mbps", "avg60_mbps", "fps", "frames_encoded", "bytes_encoded", "codec", "codec_verified",
         "tray_state", "target_mbps", "enc_avg_mbps", "enc_max_mbps", "enc_rate_control", "enc_vbv_bits", "enc_preset", "enc_fps",
         "last_frame_qp", "avg_qp", "last_frame_bytes", "encode_errors", "held_total", "held_last60", "link_stalls",
-        "comp_available", "comp_dropped", "comp_late", "comp_reprojected", "steamvr_running", "note"
+        "comp_available", "comp_dropped", "comp_late", "comp_reprojected", "encode_avg_ms", "encode_max_ms", "steamvr_running", "note"
     ];
 
     private readonly StreamWriter _writer;
@@ -46,6 +46,7 @@ public sealed class RunLog : IDisposable
             health is null ? "" : health.LinkStalls.ToString(CultureInfo.InvariantCulture),
             health is null ? "" : health.CompositorAvailable ? "1" : "0", health is { CompositorAvailable: true } ? health.CompositorDropped.ToString(CultureInfo.InvariantCulture) : "",
             health is { CompositorAvailable: true } ? health.CompositorLate.ToString(CultureInfo.InvariantCulture) : "", health is { CompositorAvailable: true } ? health.CompositorReprojected.ToString(CultureInfo.InvariantCulture) : "",
+            Number(sample.Timing?.AverageMs, "0.00"), Number(sample.Timing?.MaxMs, "0.00"),
             sample.SteamVrRunning ? "1" : "0", sample.Note ?? ""
         ];
         _writer.WriteLine(string.Join(',', row.Select(Escape)));

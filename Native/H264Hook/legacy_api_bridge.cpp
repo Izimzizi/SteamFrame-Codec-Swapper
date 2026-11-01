@@ -3,7 +3,9 @@
 #include <windows.h>
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -11,6 +13,10 @@
 #include "legacy_api_bridge.h"
 #include "legacy_picture.h"
 #include "stock_forward.h"
+
+#ifndef ENCODE_TIMING_WINDOW_MS
+#define ENCODE_TIMING_WINDOW_MS 1000
+#endif
 
 namespace {
 constexpr uint32_t old_common=0x7101000b,old_table=0x7102000b;
@@ -56,7 +62,29 @@ HookBridgeStats stats{sizeof(HookBridgeStats),1};
 // SteamVR sees one set of buffer handles. Each wraps the handle in the H.264 session and the one in the stock HEVC session
 // (when the driver's own API is available), so the codec can change while SteamVR keeps running.
 struct VResource{void* h264=nullptr;void* stock=nullptr;};
-struct VOutput{void* h264=nullptr;void* stock=nullptr;int last=0;};
+struct VOutput{void* h264=nullptr;void* stock=nullptr;int last=0;LONGLONG started=0;};
+// Encode time as SteamVR sees it: from submitting a picture to its bitstream being ready. Averaged over a second and written to
+// encode-timing.txt in the tray's data folder, where the monitor and the HUD read it.
+double timing_sum=0,timing_max=0;uint32_t timing_frames=0;ULONGLONG timing_window=0;
+LONGLONG ticks(){LARGE_INTEGER value;QueryPerformanceCounter(&value);return value.QuadPart;}
+void write_timing(const char* codec){
+ char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
+ const std::string directory=std::string(base)+"\\CodecSwapper";CreateDirectoryA(directory.c_str(),nullptr);
+ const std::string path=directory+"\\encode-timing.txt",temporary=path+".tmp";
+ FILETIME now{};GetSystemTimeAsFileTime(&now);
+ const unsigned long long unix_ms=((static_cast<unsigned long long>(now.dwHighDateTime)<<32|now.dwLowDateTime)-116444736000000000ULL)/10000ULL;
+ FILE* file=nullptr;if(fopen_s(&file,temporary.c_str(),"w")||!file)return;
+ fprintf(file,"unix_ms=%llu\ncodec=%s\nframes=%u\navg_ms=%.2f\nmax_ms=%.2f\n",unix_ms,codec,timing_frames,timing_sum/timing_frames,timing_max);fclose(file);
+ MoveFileExA(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING);
+}
+void note_encoded(VOutput* output,const char* codec){
+ if(!output->started)return;
+ static const double frequency=[]{LARGE_INTEGER value;QueryPerformanceFrequency(&value);return double(value.QuadPart);}();
+ const double ms=double(ticks()-output->started)*1000.0/frequency;output->started=0;
+ timing_sum+=ms;timing_max=std::max(timing_max,ms);++timing_frames;
+ const ULONGLONG now=GetTickCount64();if(!timing_window)timing_window=now;
+ if(now-timing_window>=ENCODE_TIMING_WINDOW_MS){write_timing(codec);timing_sum=timing_max=0;timing_frames=0;timing_window=now;}
+}
 struct VMapped{void* real=nullptr;int on=0;uint32_t format=0;};
 int active_mode=0; // 0 H.264, 1 stock HEVC
 HookSwitchInfo switch_info{sizeof(HookSwitchInfo),1};
@@ -354,7 +382,7 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
  uint32_t extra_flags=0;
  if(!eos){if(session->last_encoded<0)session->last_encoded=on;
   else if(session->last_encoded!=on){extra_flags=NV_ENC_PIC_FLAG_FORCEIDR|NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;session->last_encoded=on;}}
- if(known_output)output->last=on;
+ if(known_output){output->last=on;output->started=ticks();}
  NVENCSTATUS status;
  if(on){
   status=static_cast<NVENCSTATUS>(StockEncode(session->stock,source,eos?nullptr:mapped->real,real_output,extra_flags));++switch_info.stock_encodes;++stats.encodes;
@@ -391,7 +419,7 @@ NVENCSTATUS NVENCAPI lock_output(void* encoder,NV_ENC_LOCK_BITSTREAM* source){
   // Stock HEVC: the driver's own structure, filled in place.
   const auto result=static_cast<NVENCSTATUS>(StockLock(stock,source,output->stock));
   std::lock_guard<std::mutex> lock(mutex);
-  if(result==NV_ENC_SUCCESS){++switch_info.stock_locks;++stats.locks;stats.bytes+=source->bitstreamSizeInBytes;}else{++stats.errors;++switch_info.stock_errors;}
+  if(result==NV_ENC_SUCCESS){++switch_info.stock_locks;++stats.locks;stats.bytes+=source->bitstreamSizeInBytes;note_encoded(output,"HEVC");}else{++stats.errors;++switch_info.stock_errors;}
   return result;
  }
  // Only the audited common request/result prefix is accessed in the legacy
@@ -408,7 +436,7 @@ NVENCSTATUS NVENCAPI lock_output(void* encoder,NV_ENC_LOCK_BITSTREAM* source){
   source->pictureStruct=copy.pictureStruct;source->frameAvgQP=copy.frameAvgQP;source->frameSatd=copy.frameSatd;
  }
  {std::lock_guard<std::mutex> lock(mutex);stats.last_status=status;
-  if(status==NV_ENC_SUCCESS){++stats.locks;stats.bytes+=copy.bitstreamSizeInBytes;}else ++stats.errors;}
+  if(status==NV_ENC_SUCCESS){++stats.locks;stats.bytes+=copy.bitstreamSizeInBytes;note_encoded(output,"H.264");}else ++stats.errors;}
  return status;
 }
 NVENCSTATUS NVENCAPI unlock_output(void* encoder,NV_ENC_OUTPUT_PTR handle){
