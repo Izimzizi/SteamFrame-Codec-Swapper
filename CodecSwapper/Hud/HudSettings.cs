@@ -7,7 +7,7 @@ namespace CodecSwapper;
 /// <summary>Where the in-VR HUD sits and which controller carries it. Stored beside the tray settings as hud.json.</summary>
 public sealed class HudSettings
 {
-    public const float MinimumWidth = .10f, MaximumWidth = .50f, DefaultWidth = .30f;
+    public const float MinimumWidth = .10f, MaximumWidth = .50f, DefaultWidth = .2135f;
 
     /// <summary>On unless the user turned it off (from the HUD itself or the tray menu).</summary>
     public bool Enabled { get; set; } = true;
@@ -19,8 +19,10 @@ public sealed class HudSettings
     /// <summary>Laser coordinates arrive in GL space (origin bottom-left); turn this off if a build reports them top-left.</summary>
     public bool FlipLaserY { get; set; } = true;
 
-    /// <summary>Hovering clear above the controller (its bottom edge about 9 cm over it), tilted back toward the face of someone holding it out in front of them, so the controller models that SteamVR draws over overlays do not cover it.</summary>
-    public static Pose DefaultPose { get; } = Pose.Rotation(0, -50, 0, new Vector3(0, .18f, -.05f));
+    /// <summary>The placement the author chose on a headset (Reposition, then Save): a 21 cm panel lying flat above the controller and 27 cm back toward the user, clear of the controller models SteamVR draws over overlays.</summary>
+    public static Pose DefaultPose { get; } = Pose.TryFromMatrix34(
+        [0.9874174f, -0.017996771f, 0.1571086f, -0.004516281f, -0.15356612f, 0.12798984f, 0.97981435f, -0.011095941f, -0.0377418f, -0.9916122f, 0.123615704f, 0.27361977f], out var chosen)
+        ? chosen : Pose.Rotation(0, -50, 0, new Vector3(0, .18f, -.05f));
 
     [JsonIgnore] public bool IsLeft => !string.Equals(Hand, "right", StringComparison.OrdinalIgnoreCase);
 

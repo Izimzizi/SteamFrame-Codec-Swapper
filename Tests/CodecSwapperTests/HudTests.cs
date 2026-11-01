@@ -16,10 +16,12 @@ public sealed class HudMathTests
     }
 
     [Fact]
-    public void Tilting_back_by_the_default_pitch_turns_the_panel_toward_up_and_back()
+    public void The_default_placement_lies_facing_up_and_sits_behind_the_controller_toward_the_user()
     {
         var normal = HudSettings.DefaultPose.Rotate(Vector3.UnitZ);
-        Assert.True(normal.Y > .7f && normal.Z > .6f, normal.ToString());
+        Assert.True(normal.Y > .9f, normal.ToString());
+        Assert.True(HudSettings.DefaultPose.T.Z > .25f, HudSettings.DefaultPose.T.ToString());
+        Assert.Equal(.2135f, HudSettings.DefaultWidth);
     }
 
     [Fact]

@@ -31,8 +31,8 @@ public static class HudPanel
     public const int Width = 640, Height = 624, BitrateStep = 5, SnapMbps = 50, SnapReachMbps = 8;
     /// <summary>The top of SteamVR's own bitrate slider, marked on the HUD's slider; a click close to it lands exactly on it.</summary>
     public const int MarkerMbps = 350, MarkerReachMbps = 15;
-    /// <summary>With the dashboard closed there is no input, so only the readouts are drawn, centred in the picture so the panel stays where it was.</summary>
-    private const int CompactHeight = 372, CompactOffset = (Height - CompactHeight) / 2;
+    /// <summary>With the dashboard closed there is no input, so only the readouts are drawn, at the top of the picture: opening the dashboard grows the panel downward and its top edge stays where it was.</summary>
+    private const int CompactHeight = 372;
     public static readonly Rectangle GraphArea = new(20, 200, Width - 40, 120);
     public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
     private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
@@ -117,7 +117,6 @@ public static class HudPanel
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         var accent = view.Repositioning ? Color.FromArgb(255, 170, 60) : Color.FromArgb(70, 160, 255);
         var compact = !view.Interactive && !view.Repositioning;
-        if (compact) g.TranslateTransform(0, CompactOffset);
         using (var path = Rounded(new Rectangle(0, 0, Width - 1, (compact ? CompactHeight : Height) - 1), 26))
         {
             using var back = new SolidBrush(Color.FromArgb(235, 18, 20, 26));
