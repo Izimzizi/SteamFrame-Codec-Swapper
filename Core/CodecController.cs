@@ -41,7 +41,7 @@ public sealed record CodecServiceStatus
     [JsonPropertyName("mode_live")] public bool ModeLive { get; init; }
     /// <summary>The H.264 choice is on; false means the user went back to Default (HEVC) but the session stayed open.</summary>
     [JsonPropertyName("want_h264")] public bool WantH264 { get; init; } = true;
-    /// <summary>The session works through the permanent driver, so it can flip the codec without being restarted.</summary>
+    /// <summary>The session works through the installed SteamVR driver, so it can flip the codec without being restarted.</summary>
     [JsonPropertyName("driver_session")] public bool DriverSession { get; init; }
     [JsonIgnore] public bool Live { get; init; }
     [JsonIgnore] public bool CanStart { get; init; }
@@ -70,7 +70,7 @@ public sealed class CodecController
     public CodecController(string? sessionDirectory = null, string? runtimeDirectory = null,
         Func<int, double?>? ownerCreation = null, Func<double>? now = null, SteamPaths? steamPaths = null)
     {
-        _sessionDirectory = Path.GetFullPath(sessionDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamFrameTray", "CodecSession"));
+        _sessionDirectory = Path.GetFullPath(sessionDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodecSwapper", "CodecSession"));
         _runtimeDirectory = Path.GetFullPath(runtimeDirectory ?? Path.Combine(AppContext.BaseDirectory, "CodecLab"));
         _ownerCreation = ownerCreation ?? ProcessCreatedEpoch;
         _now = now ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0);
@@ -335,7 +335,7 @@ public sealed class CodecController
     internal static ProcessStartInfo CreateStartInfo(string runtimeDirectory, string sessionDirectory, string configPath)
     {
         var python = Path.Combine(runtimeDirectory, "runtime", "python.exe");
-        var supervisor = Path.Combine(runtimeDirectory, "codec_supervisor.py");
+        var supervisor = Path.Combine(runtimeDirectory, "session_supervisor.py");
         if (!File.Exists(python) || !File.Exists(supervisor)) throw new FileNotFoundException("The paired codec runtime is missing. Install the codec-enabled app package.");
         var info = new ProcessStartInfo(python) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = runtimeDirectory,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };

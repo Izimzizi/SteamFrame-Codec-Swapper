@@ -10,7 +10,7 @@ Keep the live dashboard visible when comparing changes. Requested settings, acce
 API submission metadata, encoder timing, PC presentations and receiver recovery are
 different measurements. An accepted setting does not establish better picture quality.
 
-## Encoder experiments
+## Encoder settingss
 
 **A selected CBR mode is not proof that CBR is active.** The app now puts a warning
 above the dashboard when the requested and accepted policies differ. The updated

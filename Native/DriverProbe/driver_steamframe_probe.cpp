@@ -1,5 +1,5 @@
 // Throwaway probe: does SteamVR load a deviceless external driver, and does it do so before driver_vrlink brings up its encoder?
-// It reports no devices, does nothing else, and writes a timeline to %LOCALAPPDATA%\SteamFrameTray\driver-probe.log.
+// It reports no devices, does nothing else, and writes a timeline to %LOCALAPPDATA%\CodecSwapper\driver-probe.log.
 #define NOMINMAX
 #include <windows.h>
 #include <atomic>
@@ -27,7 +27,7 @@ void open_log(){
  if(log_file)return;
  char base[MAX_PATH]{};
  if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
- const std::string directory=std::string(base)+"\\SteamFrameTray";CreateDirectoryA(directory.c_str(),nullptr);
+ const std::string directory=std::string(base)+"\\CodecSwapper";CreateDirectoryA(directory.c_str(),nullptr);
  log_file=fopen((directory+"\\driver-probe.log").c_str(),"a");
  QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&origin);
 }

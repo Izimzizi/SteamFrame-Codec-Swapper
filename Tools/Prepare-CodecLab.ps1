@@ -1,5 +1,5 @@
 param(
-    # Where the CodecLab folder (runtime\ and, with -BuildBackend in Package-Tray.ps1, Backend\) is assembled.
+    # Where the CodecLab folder (runtime\ and, with -BuildBackend in Package-CodecSwapper.ps1, Backend\) is assembled.
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\artifacts\CodecLab'),
     # Packages from before the Assets folder was dropped still require it to exist.
     [switch]$LegacyAssets

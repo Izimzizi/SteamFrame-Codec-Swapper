@@ -1,6 +1,6 @@
 """Selected nonsecret decoder/launch diagnostics through paired SSH."""
 import pathlib,re,subprocess
-options=['-i',r'C:\Users\ellio\AppData\Local\steamos-devkit\devkit_rsa','-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',r'UserKnownHostsFile=C:\Users\ellio\AppData\Local\SteamFrameTray\known_hosts','-o','ConnectTimeout=3']
+options=['-i',r'C:\Users\ellio\AppData\Local\steamos-devkit\devkit_rsa','-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',r'UserKnownHostsFile=C:\Users\ellio\AppData\Local\CodecSwapper\known_hosts','-o','ConnectTimeout=3']
 script=r'''
 import json,pathlib,re
 root=pathlib.Path('/home/steamos/.local/share/Steam/logs')

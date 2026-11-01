@@ -19,7 +19,7 @@ public sealed record BitratePatchStatus(string FilePath, string BackupPath, Bitr
     public string Compatibility => IsSupported
         ? DriverCompatibility.ReferenceDriver(Sha256) is var reference && reference != "No reference hash match"
             ? $"Verified bitrate patch: {reference}." : "Compatible driver layout verified."
-        : "Bitrate patch compatibility has not been verified.";
+        : "Bitrate limit patch compatibility has not been verified.";
     public string Details => $"{InstalledVersion}\nReference driver: {DriverCompatibility.ReferenceDriver(Sha256)}\n{DriverCompatibility.VerifiedVersions}\n" +
         $"File: {FilePath}\nSHA-256: {Sha256 ?? "unavailable"}\nState: {State}\nBackup: {BackupPath}\nBackup status: {(BackupState == BitrateBackupState.Missing && State == BitratePatchState.Original ? "Not created yet; saved automatically when installing the override" : BackupState.ToString())}\nBackup SHA-256: {BackupSha256 ?? "unavailable"}\nPatch receipt: {ReceiptPath}\n" +
         $"Verification: {(VerificationError.Length == 0 ? Message : VerificationError)}";

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — renamed to SteamFrame Codec Swapper
+
+- The app is now **CodecSwapper.exe** (project folder `CodecSwapper/`, data in `%LOCALAPPDATA%\CodecSwapper`, supervisor `session_supervisor.py`, package script `Package-CodecSwapper.ps1`). Older entries below use the old names.
+- Menu wording: SteamVR driver (was Permanent PC driver), Encoder settings, Stream monitor, Record stream log, Frame connection…, Bitrate limit patch, VR HUD.
+
+
 ## 1.8.2 — Driver compatibility and a lower-latency HEVC option
 
 - Added an optional Lower-latency HEVC preset: 200 Mbps, single pass and synchronous

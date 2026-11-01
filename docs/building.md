@@ -10,9 +10,9 @@
 ## Build and test
 
 ```powershell
-dotnet build SteamFrameTray -c Release
+dotnet build CodecSwapper -c Release
 dotnet test Tests\CoreTests
-dotnet test Tests\TrayTests
+dotnet test Tests\CodecSwapperTests
 dotnet test Tests\PatcherTests
 dotnet test Tests\StreamingHealthTests
 dotnet run --project Tests\CompositorTimingTests -c Release
@@ -31,10 +31,10 @@ None of these tests modify your Steam configuration, and none load anything into
 
 ## Package
 
-`Package-Tray.ps1` publishes the tray (self-contained by default) and assembles `CodecLab` beside it, then writes a zip:
+`Package-CodecSwapper.ps1` publishes the tray (self-contained by default) and assembles `CodecLab` beside it, then writes a zip:
 
 ```powershell
-.\Package-Tray.ps1 -CodecLabSource <folder with runtime\ (isolated Python), Assets\ and Backend\> -OutputDirectory artifacts\SteamFrameTray
+.\Package-CodecSwapper.ps1 -CodecLabSource <folder with runtime\ (isolated Python), Assets\ and Backend\> -OutputDirectory artifacts\CodecSwapper
 ```
 
 `Backend\` holds `SteamFrameH264Hook.dll` and `hook_control.exe`; pass `-BuildBackend` to compile them from `Native\H264Hook` instead. Exit any running tray (and end any leftover supervisor) before packaging over the same folder.
@@ -43,7 +43,7 @@ None of these tests modify your Steam configuration, and none load anything into
 
 | Path | Contents |
 | --- | --- |
-| `SteamFrameTray` | Tray app, setup wizard, stats window, run log |
+| `CodecSwapper` | Tray app, setup wizard, stats window, run log |
 | `Core` | Shared UI-free code (see the project layout in the root README) |
 | `Native` | C++ NVENC encoder probe, quality-map logic and tests; see [its README](../Native/README.md) |
 | `Native\H264Hook` | The H.264 hook DLL, its controller and tests; see [its README](../Native/H264Hook/README.md) |

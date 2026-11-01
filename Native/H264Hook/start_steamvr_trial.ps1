@@ -4,7 +4,7 @@ if($PeakMbps -lt $Mbps){throw 'Peak must be at least the average target'}
 $labRepo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $labVrRoot='C:\Program Files (x86)\Steam\steamapps\common\SteamVR\bin\win64\'
 $labBackend=Join-Path $labRepo 'artifacts\H264Hook'
-if(Get-Process SteamFrameTray -ErrorAction SilentlyContinue){throw 'Exit the tray before this isolated trial'}
+if(Get-Process CodecSwapper -ErrorAction SilentlyContinue){throw 'Exit the tray before this isolated trial'}
 if(Get-Process vrserver -ErrorAction SilentlyContinue){throw 'Stop SteamVR before this isolated trial'}
 Start-Process -FilePath 'C:\Program Files (x86)\Steam\steam.exe' -ArgumentList '-applaunch','250820' -WindowStyle Hidden
 $labDeadline=[DateTime]::UtcNow.AddSeconds(25)

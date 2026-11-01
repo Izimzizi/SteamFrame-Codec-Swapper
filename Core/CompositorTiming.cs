@@ -59,7 +59,7 @@ public sealed class CompositorTiming
         _paths = paths ?? throw new ArgumentNullException(nameof(paths)); _testRead = testRead;
         CapturePath = Path.Combine(Path.GetFullPath(diagnosticsDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SteamFrameTray", "Diagnostics")), "compositor-timing.jsonl");
+            "CodecSwapper", "Diagnostics")), "compositor-timing.jsonl");
         ValidateLayout();
         _current = Snapshot(DateTimeOffset.Now, false, "Compositor timing has not been polled.", null, null, null, null, null, null, null);
     }

@@ -148,7 +148,7 @@ public sealed class StreamingHealth
         var logs = Path.GetFullPath(steamLogsDirectory);
         var diagnostics = Path.GetFullPath(diagnosticsDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SteamFrameTray", "Diagnostics"));
+            "CodecSwapper", "Diagnostics"));
         CapturePath = Path.Combine(diagnostics, "streaming-health.jsonl");
         _driver = new Tail(Path.Combine(logs, DriverName), DriverName);
         _compositor = new Tail(Path.Combine(logs, CompositorName), CompositorName);

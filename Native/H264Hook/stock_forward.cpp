@@ -31,17 +31,17 @@ int StockOpen(const void* open_params,void** encoder){
  if(factory){NV_ENCODE_API_FUNCTION_LIST fresh{};fresh.version=table.version;factory(&fresh);}
  return status(table.nvEncOpenEncodeSessionEx(&copy,encoder));
 }
-// Optional rate-control overrides for the driver's own (HEVC) encoder, read from stock-options.txt in the tray's data folder:
+// Optional rate-control overrides for the driver's own (HEVC) encoder, read from hevc-options.txt in the tray's data folder:
 //   enabled=1  rate_control=vbr|cbr  preset=1..7  vbv=1..16
 // The file is checked about twice a second, so a change reaches the encoder SteamVR reconfigures before its next frame. Nothing is
 // touched unless enabled=1; the driver's own parameters are copied, never edited in place.
 namespace {
-struct StockOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;};
-StockOptions options;ULONGLONG options_checked=0;
+struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;};
+HevcOptions options;ULONGLONG options_checked=0;
 void load_options(){
  const ULONGLONG now=GetTickCount64();if(options_checked&&now-options_checked<500)return;options_checked=now;
- options=StockOptions{};char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
- FILE* file=nullptr;const std::string path=std::string(base)+"\\SteamFrameTray\\stock-options.txt";
+ options=HevcOptions{};char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
+ FILE* file=nullptr;const std::string path=std::string(base)+"\\CodecSwapper\\hevc-options.txt";
  if(fopen_s(&file,path.c_str(),"r")||!file)return;
  char line[96];
  while(fgets(line,sizeof(line),file)){

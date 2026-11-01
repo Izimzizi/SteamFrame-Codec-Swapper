@@ -58,20 +58,20 @@ jobs:
         run: |
           dotnet test Tests/CoreTests -c Release --nologo
           if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
-          dotnet test Tests/TrayTests -c Release --nologo
+          dotnet test Tests/CodecSwapperTests -c Release --nologo
           if ($LASTEXITCODE -ne 0) { throw 'Tray tests failed' }
       - name: Assemble the Python runtime
         shell: pwsh
         run: |
           # Commits from before the Assets folder was dropped still insist on it.
-          $legacy = Select-String -Path src/Package-Tray.ps1 -Pattern "'runtime\python.exe', 'Assets'" -SimpleMatch -Quiet
+          $legacy = Select-String -Path src/Package-CodecSwapper.ps1 -Pattern "'runtime\python.exe', 'Assets'" -SimpleMatch -Quiet
           $arguments = @{ OutputDirectory = "$PWD/codeclab" }
           if ($legacy) { $arguments.LegacyAssets = $true }
           & ci/Tools/Prepare-CodecLab.ps1 @arguments
       - name: Build the hook and package the tray
         shell: pwsh
         working-directory: src
-        run: ./Package-Tray.ps1 -CodecLabSource "$env:GITHUB_WORKSPACE/codeclab" -OutputDirectory "$env:GITHUB_WORKSPACE/out/SteamFrameTray" -BuildBackend
+        run: ./Package-CodecSwapper.ps1 -CodecLabSource "$env:GITHUB_WORKSPACE/codeclab" -OutputDirectory "$env:GITHUB_WORKSPACE/out/CodecSwapper" -BuildBackend
       - name: Publish the pre-release
         shell: pwsh
         env:
@@ -84,6 +84,6 @@ jobs:
             # An annotated tag carries its message; a lightweight tag yields the commit message, which is fine too.
             $notes = (git tag -l --format='%(contents)' $env:RELEASE_TAG | Out-String).Trim()
           }
-          if (-not $notes) { $notes = 'Dev build for testing. Extract the whole zip and run SteamFrameTray.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.' }
+          if (-not $notes) { $notes = 'Dev build for testing. Extract the whole zip and run CodecSwapper.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.' }
           Set-Content -Path "$env:RUNNER_TEMP/notes.md" -Value "$notes`n`nBuilt from commit $sha."
-          gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE/out/SteamFrameTray.zip" --repo "${{ github.repository }}" --target $sha --prerelease --title $env:RELEASE_TAG --notes-file "$env:RUNNER_TEMP/notes.md"
+          gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE/out/CodecSwapper.zip" --repo "${{ github.repository }}" --target $sha --prerelease --title $env:RELEASE_TAG --notes-file "$env:RUNNER_TEMP/notes.md"

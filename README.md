@@ -1,6 +1,6 @@
-# SteamFrame Advanced Options
+# SteamFrame Codec Swapper
 
-A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.264 at up to 500 Mbps** from SteamVR, switches between H.264 and the stock HEVC stream while you play, and shows what the stream is doing, both in a monitor window and on an **in-VR HUD** attached to a controller.
+A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that streams **H.264 at up to 500 Mbps** from SteamVR, switches between H.264 and the stock HEVC stream while you play, and shows what the stream is doing, both in a monitor window and on an **in-VR HUD** attached to a controller.
 
 > ## ⚠️ Heavily work in progress
 >
@@ -17,7 +17,7 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 - **Fast switching.** The SteamVR-side driver stays loaded and the SSH sessions to the Frame stay open, so going H.264 ↔ HEVC restarts only the Frame's stream (about 9 s end to end on the author's setup), not SteamVR.
 - **Encoder options.** Rate control (VBR / CBR), NVENC preset (P1–P7) and VBV buffer (1–16 frames of the average bitrate). They apply live to H.264 and also to Default (HEVC).
 - **Stream monitor.** Encoded Mbps with a 60-second average, FPS, what the encoder was asked for, frames held back by the sender and dropped/late on the PC, encode errors, the active codec and a 60-second graph. It can also record a CSV run log.
-- **In-VR HUD.** A panel on a controller with the same readouts and laser-pointer controls (see [In-VR HUD](#in-vr-hud)).
+- **VR HUD.** A panel on a controller with the same readouts and laser-pointer controls (see [VR HUD](#in-vr-hud)).
 - **Connection modes.** Works with the dongle only, plain Wi-Fi only, or both at once (multilink).
 
 ## How it works
@@ -25,7 +25,7 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 ```
  Tray (WinForms)  ──►  Codec supervisor (Python, per session) ──SSH──►  Steam Frame
    │  HUD helper process                 │                               patched Steam Link client
-   │  stock-options.txt                  ▼                               (bind-mounted over the stock one)
+   │  hevc-options.txt                  ▼                               (bind-mounted over the stock one)
    │                              SteamVR (vrserver.exe)
    └───────────────────────────►   driver_steamframe.dll  (the hook, as a SteamVR driver)
                                     ├─ H.264 bridge: SDK 11.1 HEVC calls → an H.264 NVENC session
@@ -34,16 +34,16 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 
 - **The Frame side.** `Frame/Codec/stage_client_codec.py` patches two instructions in a copy of the Steam Link client; `root_session.py` bind-mounts that copy over the stock one (root, via SSH and sudo). Going back to HEVC un-mounts it. Stream start/stop and the codec flip are driven through Steam's own debugger channel (`frame_cef_server.py`, one long-lived SSH session instead of a login per command).
 - **The PC side.** `Native/H264Hook` builds `SteamFrameH264Hook.dll`. It detours `NvEncodeAPICreateInstance` for calls coming from `driver_vrlink.dll` and hands back a bridge table that turns the driver's HEVC-shaped encoder session into an H.264 one. A second path forwards to the real NVENC untouched ("stock"). The active codec is one global mode that can be flipped while SteamVR runs.
-- **The permanent driver.** The same DLL is installed as a SteamVR driver (`driver_steamframe.dll` plus `driver.vrdrivermanifest`, registered with `vrpathreg adddriver`), so it is loaded at every SteamVR start, begins on stock HEVC and only switches when you ask. No injection, no SteamVR restart. Install it from the tray's *Permanent PC driver (experiment)* menu.
-- **The supervisor.** `Frame/Codec/codec_supervisor.py` is the session between tray and Frame: it keeps the choice (H.264 or HEVC) across SteamVR restarts, tolerates an unreachable Frame (the choice is applied when it returns), and restores stock on disarm or when the tray goes away.
-- **The tray.** `SteamFrameTray/` arms/disarms, reads and writes SteamVR's bitrate (live through OpenVR, or in `steamvr.vrsettings` when SteamVR is closed), samples stats and runs the HUD.
+- **The SteamVR driver.** The same DLL is installed as a SteamVR driver (`driver_steamframe.dll` plus `driver.vrdrivermanifest`, registered with `vrpathreg adddriver`), so it is loaded at every SteamVR start, begins on stock HEVC and only switches when you ask. No injection, no SteamVR restart. Install it from the tray's *SteamVR driver* menu.
+- **The supervisor.** `Frame/Codec/session_supervisor.py` is the session between tray and Frame: it keeps the choice (H.264 or HEVC) across SteamVR restarts, tolerates an unreachable Frame (the choice is applied when it returns), and restores stock on disarm or when the tray goes away.
+- **The tray.** `CodecSwapper/` arms/disarms, reads and writes SteamVR's bitrate (live through OpenVR, or in `steamvr.vrsettings` when SteamVR is closed), samples stats and runs the HUD.
 
 ## Install and first run
 
 1. On the Frame: turn on Developer Mode and set a user password (Developer → Set User Password).
-2. Extract the whole zip. `SteamFrameTray.exe` needs the `CodecLab` and `Native` folders beside it. It is unsigned, so Windows SmartScreen may warn (More info → Run anyway).
+2. Extract the whole zip. `CodecSwapper.exe` needs the `CodecLab` and `Native` folders beside it. It is unsigned, so Windows SmartScreen may warn (More info → Run anyway).
 3. The **Setup / connection check** opens by itself. The address is `frame` over Wi-Fi, or `10.35.78.1` with the dongle. It shows the Frame's host key fingerprint to trust once, creates the app's own SSH key and asks for the Frame password once to authorize that key. The password goes to Windows Credential Manager only after the Frame accepts it; it is never written to settings, files or command lines. Windows' optional **OpenSSH Client** feature is required.
-4. Optional but recommended: tray menu → **Permanent PC driver (experiment)** → *Install*. Optional: **Bitrate patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) to allow more than 232 Mbps.
+4. Optional but recommended: tray menu → **SteamVR driver** → *Install*. Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) to allow more than 232 Mbps.
 5. Choose **H.264** in the tray menu (or on the HUD). With SteamVR closed the choice is remembered and applied when SteamVR starts; the tray never launches SteamVR itself.
 
 ## Using it
@@ -54,13 +54,13 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 |---|---|
 | **H.264 / Default (HEVC)** | The codec switch. Choosing Default keeps the session open so switching back is fast. |
 | **Bitrate slider** | 25–500 Mbps, applied when you let go. SteamVR's own slider and the tray follow each other. |
-| **Encoder experiment** | Rate control, preset and VBV, for both codecs. |
-| **Stream stats window** | The monitor. Double-clicking the tray icon opens/closes it. |
-| **Record stats log** | One CSV row per second, setup in `#` header lines. |
-| **In-VR HUD** | Show on a controller, attach left/right, reset position. |
+| **Encoder settings** | Rate control, preset and VBV, for both codecs. |
+| **Stream monitor** | The monitor. Double-clicking the tray icon opens/closes it. |
+| **Record stream log** | One CSV row per second, setup in `#` header lines. |
+| **VR HUD** | Show HUD on a controller, attach left/right, reset position. |
 | **Start with Windows** | Re-arms at login if it was armed. |
-| **Setup / connection check…**, **Password** | Reopen setup; set or forget the stored Frame password. |
-| **Bitrate patch**, **Permanent PC driver** | Install/remove the 500 Mbps patch and the SteamVR driver. |
+| **Frame connection…**, **Password** | Reopen setup; set or forget the stored Frame password. |
+| **Bitrate limit patch**, **SteamVR driver** | Install/remove the 500 Mbps patch and the SteamVR driver. |
 | **Open logs folder / session folder** | Where logs and the supervisor session live. |
 | **Exit** | Restores stock HEVC on the Frame and ends the session. |
 
@@ -68,40 +68,42 @@ A Windows tray app (**SteamFrame Tray**) for the Steam Frame that streams **H.26
 
 Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-second average, FPS (one decimal), target, "encoder asked for X avg / Y peak (rate control, preset, VBV, fps)", frames the sender held back (total and last 60 s) plus PC dropped/late frames, encode errors, a status note and the 60-second graph. While the monitor or HUD is open on **stock HEVC** the tray injects a read-only probe into `vrserver` to read encoder statistics; it is not injected otherwise.
 
-### In-VR HUD
+### VR HUD
 
-Turn on *In-VR HUD → Show on a controller*. When SteamVR is running the panel appears on the chosen controller. It is a SteamVR overlay driven by laser pointer:
+Turn on *VR HUD → Show HUD on a controller*. When SteamVR is running the panel appears on the chosen controller. It is a SteamVR overlay driven by laser pointer:
 
 - the codec buttons, a **bitrate slider** (drag with the laser, applied on release), and three **dropdowns** — *Rate control*, *Preset*, *VBV* — each opening a list of options with a short description;
 - every readout the monitor has: codec, Mbps, 60 s average, FPS, target, encoder-asked line, held-back / dropped / late / errors, note and the 60 s graph;
 - **Move**: hold the trigger on the panel with the other hand's laser to carry it to a new spot on the controller, then *Save*, *Cancel*, or *Default* (reset); *Smaller/Larger* resize it.
 
-Internals worth knowing: the HUD runs in its **own helper process** (`SteamFrameTray.exe --hud-host`) because it talks to SteamVR's native overlay API and a native fault there must not take the tray down; the helper restarts itself. The picture is written into one Direct3D 11 texture, so it updates without flicker. It never starts SteamVR.
+Internals worth knowing: the HUD runs in its **own helper process** (`CodecSwapper.exe --hud-host`) because it talks to SteamVR's native overlay API and a native fault there must not take the tray down; the helper restarts itself. The picture is written into one Direct3D 11 texture, so it updates without flicker. It never starts SteamVR.
 
 ### Encoder options and Default (HEVC)
 
-For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `stock-options.txt` (`rate_control`, `preset`, `vbv`); the hook re-reads it about twice a second and applies the values to SteamVR's own encoder configuration (rate control and VBV on every reconfigure, the preset only when the encoder is created). The defaults (VBR, P2, 2 frames) therefore apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. This HEVC path is covered by a native unit test but has not been confirmed on the headset yet.
+For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `hevc-options.txt` (`rate_control`, `preset`, `vbv`); the hook re-reads it about twice a second and applies the values to SteamVR's own encoder configuration (rate control and VBV on every reconfigure, the preset only when the encoder is created). The defaults (VBR, P2, 2 frames) therefore apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. This HEVC path is covered by a native unit test but has not been confirmed on the headset yet.
 
 ## Where things live
 
-Everything the tray owns is under `%LOCALAPPDATA%\SteamFrameTray` (it never touches the old `SteamLinkVRSettings` folder):
+Everything the tray owns is under `%LOCALAPPDATA%\CodecSwapper` (it never touches the old `SteamLinkVRSettings` folder):
 
 | File | Purpose |
 |---|---|
 | `settings.json` | Preferences (bitrate target, encoder options, startup). Never holds the Frame password. |
 | `hud.json` | HUD on/off, hand, placement, size. |
-| `stock-options.txt` | Encoder options for Default (HEVC), read by the hook. |
+| `hevc-options.txt` | Encoder options for Default (HEVC), read by the hook. |
 | `h264-limit.txt` | Optional width/height limit override for the H.264 bridge. |
 | `tray.log`, `hud.log` | Arm/disarm requests (with who asked) and HUD steps/button presses. |
 | `CodecSession\` | Supervisor session: `status.json`, `supervisor.log`, request/response files. |
 | `Logs\` | Recorded stats CSVs. |
 | `known_hosts`, `frame_ed25519` | The pinned Frame host key and the app's own SSH key. |
 
+Versions before the rename kept their files in `%LOCALAPPDATA%\SteamFrameTray` and stored the Frame password under `SteamFrameAdvancedOptions/FrameUserPassword` in Windows Credential Manager. The app does not read them; delete them if you no longer need them (you will set up the Frame connection again).
+
 ## Project layout
 
 ```
-SteamFrameTray/        The tray app (WinForms): menu, setup wizard, stats window, run log
-SteamFrameTray/Hud/    In-VR HUD: panel drawing, laser controller, OpenVR overlay API, helper process, settings
+CodecSwapper/        The tray app (WinForms): menu, setup wizard, stats window, run log
+CodecSwapper/Hud/    VR HUD: panel drawing, laser controller, OpenVR overlay API, helper process, settings
 Core/                  Shared C# (SteamFrame.Core): SteamVR/Frame access, codec control, bitrate patcher,
                        encoder probe, health readers, advanced encoder controls, capacity sweep, wireless link tools
 Native/H264Hook/       The hook DLL (H.264 bridge, stock forwarding, option overrides), its controller and tests
@@ -109,7 +111,7 @@ Native/                NVENC encoder probe (C++), vendored MinHook / NVIDIA head
 Frame/Codec/           Supervisor, root session, client patcher, Frame stream scripts (start/stop, debugger channel)
 Tests/                 xUnit projects (Core, Tray, Patcher, StreamingHealth, CompositorTiming)
 docs/                  Guides and research notes (some predate the tray and describe the removed WinUI app)
-Package-Tray.ps1       Builds the portable package (artifacts/SteamFrameTray and SteamFrameTray.zip)
+Package-CodecSwapper.ps1       Builds the portable package (artifacts/CodecSwapper and CodecSwapper.zip)
 ```
 
 ## Build, test and package
@@ -117,12 +119,12 @@ Package-Tray.ps1       Builds the portable package (artifacts/SteamFrameTray and
 See [docs/building.md](docs/building.md) for requirements (.NET 9 SDK, Visual Studio C++ build tools, Python 3).
 
 ```powershell
-dotnet build SteamFrameTray -c Release
+dotnet build CodecSwapper -c Release
 dotnet test Tests\CoreTests -c Release
-dotnet test Tests\TrayTests -c Release
+dotnet test Tests\CodecSwapperTests -c Release
 cd Frame\Codec; python -m unittest
 .\Native\H264Hook\build.ps1 -OutputDirectory <dir>     # hook DLL, hook_control.exe, native tests (GPU needed)
-.\Package-Tray.ps1 -CodecLabSource <CodecLab folder with runtime\, Assets\ and Backend\> -OutputDirectory artifacts\SteamFrameTray
+.\Package-CodecSwapper.ps1 -CodecLabSource <CodecLab folder with runtime\, Assets\ and Backend\> -OutputDirectory artifacts\CodecSwapper
 ```
 
 Close a running tray before packaging. The tests do not modify your Steam configuration or load anything into a running SteamVR.
@@ -141,6 +143,6 @@ Close a running tray before packaging. The tests do not modify your Steam config
 
 This project is a **fork** of the original **Steam Link VR settings editor / Steam Frame edition** by **[elliotttate](https://github.com/elliotttate)** ([elliotttate/SteamFrame-Advanced-Options](https://github.com/elliotttate/SteamFrame-Advanced-Options)), released under the MIT license. The original project provided the foundation this work started from: the SteamVR/Steam Link settings access, the bitrate patcher, the NVENC encoder probe, the streaming-health readers and the research notes under `docs/`.
 
-After forking it was **heavily modified**: the tray app, the H.264 hook and Frame client patcher, the supervisor, the permanent SteamVR driver, live H.264 ↔ HEVC switching with a kept session, the shared Frame debugger channel, dongle / Wi-Fi / multilink support, the encoder-option plumbing (including the HEVC overrides), the stream monitor changes and the in-VR HUD were built on top of it. Bugs in this fork are not the original author's.
+After forking it was **heavily modified**: the tray app, the H.264 hook and Frame client patcher, the supervisor, the SteamVR driver, live H.264 ↔ HEVC switching with a kept session, the shared Frame debugger channel, dongle / Wi-Fi / multilink support, the encoder-option plumbing (including the HEVC overrides), the stream monitor changes and the in-VR HUD were built on top of it. Bugs in this fork are not the original author's.
 
 Third-party components keep their own licenses: MinHook/HDE and the NVIDIA Video Codec SDK header under `Native/vendor`, and OpenVR's headers/API. The MIT license in [LICENSE](LICENSE) carries the original copyright notice.

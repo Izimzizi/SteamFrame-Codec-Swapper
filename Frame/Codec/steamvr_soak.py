@@ -11,7 +11,7 @@ BACKEND=options.backend.resolve() if options.backend else ROOT/'artifacts/H264Ho
 OUT=ROOT/('artifacts/H264Hook/steamvr-soak-'+options.label+'.json')
 SSH=[r'C:\Windows\System32\OpenSSH\ssh.exe','-i',r'C:\Users\ellio\AppData\Local\steamos-devkit\devkit_rsa',
  '-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',
- r'UserKnownHostsFile=C:\Users\ellio\AppData\Local\SteamFrameTray\known_hosts',
+ r'UserKnownHostsFile=C:\Users\ellio\AppData\Local\CodecSwapper\known_hosts',
  '-o','ConnectTimeout=3','steamos@10.35.78.1','python3 -']
 REMOTE=r'''
 import datetime,json,pathlib,subprocess,time

@@ -11,7 +11,7 @@ namespace SteamFrame.Core;
 /// </summary>
 public sealed class FrameCredentialStore
 {
-    private const string DefaultTarget = "SteamFrameAdvancedOptions/FrameUserPassword";
+    private const string DefaultTarget = "CodecSwapper/FramePassword";
     private const uint TypeGeneric = 1;
     private const uint PersistLocalMachine = 2;
     private const int ErrorNotFound = 1168;

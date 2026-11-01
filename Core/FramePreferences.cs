@@ -15,7 +15,7 @@ public sealed class FramePreferences
     public string AdbSerial { get; set; } = "";
     public string SshHost { get; set; } = "";
     public string SshKey { get; set; } = DiscoverDevkitKey();
-    public string SshKnownHosts { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamFrameTray", "ssh-known-hosts");
+    public string SshKnownHosts { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodecSwapper", "ssh-known-hosts");
     public int GazeOffset { get; set; } = -4;
     public int PeripheralOffset { get; set; } = 8;
     public bool QualityEnabled { get; set; }
@@ -48,7 +48,7 @@ public sealed class FramePreferences
         if (SweepHistory.Count == 0 && LastSweepCeilingMbps is int ceiling && LastSweepAt is { } at)
             SweepHistory.Add(new SweepRecord(at, ceiling, LastSweepRefreshHz, LastSweepSummary));
     }
-    private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamFrameTray", "frame.json");
+    private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodecSwapper", "frame.json");
     public static FramePreferences Load(string? path = null)
     {
         try

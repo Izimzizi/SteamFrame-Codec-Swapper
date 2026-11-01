@@ -23,7 +23,7 @@ internal sealed class TemporaryPowerLease(IFramePowerSettings settings, string? 
 {
     public const int KeepAwakeSeconds = OpenVrSettings.TemporaryPowerTimeout;
     private readonly string _path = leasePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "SteamFrameTray", "temporary-power-lease.json");
+        "CodecSwapper", "temporary-power-lease.json");
     private readonly SemaphoreSlim _gate = new(1, 1);
     private sealed record Lease(int Version, string SteamIdentity, bool OriginalPause, int OriginalTimeout);
     public bool Enabled { get; private set; }

@@ -112,7 +112,7 @@ static FILE* driver_log=nullptr;
 static std::string data_folder(){
  char base[MAX_PATH]{};
  if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return {};
- const std::string directory=std::string(base)+"\\SteamFrameTray";CreateDirectoryA(directory.c_str(),nullptr);
+ const std::string directory=std::string(base)+"\\CodecSwapper";CreateDirectoryA(directory.c_str(),nullptr);
  return directory;
 }
 static void driver_note(const char* text){

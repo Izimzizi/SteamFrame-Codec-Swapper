@@ -247,11 +247,11 @@ public sealed class CodecControllerTests
         using var lab = new CodecTestDirectory();
         Directory.CreateDirectory(Path.Combine(lab.Root, "runtime"));
         File.WriteAllText(Path.Combine(lab.Root, "runtime", "python.exe"), "test");
-        File.WriteAllText(Path.Combine(lab.Root, "codec_supervisor.py"), "test");
+        File.WriteAllText(Path.Combine(lab.Root, "session_supervisor.py"), "test");
         var info = CodecController.CreateStartInfo(lab.Root, "session path with spaces", "config path with spaces.json");
         Assert.False(info.UseShellExecute); Assert.True(info.CreateNoWindow);
         Assert.True(info.RedirectStandardInput && info.RedirectStandardOutput && info.RedirectStandardError);
-        Assert.Equal(new[] { Path.Combine(lab.Root, "codec_supervisor.py"), "--session-dir", "session path with spaces", "--config", "config path with spaces.json" }, info.ArgumentList);
+        Assert.Equal(new[] { Path.Combine(lab.Root, "session_supervisor.py"), "--session-dir", "session path with spaces", "--config", "config path with spaces.json" }, info.ArgumentList);
         Assert.Empty(info.Arguments);
     }
 
