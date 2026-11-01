@@ -569,6 +569,8 @@ extern "C" int HOOK_CALL HookSetLegacyMode(uint32_t mode){
   if(!StockReady())return -2;
   for(auto& entry:sessions)if(!entry.second.stock)return -3;
  }
+ // A session made for a wide HEVC picture has no H.264 encoder beside it and cannot be switched to H.264.
+ if(mode==0)for(auto& entry:sessions)if(!entry.second.h264)return -4;
  if(active_mode!=int(mode)){active_mode=int(mode);last_codec=0;++switch_info.switches;}
  return 0;
 }

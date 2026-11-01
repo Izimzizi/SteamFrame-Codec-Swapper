@@ -93,7 +93,7 @@ void StockEncodeSize(uint32_t* width,uint32_t* height){*width=initialized_width;
 int StockInitialize(void* encoder,void* init){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
- if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;trace("initialize: picture %ux%u",initialized_width,initialized_height);}
+ if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;trace("initialize: picture %ux%u (max %ux%u)",initialized_width,initialized_height,original->maxEncodeWidth,original->maxEncodeHeight);}
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){
@@ -106,7 +106,11 @@ int StockInitialize(void* encoder,void* init){
 int StockReconfigure(void* encoder,void* params){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_RECONFIGURE_PARAMS*>(params);
- if(original&&original->reInitEncodeParams.encodeWidth){initialized_width=original->reInitEncodeParams.encodeWidth;initialized_height=original->reInitEncodeParams.encodeHeight;}
+ if(original&&original->reInitEncodeParams.encodeWidth){
+  if(original->reInitEncodeParams.encodeWidth!=initialized_width||original->reInitEncodeParams.encodeHeight!=initialized_height)
+   trace("reconfigure: picture %ux%u -> %ux%u",initialized_width,initialized_height,original->reInitEncodeParams.encodeWidth,original->reInitEncodeParams.encodeHeight);
+  initialized_width=original->reInitEncodeParams.encodeWidth;initialized_height=original->reInitEncodeParams.encodeHeight;
+ }
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;

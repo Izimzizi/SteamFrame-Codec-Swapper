@@ -449,6 +449,7 @@ class Supervisor:
   raise RuntimeError('The stock HEVC stream did not start ('+seen+').')
  def hook_mode(self,mode):
   result=self.stats('mode',mode)
+  if result.get('code')==34:raise RuntimeError('This SteamVR session streams a Default (HEVC) picture too large for H.264, so it cannot switch to H.264 live. Restart SteamVR to use H.264.')
   if result.get('code'):raise RuntimeError('The hook refused the '+mode+' mode (code '+str(result.get('code'))+', stock encoders '+str(result.get('stock_sessions'))+' of '+str(result.get('sessions'))+' sessions).')
   return result
  def set_mode(self,mode,operation_id=''):

@@ -56,6 +56,8 @@ int main(){
   if(initialized!=NV_ENC_SUCCESS)throw std::runtime_error(std::string("stock-only initialize: ")+std::to_string(initialized));
   HookSwitchInfo info{sizeof(info),1};
   if(HookGetLegacySwitchInfo(&info)||info.stock_sessions!=1||info.stock_errors)throw std::runtime_error("The stock encoder did not take the tall picture");
+  // Such a session has no H.264 encoder beside it: a switch to H.264 is refused instead of sending HEVC frames to an H.264 decoder.
+  if(HookSetLegacyMode(0)!=-4)throw std::runtime_error("H.264 mode was accepted for a session without an H.264 encoder");
   D3D11_TEXTURE2D_DESC desc{};desc.Width=width;desc.Height=height;desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_NV12;
   desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_DEFAULT;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
   ComPtr<ID3D11Texture2D> texture;if(FAILED(device->CreateTexture2D(&desc,nullptr,&texture)))throw std::runtime_error("Texture failed");
