@@ -181,6 +181,8 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
 
     public bool DashboardVisible() => ((delegate* unmanaged<nint, byte>)Slot(_overlay, IsDashboardVisibleSlot))(_overlay) != 0;
 
+    private readonly HashSet<uint> _typesSeen = [];
+
     public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay)
     {
         var events = new List<OverlayEvent>();
@@ -189,6 +191,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         while (events.Count < 64 && ((delegate* unmanaged<nint, ulong, byte*, uint, byte>)Slot(_overlay, PollOverlayEventSlot))(_overlay, overlay, buffer, EventSize) != 0)
         {
             var type = *(uint*)buffer;
+            if (type is not (MouseMove or MouseDown or MouseUp) && _typesSeen.Add(type)) log?.Invoke($"HUD: overlay event type {type} seen for the first time");
             var kind = type switch { MouseMove => OverlayEventKind.MouseMove, MouseDown => OverlayEventKind.MouseDown, MouseUp => OverlayEventKind.MouseUp, FocusEnter => OverlayEventKind.FocusEnter, FocusLeave => OverlayEventKind.FocusLeave, _ => OverlayEventKind.Other };
             events.Add(new(kind, *(uint*)(buffer + 4), *(float*)(buffer + 16), *(float*)(buffer + 20)));
         }

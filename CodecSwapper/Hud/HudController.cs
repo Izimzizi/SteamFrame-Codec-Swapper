@@ -25,8 +25,9 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView? _drawn;
     private string? _drawnHover, _hover;
     private DateTime _lastUpload = DateTime.MinValue, _nextConnect = DateTime.MinValue, _laserAt = DateTime.MinValue;
-    private static readonly TimeSpan LaserHold = TimeSpan.FromSeconds(1), HoverHold = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan LaserHold = TimeSpan.FromSeconds(1), HoverHold = TimeSpan.FromMilliseconds(200);
     private bool _repositioning;
+    private bool _leftByEvent;
     private Pose _draftPose;
     private float _draftWidth;
     private Grab? _grab;
@@ -78,7 +79,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         foreach (var e in events)
         {
             if (e.Kind is OverlayEventKind.MouseMove or OverlayEventKind.FocusEnter) _laserAt = at;
-            else if (e.Kind == OverlayEventKind.FocusLeave) _laserAt = DateTime.MinValue;
+            else if (e.Kind == OverlayEventKind.FocusLeave) { _laserAt = DateTime.MinValue; _leftByEvent = true; }
         }
         UpdateDashboard(at);
         if (_dashboard) foreach (var overlayEvent in events) Handle(overlayEvent);
@@ -96,7 +97,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var open = (!settings.ExpandOnHover && api.DashboardVisible()) || at - _laserAt < (settings.ExpandOnHover ? HoverHold : LaserHold);
         if (open == _dashboard) return;
         _dashboard = open;
-        log?.Invoke(open ? "HUD: dashboard opened, controls shown" : "HUD: dashboard closed, readouts only");
+        log?.Invoke(open ? "HUD: controls shown" : "HUD: readouts only" + (settings.ExpandOnHover ? (_leftByEvent ? " (laser left)" : " (no laser movement)") : ""));
+        _leftByEvent = false;
         // The picture changes shape, so it is redrawn at once instead of waiting for the next data refresh.
         _drawn = null; _lastUpload = DateTime.MinValue;
         if (open) return;
