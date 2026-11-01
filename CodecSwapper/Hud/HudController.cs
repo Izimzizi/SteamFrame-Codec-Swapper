@@ -15,7 +15,7 @@ public interface IHudActions
 public sealed class HudController(IOverlayApi api, HudSettings settings, Func<HudView> readView, IHudActions actions, Action saveSettings, Func<bool> steamVrRunning, Action<string>? log = null) : IDisposable
 {
     private const string OverlayKey = "steamframe.tray.hud";
-    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(250), InteractionUpload = TimeSpan.FromMilliseconds(25), SlideIdle = TimeSpan.FromMilliseconds(600), CommitHold = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(100), InteractionUpload = TimeSpan.FromMilliseconds(25), SlideIdle = TimeSpan.FromMilliseconds(600), CommitHold = TimeSpan.FromSeconds(4);
 
     private ulong _overlay;
     private uint _attachedTo = IOverlayApi.NoDevice;
@@ -30,6 +30,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private Grab? _grab;
     private string _note = "";
     private string _menu = "";
+    private bool _dashboard = true;
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
     private DateTime _committedAt, _lastSlideEvent, _clock;
@@ -65,7 +66,10 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
-        foreach (var overlayEvent in api.PollEvents(_overlay)) Handle(overlayEvent);
+        UpdateDashboard(at);
+        // The laser only reaches the HUD while the dashboard is open; anything else is ignored so a stray event can never press a button.
+        var events = api.PollEvents(_overlay);
+        if (_dashboard) foreach (var overlayEvent in events) Handle(overlayEvent);
         // A release can be missed (the laser left the panel): commit a held slider once its events stop.
         if (_sliding is not null && at - _lastSlideEvent > SlideIdle) CommitSlider();
         if (_grab is not null) FollowGrab();
@@ -73,6 +77,20 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var width = _repositioning ? _draftWidth : settings.WidthMeters;
         if (device != _attachedTo || pose != _attachedPose || width != _attachedWidth) Attach(device, pose, width);
         Draw(at);
+    }
+
+    private void UpdateDashboard(DateTime at)
+    {
+        var open = api.DashboardVisible();
+        if (open == _dashboard) return;
+        _dashboard = open;
+        log?.Invoke(open ? "HUD: dashboard opened, controls shown" : "HUD: dashboard closed, readouts only");
+        // The picture changes shape, so it is redrawn at once instead of waiting for the next data refresh.
+        _drawn = null; _lastUpload = DateTime.MinValue;
+        if (open) return;
+        // Without input a half-finished interaction could never end: drop it.
+        _menu = ""; _sliding = null; _hover = null; _drawn = null;
+        if (_repositioning) StopRepositioning();
     }
 
     public void Teardown()
@@ -107,7 +125,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private HudView View()
     {
-        var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu };
+        var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard };
         if (_sliding is { } held) return view with { TargetMbps = held };
         if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
         return view;
@@ -118,12 +136,17 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var view = View();
         var hoverChanged = _hover != _drawnHover;
         if (_drawn is not null && view == _drawn && !hoverChanged) return;
-        // The picture lives in one texture, so repainting costs nothing visible: a highlight follows the laser at once, readouts at 4 Hz.
-        if (at - _lastUpload < (hoverChanged || _drawn is null ? InteractionUpload : DataUpload)) return;
+        // The picture lives in one texture, so repainting costs nothing visible: anything the user did shows at once, readouts at 10 Hz.
+        var touched = hoverChanged || _drawn is null || ControlsChanged(_drawn, view);
+        if (at - _lastUpload < (touched ? InteractionUpload : DataUpload)) return;
         using var bitmap = HudPanel.Render(view, _hover);
         api.SetImage(_overlay, HudPanel.ToRgba(bitmap), HudPanel.Width, HudPanel.Height);
         _drawn = view; _drawnHover = _hover; _lastUpload = at;
     }
+
+    private static bool ControlsChanged(HudView was, HudView now) =>
+        was.OpenMenu != now.OpenMenu || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
+        || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
     {

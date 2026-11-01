@@ -40,6 +40,10 @@ public sealed record CodecServiceStatus
     /// <summary>The running SteamVR can switch between H.264 and its own HEVC without a restart (see <see cref="CodecController.SetModeAsync"/>).</summary>
     [JsonPropertyName("mode_live")] public bool ModeLive { get; init; }
     /// <summary>The H.264 choice is on; false means the user went back to Default (HEVC) but the session stayed open.</summary>
+    /// <summary>The encoder options the session holds for H.264; empty/0 when an older supervisor does not report them.</summary>
+    [JsonPropertyName("rate_control")] public string RateControl { get; init; } = "";
+    [JsonPropertyName("preset")] public int Preset { get; init; }
+    [JsonPropertyName("vbv_frames")] public int VbvFrames { get; init; }
     [JsonPropertyName("want_h264")] public bool WantH264 { get; init; } = true;
     /// <summary>The session works through the installed SteamVR driver, so it can flip the codec without being restarted.</summary>
     [JsonPropertyName("driver_session")] public bool DriverSession { get; init; }

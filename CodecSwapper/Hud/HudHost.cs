@@ -21,13 +21,13 @@ public static class HudHost
         var quit = false;
         var actions = new HostActions(Send);
         long checkedAt = 0; var running = false;
-        bool VrRunning()
+        bool PcVrRunning()
         {
             if (Environment.TickCount64 - checkedAt >= 1000) { checkedAt = Environment.TickCount64; running = OpenVrOverlayApi.IsVrServerRunning(); }
             return running;
         }
-        using var hud = new HudController(new OpenVrOverlayApi(SteamPaths.Current.SteamVrRoot, Log), settings, () => { lock (gate) return view; }, actions,
-            () => Send(new() { Type = "settings", Settings = settings }), VrRunning, Log);
+        var hud = new HudController(new OpenVrOverlayApi(SteamPaths.Current.SteamVrRoot, Log), settings, () => { lock (gate) return view; }, actions,
+            () => Send(new() { Type = "settings", Settings = settings }), PcVrRunning, Log);
 
         var reader = new Thread(() =>
         {
@@ -55,10 +55,13 @@ public static class HudHost
         Log("HUD helper started");
         while (!quit)
         {
-            lock (gate) { try { hud.Tick(); } catch (Exception error) when (error is not OutOfMemoryException) { Log("HUD tick failed: " + error.Message); hud.Teardown(); } }
+            lock (gate)
+            {
+                try { hud.Tick(); } catch (Exception error) when (error is not OutOfMemoryException) { Log("HUD tick failed: " + error.Message); hud.Teardown(); }
+            }
             Thread.Sleep(16);
         }
-        hud.Teardown();
+        hud.Dispose();
         return 0;
     }
 

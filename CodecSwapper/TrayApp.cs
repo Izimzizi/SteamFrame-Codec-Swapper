@@ -47,6 +47,17 @@ public sealed partial class TrayApp : ApplicationContext
         _patch = new DriverPatch(new BitratePatcher(), _paths.Driver);
         _liveBitrate = new LiveBitrate(_paths);
         _driver = SteamVrDriver.ForThisPc(_paths);
+        // A driver left over from an older build must never meet a newer tray (the two would disagree about the hook): bring it up to date while SteamVR is closed.
+        var driverBehind = false;
+        try
+        {
+            if (_driver.Inspect() == SteamVrDriverState.Outdated)
+            {
+                if (OpenVrSettings.IsRunning) driverBehind = true;   // SteamVR has the old DLL open; it can only be replaced once SteamVR is closed
+                else _driver.Install();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { /* the SteamVR driver menu still offers it */ }
         _controller = new TrayController(new CodecServiceAdapter(_codec), new CredentialVault(new FrameCredentialStore()), _patch, _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), _liveBitrate, () => _driver.Inspect() == SteamVrDriverState.Installed);
         _setup = new SetupCheck(new ProcessRunner(), _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), new CredentialVault(new FrameCredentialStore()), SetupEnvironment.ForThisPc(_paths, Path.Combine(AppContext.BaseDirectory, "CodecLab")), _patch);
         _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: new HealthReader(_paths, AppData.DiagnosticsDirectory).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed), () => _controller.Current);
@@ -60,6 +71,8 @@ public sealed partial class TrayApp : ApplicationContext
         _poll.Tick += async (_, _) => { try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
         StartHud();
+        if (driverBehind)
+            Balloon("SteamVR driver is out of date", "SteamVR is running with an older codec driver than this tray. Close SteamVR, then restart this tray (or use SteamVR driver > Install), or codec changes may fail.", ToolTipIcon.Warning);
         _ = StartAsync(autostart);
     }
 

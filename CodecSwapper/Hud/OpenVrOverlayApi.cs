@@ -15,7 +15,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     private const uint MouseMove = 300, MouseDown = 301, MouseUp = 302;
     // Slot numbers: position among the virtual methods of the interface class in openvr.h.
     private const int CreateOverlaySlot = 1, DestroyOverlaySlot = 3, ErrorNameSlot = 8, SetAlphaSlot = 16, SetWidthSlot = 22, SetTrackedDeviceRelativeSlot = 35,
-        SetTextureSlot = 60, ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62;
+        SetTextureSlot = 60, ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62, IsDashboardVisibleSlot = 68;
     private const int GetPosesSlot = 12, ControllerIndexSlot = 18;
 
     private delegate* unmanaged<int*, int, uint> _init;
@@ -178,6 +178,8 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         for (var i = 0; i < 12; i++) matrix[i] = ((float*)entry)[i];
         return Pose.TryFromMatrix34(matrix, out pose);
     }
+
+    public bool DashboardVisible() => ((delegate* unmanaged<nint, byte>)Slot(_overlay, IsDashboardVisibleSlot))(_overlay) != 0;
 
     public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay)
     {

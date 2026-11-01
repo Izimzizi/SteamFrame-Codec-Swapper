@@ -29,4 +29,6 @@ public interface IOverlayApi : IDisposable
     /// <summary>The device's pose in the standing universe, false when it is not tracked right now.</summary>
     bool TryDevicePose(uint device, out Pose pose);
     IReadOnlyList<OverlayEvent> PollEvents(ulong overlay);
+    /// <summary>Whether SteamVR's dashboard is open. SteamVR only passes laser input to overlays while it is, which is also when the HUD shows its controls.</summary>
+    bool DashboardVisible();
 }

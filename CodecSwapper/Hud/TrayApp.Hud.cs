@@ -7,7 +7,7 @@ public sealed partial class TrayApp
 {
     private HudSettings _hudSettings = new();
     private HudHostClient? _hud;
-    private readonly System.Windows.Forms.Timer _hudTimer = new() { Interval = 250 };
+    private readonly System.Windows.Forms.Timer _hudTimer = new() { Interval = 100 };
     private StatsSample? _lastSample;
     private HudView? _sentView;
 
@@ -180,7 +180,7 @@ public sealed partial class TrayApp
             app._preferences.HookPreset = preset;
             app._preferences.HookVbvFrames = vbvFrames;
             await app.SaveEncoderOptionsAsync();
-            try { await app._controller.ApplyEncoderOptionsAsync(); }
+            try { if (!await app._controller.ApplyEncoderOptionsAsync()) HudLog("Encoder options saved; there is no live session to apply them to."); }
             catch (Exception error) when (error is not OperationCanceledException) { HudLog("Encoder options not applied live: " + error.Message); }
         });
     }

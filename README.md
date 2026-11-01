@@ -70,17 +70,19 @@ Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-sec
 
 ### VR HUD
 
-Turn on *VR HUD → Show HUD on a controller*. When SteamVR is running the panel appears on the chosen controller. It is a SteamVR overlay driven by laser pointer:
+Turn on *VR HUD → Show HUD on a controller*. When SteamVR is running the panel appears on the chosen controller. SteamVR only passes laser input to overlays while its **dashboard is open**, so the HUD has two states: with the dashboard closed (while playing) it shows the readouts only and cannot press anything, so it can never steal input from a game; with the dashboard open it adds the controls. It is a SteamVR overlay driven by laser pointer:
 
 - the codec buttons, a **bitrate slider** (drag with the laser, applied on release), and three **dropdowns** — *Rate control*, *Preset*, *VBV* — each opening a list of options with a short description;
 - every readout the monitor has: codec, Mbps, 60 s average, FPS, target, encoder-asked line, held-back / dropped / late / errors, note and the 60 s graph;
 - **Move**: hold the trigger on the panel with the other hand's laser to carry it to a new spot on the controller, then *Save*, *Cancel*, or *Default* (reset); *Smaller/Larger* resize it.
 
+Because the HUD is drawn on the PC and streamed, the Frame's own dashboard and Steam window are drawn over it; the PC's windows are inside the stream, so the HUD stays in front of those. Moving the HUD off the area the Frame's windows cover is the workaround. (Drawing it on the Frame instead was tried and dropped: it needs an SSH round trip per update, so it lags.)
+
 Internals worth knowing: the HUD runs in its **own helper process** (`CodecSwapper.exe --hud-host`) because it talks to SteamVR's native overlay API and a native fault there must not take the tray down; the helper restarts itself. The picture is written into one Direct3D 11 texture, so it updates without flicker. It never starts SteamVR.
 
 ### Encoder options and Default (HEVC)
 
-For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `hevc-options.txt` (`rate_control`, `preset`, `vbv`); the hook re-reads it about twice a second and applies the values to SteamVR's own encoder configuration (rate control and VBV on every reconfigure, the preset only when the encoder is created). The defaults (VBR, P2, 2 frames) therefore apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. This HEVC path is covered by a native unit test but has not been confirmed on the headset yet.
+For **H.264** the options are queued on the hook and applied to the running encoder (the Frame's stream restarts so SteamVR builds the new encoder). For **Default (HEVC)** the tray writes `hevc-options.txt` (`rate_control`, `preset`, `vbv`); the hook reads it whenever SteamVR creates its encoder. Changing an option while streaming HEVC therefore restarts the Frame's stream so SteamVR builds a new encoder (the picture drops for a few seconds, as in a codec switch). The defaults (VBR, P2, 2 frames) apply to Default (HEVC) too; without the file the stock stream is exactly what SteamVR configured. This HEVC path is covered by unit tests but has not been confirmed on the headset yet.
 
 ## Where things live
 

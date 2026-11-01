@@ -9,7 +9,7 @@ namespace CodecSwapper;
 public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
-    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "")
+    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -28,7 +28,9 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 /// </summary>
 public static class HudPanel
 {
-    public const int Width = 640, Height = 624, BitrateStep = 5;
+    public const int Width = 640, Height = 624, BitrateStep = 5, SnapMbps = 50, SnapReachMbps = 8;
+    /// <summary>With the dashboard closed there is no input, so only the readouts are drawn, centred in the picture so the panel stays where it was.</summary>
+    private const int CompactHeight = 372, CompactOffset = (Height - CompactHeight) / 2;
     public static readonly Rectangle GraphArea = new(20, 200, Width - 40, 120);
     public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
     private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
@@ -42,12 +44,14 @@ public static class HudPanel
         [(1, "1 frame — tightest buffer, least latency"), (2, "2 frames — the default"), (4, "4 frames — smoother bitrate"),
          (8, "8 frames — smoother still, more latency"), (16, "16 frames — loosest buffer")];
 
-    /// <summary>The bitrate a laser at panel x selects: whole steps of <see cref="BitrateStep"/> between the tray's limits.</summary>
+    /// <summary>The bitrate a laser at panel x selects: whole steps of <see cref="BitrateStep"/> between the tray's limits, pulled onto every 50 Mbps when close to one (as the tray's slider does).</summary>
     public static int SliderValue(float x)
     {
         var t = Math.Clamp((x - TrackLeft) / (TrackRight - TrackLeft), 0f, 1f);
         var raw = TrayController.MinimumMbps + t * (TrayController.MaximumMbps - TrayController.MinimumMbps);
-        return Math.Clamp((int)Math.Round(raw / BitrateStep) * BitrateStep, TrayController.MinimumMbps, TrayController.MaximumMbps);
+        var value = Math.Clamp((int)Math.Round(raw / BitrateStep) * BitrateStep, TrayController.MinimumMbps, TrayController.MaximumMbps);
+        var nearest = (int)Math.Round(value / (double)SnapMbps) * SnapMbps;
+        return Math.Abs(value - nearest) <= SnapReachMbps && nearest >= TrayController.MinimumMbps ? nearest : value;
     }
 
     public static float SliderX(int mbps) =>
@@ -59,6 +63,7 @@ public static class HudPanel
     public static IReadOnlyList<HudButton> Layout(HudView view)
     {
         var buttons = new List<HudButton>();
+        if (!view.Interactive) return buttons;
         const int margin = 20, gap = 10;
         void Row(int top, int height, (string Id, string Text, bool Active, bool Enabled)[] items)
         {
@@ -108,7 +113,9 @@ public static class HudPanel
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         var accent = view.Repositioning ? Color.FromArgb(255, 170, 60) : Color.FromArgb(70, 160, 255);
-        using (var path = Rounded(new Rectangle(0, 0, Width - 1, Height - 1), 26))
+        var compact = !view.Interactive && !view.Repositioning;
+        if (compact) g.TranslateTransform(0, CompactOffset);
+        using (var path = Rounded(new Rectangle(0, 0, Width - 1, (compact ? CompactHeight : Height) - 1), 26))
         {
             using var back = new SolidBrush(Color.FromArgb(235, 18, 20, 26));
             g.FillPath(back, path);
@@ -143,6 +150,7 @@ public static class HudPanel
             if (view.Busy) g.DrawString("Applying…", small, accentBrush, 520, 14);
         }
         if (!view.Repositioning) DrawGraph(g, view, small, accent);
+        if (compact) g.DrawString("Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         foreach (var button in Layout(view))
         {

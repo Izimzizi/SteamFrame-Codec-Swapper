@@ -21,6 +21,9 @@ int StockLock(void* encoder,void* lock_params,void* output);
 int StockUnlock(void* encoder,void* output);
 int StockEvent(void* encoder,const void* event_params,int registration);
 int StockDestroy(void* encoder);
+// The options the driver's own encoder is running with, for the monitor: rate control and buffer as last applied, the preset it was created with
+// (0 when the encoder was created before the options were switched on). Returns 0 when no option has been applied.
+int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv);
 #ifdef __cplusplus
 }
 #endif

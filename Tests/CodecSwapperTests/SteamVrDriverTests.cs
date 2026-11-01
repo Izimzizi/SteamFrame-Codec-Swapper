@@ -11,6 +11,7 @@ public sealed class SteamVrDriverTests : IDisposable
     private readonly SteamVrDriver _driver;
     private string Package => Path.Combine(_root, "package");
     private string Installed => Path.Combine(_root, "installed");
+    private string Legacy => Path.Combine(_root, "legacy");
     private string Paths => Path.Combine(_root, "openvrpaths.vrpath");
 
     public SteamVrDriverTests()
@@ -19,7 +20,7 @@ public sealed class SteamVrDriverTests : IDisposable
         File.WriteAllText(Path.Combine(Package, "bin", "win64", "driver_steamframe.dll"), "v1");
         File.WriteAllText(Path.Combine(Package, "driver.vrdrivermanifest"), "{}");
         File.WriteAllText(Paths, "{\"external_drivers\":null}");
-        _driver = new SteamVrDriver(new SteamPaths(_root, _root), Package, Installed, Paths, Run);
+        _driver = new SteamVrDriver(new SteamPaths(_root, _root), Package, Installed, Paths, Run, Legacy);
     }
 
     // Behaves like vrpathreg: edits the driver list in the paths file.
@@ -33,6 +34,16 @@ public sealed class SteamVrDriverTests : IDisposable
         if (arguments[0] == "adddriver") drivers.Add(arguments[1]); else drivers.Remove(arguments[1]);
         File.WriteAllText(Paths, JsonSerializer.Serialize(new { external_drivers = drivers }));
         return (0, "");
+    }
+
+    [Fact]
+    public void Installing_or_removing_also_unregisters_the_folder_used_before_the_rename()
+    {
+        Directory.CreateDirectory(Legacy);
+        Run(["adddriver", Legacy]);
+        _driver.Install();
+        Assert.DoesNotContain(JsonSerializer.Serialize(Legacy), File.ReadAllText(Paths));
+        Assert.False(Directory.Exists(Legacy));
     }
 
     [Fact]

@@ -600,6 +600,29 @@ class UnreachableFrameTests(LiveModeTests):
   self.assertFalse(instance.frame_unreachable(RuntimeError('Frame administrator authentication failed.')))
 
 class KeptSessionTests(LiveModeTests):
+ def test_encoder_options_changed_while_the_stream_is_on_hevc_restart_the_stream_so_a_new_encoder_reads_them(self):
+  instance=self.make();instance.stock_mode=True;instance.pid=77
+  calls=[]
+  instance.stop_frame_stream=lambda:calls.append('cef stop') or True
+  instance.wait_decoder_idle=lambda *a:calls.append('idle')
+  instance.cef=lambda w:calls.append('cef '+w)
+  instance.verify_stock=lambda *a:calls.append('verify stock')
+  with patch.object(service.Supervisor,'rate_available',return_value=True),patch.object(service.subprocess,'run',return_value=MagicMock(returncode=0,stdout='',stderr='')),   patch.object(instance,'hook_identity',side_effect=AssertionError('must not wait for the H.264 encoder')),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(instance,'current_refresh',return_value=90):
+   instance.set_encoder('cbr',4,8,'op')
+  self.assertEqual((instance.rate_control,instance.preset,instance.vbv),('cbr',4,8))
+  self.assertEqual(calls,['cef stop','idle','cef start','verify stock'])
+  self.assertEqual(update.call_args.kwargs['last_result'],{'ok':True})
+ def test_a_failed_stock_stream_restart_starts_the_stream_again_and_reports_it(self):
+  instance=self.make();instance.stock_mode=True;instance.pid=77
+  calls=[]
+  instance.stop_frame_stream=lambda:calls.append('cef stop') or True
+  instance.wait_decoder_idle=lambda *a:None
+  instance.cef=lambda w:calls.append('cef '+w)
+  instance.verify_stock=lambda *a:(_ for _ in ()).throw(RuntimeError('no stream'))
+  with patch.object(service.Supervisor,'rate_available',return_value=True),patch.object(service.subprocess,'run',return_value=MagicMock(returncode=0,stdout='',stderr='')),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(instance,'current_refresh',return_value=90):
+   with self.assertRaises(RuntimeError):instance.set_encoder('cbr',4,8,'op')
+  self.assertEqual(calls,['cef stop','cef start','cef start'])
+  self.assertEqual(update.call_args.kwargs['state'],'ready')
  def test_choosing_the_default_codec_with_steamvr_closed_only_records_the_choice(self):
   instance=self.make(pid=0,live=False);instance.driver=True
   with patch.object(instance,'update') as update:

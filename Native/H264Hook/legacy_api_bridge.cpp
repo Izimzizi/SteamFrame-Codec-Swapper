@@ -499,7 +499,11 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  if(!output||output->size!=sizeof(HookTrialIdentity)||output->version!=1)return -1;
  std::lock_guard<std::mutex> lock(mutex);
  // The identity layout is shared with the managed reader: codec 2 is H.264, the only codec this hook produces.
- *output={sizeof(HookTrialIdentity),1,active_mode==1?3u:2u,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};return 0;
+ *output={sizeof(HookTrialIdentity),1,active_mode==1?3u:2u,requested_fps,requested_average,requested_peak,requested_rate_control,requested_preset,requested_vbv_frames};
+ // On the driver's own HEVC the queued H.264 options mean nothing: report what its encoder was actually given.
+ uint32_t cbr=0,preset=0,vbv=0;
+ if(active_mode==1&&StockAppliedOptions(&cbr,&preset,&vbv)){output->rate_control=cbr;if(preset)output->preset=preset;output->vbv_frames=vbv;}
+ return 0;
 }
 
 extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory){

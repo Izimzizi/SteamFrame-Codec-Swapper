@@ -83,17 +83,24 @@ public sealed class TrayController
     }
 
     /// <summary>
-    /// Applies the saved encoder options (rate control, preset, VBV) to a live H.264 session: the hook queues them and the supervisor
-    /// restarts the Frame's stream so SteamVR builds a new encoder with them. False means they are used the next time H.264 is armed.
+    /// Applies the saved encoder options (rate control, preset, VBV) to a live session, H.264 or Default (HEVC): the hook queues them and the
+    /// supervisor restarts the Frame's stream so SteamVR builds a new encoder with them. False means they are used the next time the stream starts.
     /// </summary>
     public async Task<bool> ApplyEncoderOptionsAsync(CancellationToken cancellationToken = default)
     {
-        if (!Current.IsArmed) return false;
         await _gate.WaitAsync(cancellationToken);
         try
         {
             var status = await _codec.ReadStatusAsync(cancellationToken);
-            if (!(status.Live && status.RateLive && status.ActiveCodec == "H.264" && status.State == "ready")) return false;
+            if (!(status.Live && status.RateLive && status.ActiveCodec == "H.264" && status.State == "ready"))
+            {
+                // Default (HEVC), with or without a session: the driver's hook sits in SteamVR and reads the saved options when SteamVR's own
+                // encoder is reconfigured, which a bitrate refresh makes it do without a restart.
+                if (_live is null || !_live.SteamVrRunning) return false;
+                var current = await _live.ReadTargetAsync();
+                await _live.ApplyAsync(current is double known && known >= MinimumMbps ? (int)Math.Round(known) : TargetMbps);
+                return true;
+            }
             var result = await _codec.SetEncoderAsync(_preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames, new Progress<CodecServiceStatus>(), cancellationToken);
             Publish(Map(result));
             return true;
@@ -305,6 +312,8 @@ public sealed class TrayController
             else if (KeptDriverSession(status) && !status.WantH264)
             {
                 // The session stayed open when the user went back to Default (HEVC): flipping the codec needs no new login.
+                // Whatever was changed meanwhile (bitrate, encoder options) must reach it first, or H.264 would come back with the old values.
+                await SyncKeptSessionAsync(status, progress, cancellationToken);
                 result = await _codec.SetModeAsync("h264", progress, cancellationToken);
             }
             else
@@ -377,6 +386,21 @@ public sealed class TrayController
             throw;
         }
         finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// While the Default (HEVC) choice kept the session open, the bitrate and encoder options may have changed in the tray, on the HUD or in
+    /// SteamVR. Hand the saved values to the session so the flip back to H.264 uses them; a refusal does not stop the flip.
+    /// </summary>
+    private async Task SyncKeptSessionAsync(CodecServiceStatus status, IProgress<CodecServiceStatus> progress, CancellationToken cancellationToken)
+    {
+        if (!status.RateLive) return;
+        try { if (status.TargetMbps != TargetMbps) await _codec.SetRateAsync(TargetMbps, progress, cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException) { /* the flip goes ahead with the session's own value */ }
+        var differs = status.RateControl != _preferences.HookRateControl || status.Preset != _preferences.HookPreset || status.VbvFrames != _preferences.HookVbvFrames;
+        if (status.RateControl.Length == 0 || !differs) return;
+        try { await _codec.SetEncoderAsync(_preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames, progress, cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException) { /* likewise */ }
     }
 
     private static bool KeptDriverSession(CodecServiceStatus status) => status.Live && status.DriverSession && status.State is "ready" or "waiting";

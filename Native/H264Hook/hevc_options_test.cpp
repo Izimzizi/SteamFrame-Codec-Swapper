@@ -60,6 +60,9 @@ int main(){
  CHECK(seen_config.rcParams.rateControlMode==NV_ENC_PARAMS_RC_CBR&&memcmp(&seen_init.presetGUID,&NV_ENC_PRESET_P4_GUID,sizeof(GUID))==0);
  CHECK(re.reInitEncodeParams.encodeConfig==&config&&config.rcParams.rateControlMode==NV_ENC_PARAMS_RC_VBR);
 
+ // The monitor reports what the encoder was given: CBR and 4 frames now, the preset it was created with (P7).
+ { uint32_t cbr=9,preset=9,vbv=9;CHECK(StockAppliedOptions(&cbr,&preset,&vbv)==1&&cbr==1&&preset==7&&vbv==4); }
+
  // VBR keeps the driver's own peak.
  write_options("enabled=1\nrate_control=vbr\npreset=2\nvbv=1\n");Sleep(600);
  CHECK(StockInitialize(nullptr,&init)==0);

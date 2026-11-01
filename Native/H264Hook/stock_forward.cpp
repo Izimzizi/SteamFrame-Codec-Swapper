@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <cstring>
 #include <cstdio>
+#include <cstdarg>
 #include <string>
 #include "nvEncodeAPI11.h"
 #include "stock_forward.h"
@@ -38,6 +39,17 @@ int StockOpen(const void* open_params,void** encoder){
 namespace {
 struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;};
 HevcOptions options;ULONGLONG options_checked=0;
+int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
+int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
+// Diagnosis of the live HEVC route: what SteamVR's reconfigures carry and what was done with them (hevc-hook.log in the tray's data folder).
+void trace(const char* format,...){
+ char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
+ const std::string path=std::string(base)+"\\CodecSwapper\\hevc-hook.log";
+ WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExA(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>100000)DeleteFileA(path.c_str());
+ FILE* file=nullptr;if(fopen_s(&file,path.c_str(),"a")||!file)return;
+ SYSTEMTIME now{};GetLocalTime(&now);fprintf(file,"%02d:%02d:%02d.%03d ",now.wHour,now.wMinute,now.wSecond,now.wMilliseconds);
+ va_list args;va_start(args,format);vfprintf(file,format,args);va_end(args);fputc('\n',file);fclose(file);
+}
 void load_options(){
  const ULONGLONG now=GetTickCount64();if(options_checked&&now-options_checked<500)return;options_checked=now;
  options=HevcOptions{};char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
@@ -67,6 +79,10 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  const uint32_t fps=init.frameRateDen?init.frameRateNum/init.frameRateDen:90;
  if(rc.averageBitRate&&fps){rc.vbvBufferSize=rc.averageBitRate/fps*static_cast<uint32_t>(options.vbv);rc.vbvInitialDelay=0;}
  if(at_initialize)init.presetGUID=preset_guid(options.preset);
+ // A changed rate control or buffer needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
+ const int signature=(options.cbr?1000:0)+options.vbv;
+ applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;if(at_initialize)applied_preset=options.preset;
+ signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
  return true;
 }
 }
@@ -74,6 +90,7 @@ int StockInitialize(void* encoder,void* init){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
+ reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true))return status(table.nvEncInitializeEncoder(encoder,&patched));
  return status(table.nvEncInitializeEncoder(encoder,original));
 }
@@ -83,8 +100,17 @@ int StockReconfigure(void* encoder,void* params){
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;
-  return status(table.nvEncReconfigureEncoder(encoder,&copy));
+  if(signature_changed){copy.resetEncoder=1;copy.forceIDR=1;}
+  const auto result=table.nvEncReconfigureEncoder(encoder,&copy);
+  if(signature_changed||reconfigure_calls<5){
+   trace("reconfigure: driver rc=%d vbv=%u avg=%u -> rc=%d vbv=%u, reset=%d, result=%d",static_cast<int>(original->reInitEncodeParams.encodeConfig->rcParams.rateControlMode),
+    original->reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize,original->reInitEncodeParams.encodeConfig->rcParams.averageBitRate,
+    static_cast<int>(config.rcParams.rateControlMode),config.rcParams.vbvBufferSize,signature_changed?1:0,static_cast<int>(result));
+  }
+  ++reconfigure_calls;
+  return status(result);
  }
+ if(reconfigure_calls<5){trace("reconfigure: left alone (options off or no encode configuration: config=%d)",original&&original->reInitEncodeParams.encodeConfig?1:0);++reconfigure_calls;}
  return status(table.nvEncReconfigureEncoder(encoder,original));
 }
 int StockRegister(void* encoder,const void* params,void** resource){
@@ -131,6 +157,10 @@ int StockEvent(void* encoder,const void* params,int registration){
  if(!ready||!params)return NV_ENC_ERR_INVALID_PTR;
  auto copy=*static_cast<const NV_ENC_EVENT_PARAMS*>(params);
  return status(registration?table.nvEncRegisterAsyncEvent(encoder,&copy):table.nvEncUnregisterAsyncEvent(encoder,&copy));
+}
+int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv){
+ if(!applied_any)return 0;
+ *cbr=applied_cbr?1:0;*preset=static_cast<uint32_t>(applied_preset);*vbv=static_cast<uint32_t>(applied_vbv);return 1;
 }
 int StockDestroy(void* encoder){return ready?status(table.nvEncDestroyEncoder(encoder)):NV_ENC_ERR_INVALID_PTR;}
 }

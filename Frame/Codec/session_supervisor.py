@@ -527,6 +527,9 @@ class Supervisor:
   self.rate_control=rate_control;self.preset=preset;self.vbv=vbv
   self.log('encoder options queued: '+rate_control+', P'+str(preset)+', VBV '+str(vbv))
   self.update(rate_control=rate_control,preset=preset,vbv_frames=vbv)
+  if self.stock_mode:
+   # SteamVR's HEVC encoder reads the options file only when it is created, so the stream restarts and SteamVR builds a new one.
+   self.restart_stock_stream(fps,operation_id);return
   # SteamVR reconfigures its encoder before every frame; the hook adopts the queued options there, so the hook's identity
   # changing is the proof that the running encoder has them.
   deadline=time.monotonic()+6;seen='unreadable'
@@ -537,6 +540,21 @@ class Supervisor:
    if time.monotonic()>=deadline:break
    time.sleep(.5)
   raise RuntimeError('SteamVR has not applied the new options yet (the hook reports '+seen+'). They apply on its next encoder update.')
+ def restart_stock_stream(self,fps,operation_id=''):
+  self.verify_seconds=20
+  self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,message='Restarting the stream to apply the encoder options.')
+  try:
+   if not self.stop_frame_stream():raise RuntimeError('The Frame did not accept the stream stop; try again in a moment.')
+   time.sleep(.3);self.wait_decoder_idle()
+   self.cef('start');self.verify_stock(fps)
+  except Exception as error:
+   self.log('stock stream restart failed: '+str(error)[:300])
+   try:self.cef('start')
+   except Exception:pass
+   self.update(state='ready',active_codec='HEVC',message='The stream restart did not finish ('+str(error)[:120]+').',stream_pid=self.pid)
+   raise
+  self.log('stock stream restarted with the new encoder options')
+  self.update(state='ready',active_codec='HEVC',fps=fps,stream_pid=self.pid,message='Streaming stock HEVC with the new encoder options.',last_result={'ok':True},operation_id=operation_id)
  def verify_stream(self,target,fps):
   deadline=time.monotonic()+self.verify_seconds;ready=False;seen='no receiver reading'
   while time.monotonic()<deadline:

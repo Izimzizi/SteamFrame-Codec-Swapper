@@ -181,7 +181,7 @@ public sealed class HudControllerTests
     private sealed class FakeApi : IOverlayApi
     {
         public bool Connected { get; private set; }
-        public bool Running = true, CanConnect = true;
+        public bool Running = true, CanConnect = true, Dashboard = true;
         public uint Left = 3, Right = 4;
         public readonly List<string> Calls = [];
         public readonly Queue<OverlayEvent> Events = new();
@@ -201,6 +201,7 @@ public sealed class HudControllerTests
         public void AttachToDevice(ulong overlay, uint device, Pose relative) { LastDevice = device; LastRelative = relative; }
         public bool TryDevicePose(uint device, out Pose pose) => Poses.TryGetValue(device, out pose);
         public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay) { var list = Events.ToList(); Events.Clear(); return list; }
+        public bool DashboardVisible() => Dashboard;
         public void Dispose() { }
     }
 
@@ -296,6 +297,47 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void With_the_dashboard_closed_the_HUD_shows_readouts_only_and_ignores_the_laser()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Api.Dashboard = false;
+        rig.Api.Events.Enqueue(rig.Click("codec:h264"));
+        rig.Tick();
+        Assert.Empty(rig.Actions.Calls);
+        Assert.Empty(HudPanel.Layout(rig.View with { Interactive = false }));
+        rig.Api.Dashboard = true;
+        rig.Press("codec:h264");
+        Assert.Equal(["codec True"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void Closing_the_dashboard_drops_an_open_menu_a_held_slider_and_a_repositioning_in_progress()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Press("menu:preset");
+        Assert.Equal("preset", rig.Hud.OpenMenu);
+        rig.Api.Dashboard = false;
+        rig.Tick();
+        Assert.Equal("", rig.Hud.OpenMenu);
+        rig.Api.Dashboard = true;
+        rig.Tick();
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseDown, HudPanel.SliderX(300)));
+        rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseMove, HudPanel.SliderX(450)));
+        rig.Tick();
+        rig.Api.Dashboard = false;
+        rig.Tick(); rig.Tick();
+        Assert.Empty(rig.Actions.Calls);                       // the held slider was dropped, not committed
+        rig.Api.Dashboard = true;
+        rig.Tick(); rig.Press("reposition");
+        Assert.True(rig.Hud.Repositioning);
+        rig.Api.Dashboard = false;
+        rig.Tick();
+        Assert.False(rig.Hud.Repositioning);
+    }
+
+    [Fact]
     public void Laser_clicks_run_the_matching_actions()
     {
         var rig = new Rig();
@@ -357,6 +399,11 @@ public sealed class HudControllerTests
         Assert.Equal(TrayController.MinimumMbps, HudPanel.SliderValue(-50));
         Assert.Equal(TrayController.MaximumMbps, HudPanel.SliderValue(HudPanel.Width + 50));
         foreach (var x in new[] { 100f, 217f, 333f, 480f }) Assert.Equal(0, HudPanel.SliderValue(x) % HudPanel.BitrateStep);
+        // Close to a multiple of 50 the value sits on it, like the tray's slider; between them it moves in 5 Mbps steps.
+        foreach (var mbps in new[] { 100, 250, 300, 450, 500 }) Assert.Equal(mbps, HudPanel.SliderValue(HudPanel.SliderX(mbps + 7)));
+        Assert.Equal(300, HudPanel.SliderValue(HudPanel.SliderX(293)));
+        Assert.Equal(285, HudPanel.SliderValue(HudPanel.SliderX(285)));
+        Assert.Equal(TrayController.MinimumMbps, HudPanel.SliderValue(-50));
         Assert.Equal(300, HudPanel.SliderValue(HudPanel.SliderX(300)));
     }
 

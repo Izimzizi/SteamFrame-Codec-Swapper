@@ -161,6 +161,31 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
+    public async Task Going_back_to_H264_hands_the_changed_bitrate_and_encoder_options_to_the_kept_session_first()
+    {
+        var rig = new Rig { Driver = true };
+        rig.Vault.Stored = "pw";
+        rig.Prefs.CodecTargetMbps = 200; rig.Prefs.HookRateControl = "cbr"; rig.Prefs.HookPreset = 4; rig.Prefs.HookVbvFrames = 8;
+        rig.Codec.Status = Live(codec: "HEVC", target: 500) with { DriverSession = true, WantH264 = false, RateLive = true, RateControl = "vbr", Preset = 2, VbvFrames = 2 };
+        Assert.True(await rig.Arm());
+        Assert.Equal(["rate", "encoder", "mode"], rig.Codec.Calls);
+        Assert.Equal([200], rig.Codec.Rates);
+        Assert.Equal([("cbr", 4, 8)], rig.Codec.Encoders);
+        Assert.Equal(["h264"], rig.Codec.Modes);
+    }
+
+    [Fact]
+    public async Task A_refused_sync_does_not_stop_the_flip_back_to_H264()
+    {
+        var rig = new Rig { Driver = true };
+        rig.Vault.Stored = "pw"; rig.Prefs.CodecTargetMbps = 200;
+        rig.Codec.RateError = new InvalidOperationException("refused");
+        rig.Codec.Status = Live(codec: "HEVC", target: 500) with { DriverSession = true, WantH264 = false, RateLive = true };
+        Assert.True(await rig.Arm());
+        Assert.Equal(["h264"], rig.Codec.Modes);
+    }
+
+    [Fact]
     public async Task A_kept_session_on_the_default_codec_reads_as_disarmed_not_as_an_armed_one_on_HEVC()
     {
         var rig = new Rig { Driver = true };
@@ -429,11 +454,34 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
+    public async Task Encoder_options_on_Default_HEVC_refresh_the_encoder_even_without_a_session()
+    {
+        var rig = new Rig();
+        rig.Live.Target = 200;
+        Assert.True(await rig.Controller.ApplyEncoderOptionsAsync());
+        Assert.Equal([200], rig.Live.Applied);
+    }
+
+    [Fact]
+    public async Task Encoder_options_in_a_kept_session_on_HEVC_refresh_the_encoder_at_SteamVRs_own_bitrate()
+    {
+        var rig = new Rig();
+        rig.Prefs.KeepH264 = true; rig.Codec.Status = LiveRate() with { ActiveCodec = "HEVC", ModeLive = true };
+        rig.Live.Target = 150;
+        await rig.Controller.RefreshAsync();
+        Assert.True(await rig.Controller.ApplyEncoderOptionsAsync());
+        Assert.Equal([150], rig.Live.Applied);
+        Assert.Empty(rig.Codec.Encoders);
+    }
+
+    [Fact]
     public async Task Encoder_options_wait_for_the_next_arm_when_there_is_no_live_session()
     {
         var disarmed = new Rig();
+        disarmed.Live.SteamVrRunning = false;
         Assert.False(await disarmed.Controller.ApplyEncoderOptionsAsync());
         var waiting = new Rig();
+        waiting.Live.SteamVrRunning = false;
         waiting.Prefs.KeepH264 = true; waiting.Codec.Status = LiveRate("waiting");
         await waiting.Controller.RefreshAsync();
         Assert.False(await waiting.Controller.ApplyEncoderOptionsAsync());
