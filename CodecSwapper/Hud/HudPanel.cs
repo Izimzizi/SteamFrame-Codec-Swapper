@@ -9,7 +9,7 @@ namespace CodecSwapper;
 public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
-    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false)
+    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "")
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -146,10 +146,15 @@ public static class HudPanel
             g.DrawString(view.Codec + (view.CodecVerified ? "" : " ?"), large, codecBrush, 18, 38);
             g.DrawString(view.Mbps is { } m ? $"{m:0} Mbps" : "— Mbps", large, white, 270, 38);
             g.DrawString(view.Fps is { } f ? $"{f:0.0} fps" : "— fps", normal, white, 520, 56);
-            g.DrawString(Trim($"{(view.Average.Length > 0 ? view.Average + "    " : "")}target {view.TargetMbps} Mbps", 86), small, grey, 22, 96);
+            g.DrawString(Trim($"{(view.Average.Length > 0 ? view.Average + "    " : "")}target {view.TargetMbps} Mbps", 40), small, grey, 22, 96);
+            if (view.Latency.Length > 0)
+            {
+                using var right = new StringFormat { Alignment = StringAlignment.Far, FormatFlags = StringFormatFlags.NoWrap };
+                g.DrawString(view.Latency, small, grey, new RectangleF(300, 96, Width - 300 - 22, 22), right);
+            }
             g.DrawString(Trim(view.Encoder, 86), small, grey, 22, 120);
             g.DrawString(Trim(view.Health.Length > 0 ? view.Health : "Stream healthy", 86), small, grey, 22, 144);
-            g.DrawString(Trim(view.Status.Length > 0 ? view.Status : view.Note, 86), small, grey, 22, 168);
+            if (view.Status.Length > 0) g.DrawString(Trim(view.Status, 86), small, grey, 22, 168);
             if (view.Busy) g.DrawString("Applying…", small, accentBrush, 520, 14);
         }
         if (!view.Repositioning) DrawGraph(g, view, small, accent);

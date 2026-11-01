@@ -19,8 +19,8 @@ public sealed class HudSettings
     /// <summary>Laser coordinates arrive in GL space (origin bottom-left); turn this off if a build reports them top-left.</summary>
     public bool FlipLaserY { get; set; } = true;
 
-    /// <summary>Above the controller, tilted back toward the face of someone holding it out in front of them.</summary>
-    public static Pose DefaultPose { get; } = Pose.Rotation(0, -50, 0, new Vector3(0, .07f, -.02f));
+    /// <summary>Hovering clear above the controller (its bottom edge about 9 cm over it), tilted back toward the face of someone holding it out in front of them, so the controller models that SteamVR draws over overlays do not cover it.</summary>
+    public static Pose DefaultPose { get; } = Pose.Rotation(0, -50, 0, new Vector3(0, .18f, -.05f));
 
     [JsonIgnore] public bool IsLeft => !string.Equals(Hand, "right", StringComparison.OrdinalIgnoreCase);
 

@@ -100,16 +100,16 @@ public sealed partial class TrayApp
         return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false,
             sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps, 1) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
-            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), sample is null ? "" : sample.Note ?? sample.CodecDetail ?? "",
-            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError);
+            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), "",
+            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError, Latency: sample?.Timing?.Describe() ?? "");
     }
 
     // The same readouts as the monitor window, as one line each.
     private string HudAverage() => _statsService.Sampler.RecentAverage is double average ? $"avg 60 s {average:0} Mbps" : "";
 
-    private static string HudEncoder(StatsSample? sample) => (sample?.Config is { } c
+    private static string HudEncoder(StatsSample? sample) => sample?.Config is { } c
         ? $"encoder asked {c.AverageMbps:0} avg / {c.MaxMbps:0} peak Mbps ({c.RateControl}, {c.Preset}{(c.VbvSize > 0 ? $", VBV {c.VbvSize / 1e6:0.0} Mbit" : "")}{(c.Fps is double cf ? $", {cf:0} fps" : "")})"
-        : "") + (sample?.Timing is { } t ? (sample.Config is null ? "" : "  ·  ") + t.Describe() : "");
+        : "";
 
     private static string HudHealth(StatsSample? sample)
     {
