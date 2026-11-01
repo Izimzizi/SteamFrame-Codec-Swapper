@@ -9,7 +9,7 @@ namespace CodecSwapper;
 public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
-    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true)
+    string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -152,6 +152,7 @@ public static class HudPanel
         if (!view.Repositioning) DrawGraph(g, view, small, accent);
         if (compact) g.DrawString("Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
+        if (view.Notice.Length > 0 && !view.Repositioning) DrawNotice(g, view, small);
         foreach (var button in Layout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
@@ -167,6 +168,21 @@ public static class HudPanel
             g.DrawString(button.Text, font, button.Enabled ? white : grey, button.Bounds, format);
         }
         return bitmap;
+    }
+
+    /// <summary>What the tray would have shown as a desktop pop-up, so it is also seen in the headset.</summary>
+    private static void DrawNotice(Graphics g, HudView view, Font font)
+    {
+        var tone = view.NoticeIsError ? Color.FromArgb(255, 110, 100) : Color.FromArgb(255, 190, 80);
+        var area = new Rectangle(14, 188, Width - 28, 124);
+        using var shape = Rounded(area, 14);
+        using var fill = new SolidBrush(Color.FromArgb(245, 38, 28, 12));
+        g.FillPath(fill, shape);
+        using var edge = new Pen(tone, 2.5f);
+        g.DrawPath(edge, shape);
+        using var brush = new SolidBrush(Color.White);
+        using var format = new StringFormat { Trimming = StringTrimming.EllipsisWord };
+        g.DrawString(view.Notice, font, brush, new RectangleF(area.Left + 12, area.Top + 8, area.Width - 24, area.Height - 16), format);
     }
 
     private static void DrawSlider(Graphics g, HudView view, bool hot, Font font, Brush text, Color accent)

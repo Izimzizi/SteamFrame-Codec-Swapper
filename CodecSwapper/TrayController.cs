@@ -33,6 +33,7 @@ public sealed class TrayController
     private readonly Func<Task> _save;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _wasLive;
+    public const string DriverNeeded = "H.264 needs the SteamVR driver, which is not installed (or not this version). Install it from the tray menu: SteamVR driver, with SteamVR closed.";
     private readonly Func<bool>? _driverInstalled;
     private int? _lastSteamVr;
     private DateTime _ownWriteUntil;
@@ -66,7 +67,7 @@ public sealed class TrayController
     /// (an older supervisor, or one whose hook is not live) is re-applied after the user agrees to the restart.
     /// </summary>
     public async Task<ChangeOutcome> ChangeTargetAsync(int mbps, Func<Task<string?>> requestPassword, Func<BitratePatchStatus, Task<bool>> confirmPatch,
-        Func<Task<bool>> confirmRestart, CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         await SetTargetAsync(mbps);
         // SteamVR flushes its settings file later than a live write, so a reading right after our own change is stale.
@@ -79,7 +80,7 @@ public sealed class TrayController
             await ChangeRateLiveAsync(mbps, cancellationToken);
             return ChangeOutcome.AppliedLive;
         }
-        return await ReapplyAsync(requestPassword, confirmPatch, confirmRestart, cancellationToken);
+        return await ReapplyAsync(requestPassword, confirmPatch, cancellationToken);
     }
 
     /// <summary>
@@ -186,12 +187,10 @@ public sealed class TrayController
     }
 
     private async Task<ChangeOutcome> ReapplyAsync(Func<Task<string?>> requestPassword, Func<BitratePatchStatus, Task<bool>> confirmPatch,
-        Func<Task<bool>> confirmRestart, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
-        // The saved choice is applied the next time H.264 is armed if the user would rather not restart SteamVR now.
-        if (_live?.SteamVrRunning != false && !await confirmRestart()) return ChangeOutcome.Declined;
-        // The restart was just agreed to, so arming does not ask again.
-        await ArmAsync(requestPassword, confirmPatch, null, cancellationToken);
+        // A session that cannot take the change live starts again; SteamVR itself keeps running (its driver holds the hook).
+        await ArmAsync(requestPassword, confirmPatch, cancellationToken);
         return ChangeOutcome.Reapplied;
     }
 
@@ -283,12 +282,17 @@ public sealed class TrayController
     }
 
     /// <summary>
-    /// Arms H.264. With SteamVR closed it waits ("armed, waiting for SteamVR") and never launches it; with SteamVR running it
-    /// restarts SteamVR once, after confirmRestart (null means already agreed) says yes.
+    /// Arms H.264. It needs the SteamVR driver (SteamVR holds the hook through it): without it nothing is changed. With SteamVR closed it
+    /// waits ("armed, waiting for SteamVR") and never launches it; with SteamVR running the codec flips live and SteamVR is never restarted.
     /// </summary>
     public async Task<bool> ArmAsync(Func<Task<string?>> requestPassword, Func<BitratePatchStatus, Task<bool>> confirmPatch,
-        Func<Task<bool>>? confirmRestart = null, CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
+        if (_driverInstalled is not null && !_driverInstalled())
+        {
+            Publish(new(TrayState.Error, DriverNeeded, TargetMbps));
+            return false;
+        }
         await _gate.WaitAsync(cancellationToken);
         string? typed = null;
         try
@@ -298,12 +302,6 @@ public sealed class TrayController
             var status = await _codec.ReadStatusAsync(cancellationToken);
             var steamVrRunning = _live?.SteamVrRunning ?? false;
             var alreadyApplied = status.Live && status.Keep && status.ActiveCodec == "H.264" && status.TargetMbps == request.TargetMbps && status.State is "ready" or "waiting";
-            // With the SteamVR driver installed, SteamVR already holds the hook: arming flips the codec live and never restarts it.
-            if (!alreadyApplied && steamVrRunning && !request.Driver && confirmRestart is not null && !await confirmRestart())
-            {
-                Publish(Map(status));
-                return false;
-            }
             Publish(new(TrayState.Arming, "Switching to H.264…", TargetMbps));
             await EnsureBitratePatchAsync(request.TargetMbps, confirmPatch);
             var progress = new Progress<CodecServiceStatus>(s => Publish(Map(s)));

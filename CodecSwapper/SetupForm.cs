@@ -15,6 +15,8 @@ public sealed class SetupForm : Form
     private readonly Button _close = new() { Text = "Close", AutoSize = true };
     private SetupReport? _report;
     private bool _checking;
+    private bool _prompting;
+    private readonly SplitContainer _middle = new() { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel2 };
 
     public SetupForm(SetupCheck check, FramePreferences preferences)
     {
@@ -22,9 +24,10 @@ public sealed class SetupForm : Form
         Text = "SteamFrame Codec Swapper setup";
         Icon = TrayIcons.For(TrayState.Disarmed);
         StartPosition = FormStartPosition.CenterScreen;
-        MinimizeBox = false; MaximizeBox = false;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        ClientSize = new Size(560, 420);
+        MinimizeBox = false;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        ClientSize = new Size(640, 560);
+        MinimumSize = new Size(520, 420);
         _host.Text = check.Host;
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8) };
@@ -35,10 +38,11 @@ public sealed class SetupForm : Form
         _detail.Padding = new Padding(8);
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
         bottom.Controls.AddRange([_close, _recheck, _action]);
-        var middle = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 210, FixedPanel = FixedPanel.Panel1 };
-        middle.Panel1.Controls.Add(_steps);
-        middle.Panel2.Controls.Add(_detail);
-        Controls.Add(middle); Controls.Add(top); Controls.Add(bottom);
+        _middle.Panel1.Controls.Add(_steps);
+        _middle.Panel2.Controls.Add(_detail);
+        Controls.Add(_middle); Controls.Add(top); Controls.Add(bottom);
+        Load += (_, _) => _middle.SplitterDistance = Math.Max(_middle.Panel1MinSize, _middle.Height - 130 * DeviceDpi / 96);
+        _steps.Resize += (_, _) => FitColumns();
         AcceptButton = _recheck; CancelButton = _close;
         _close.Click += (_, _) => Close();
         _recheck.Click += async (_, _) => await RunAsync(null);
@@ -72,12 +76,36 @@ public sealed class SetupForm : Form
             var label = step.State switch { StepState.Ok => "OK", StepState.NeedsAction => "Needs you", StepState.Failed => "Problem", _ => "Waiting" };
             _steps.Items.Add(new ListViewItem([step.Title, label, step.Detail.Length > 40 ? step.Detail[..39] + "…" : step.Detail]) { Tag = step });
         }
+        FitSteps();
         var next = _report.Blocking;
         if (next is not null && _steps.Items.Count > 0) _steps.Items[_report.Steps.ToList().IndexOf(next)].Selected = true;
         _action.Visible = next is { Id: "hostkey" or "password" or "key" or "login" } && next.State is StepState.NeedsAction;
         _action.Text = next?.Id switch { "hostkey" => "Review host key…", "password" or "login" => "Enter Frame password…", "key" => "Choose key file…", _ => "" };
         if (next is null) _detail.Text = "Everything is ready. Close this window and choose H.264 from the tray menu.";
         else ShowDetail();
+        // The step that stops everything opens its own dialog: setup cannot go on without it, so it should not wait for a button press.
+        if (_action.Visible) BeginInvoke(async () => { Activate(); await ActAsync(); });
+    }
+
+    /// <summary>Every step is visible without scrolling: the window grows when the list needs more room than it has.</summary>
+    private void FitSteps()
+    {
+        if (_steps.Items.Count == 0) return;
+        var needed = _steps.Items.Count * _steps.GetItemRect(0).Height + _steps.Margin.Vertical + 8;
+        var missing = needed - _middle.Panel1.Height;
+        if (missing > 0)
+        {
+            var room = Screen.FromControl(this).WorkingArea.Height - Height;
+            if (room > 0) Height += Math.Min(missing, room);
+        }
+        FitColumns();
+    }
+
+    private void FitColumns()
+    {
+        if (_steps.Columns.Count < 3) return;
+        var rest = _steps.ClientSize.Width - _steps.Columns[0].Width - _steps.Columns[1].Width;
+        if (rest > 80) _steps.Columns[2].Width = rest;
     }
 
     private void ShowDetail()
@@ -88,7 +116,14 @@ public sealed class SetupForm : Form
     private async Task ActAsync()
     {
         var next = _report?.Blocking;
-        if (next is null) return;
+        if (next is null || _prompting || _checking) return;
+        _prompting = true;
+        try { await PromptAsync(next); }
+        finally { _prompting = false; }
+    }
+
+    private async Task PromptAsync(SetupStep next)
+    {
         switch (next.Id)
         {
             case "hostkey":

@@ -10,6 +10,9 @@ public sealed partial class TrayApp
     private readonly System.Windows.Forms.Timer _hudTimer = new() { Interval = 100 };
     private StatsSample? _lastSample;
     private HudView? _sentView;
+    private string _hudNotice = "";
+    private bool _hudNoticeIsError;
+    private DateTime _hudNoticeUntil;
 
     private void StartHud()
     {
@@ -76,6 +79,15 @@ public sealed partial class TrayApp
         }
     }
 
+    /// <summary>Anything the tray tells the user in a desktop balloon is also written on the HUD for a while, since the headset hides the desktop.</summary>
+    private void ShowOnHud(string title, string text, ToolTipIcon icon)
+    {
+        if (!_hudSettings.Enabled) return;
+        _hudNotice = (title.Length > 0 ? title + ": " : "") + text;
+        _hudNoticeIsError = icon == ToolTipIcon.Error;
+        _hudNoticeUntil = DateTime.UtcNow.AddSeconds(icon is ToolTipIcon.Warning or ToolTipIcon.Error ? 14 : 7);
+    }
+
     private HudView ReadHudView()
     {
         var sample = _lastSample;
@@ -84,7 +96,8 @@ public sealed partial class TrayApp
         return new(sample?.SteamVrRunning ?? false, sample?.Codec ?? "—", sample?.CodecVerified ?? false,
             sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps, 1) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
-            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), sample is null ? "" : sample.Note ?? sample.CodecDetail ?? "");
+            false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), sample is null ? "" : sample.Note ?? sample.CodecDetail ?? "",
+            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError);
     }
 
     // The same readouts as the monitor window, as one line each.

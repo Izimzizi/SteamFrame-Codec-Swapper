@@ -43,7 +43,8 @@ A Windows tray app (**SteamFrame Codec Swapper**) for the Steam Frame that strea
 1. On the Frame: turn on Developer Mode and set a user password (Developer → Set User Password).
 2. Extract the whole zip. `CodecSwapper.exe` needs the `CodecLab` and `Native` folders beside it. It is unsigned, so Windows SmartScreen may warn (More info → Run anyway).
 3. The **Setup / connection check** opens by itself. The address is `frame` over Wi-Fi, or `10.35.78.1` with the dongle. It shows the Frame's host key fingerprint to trust once, creates the app's own SSH key and asks for the Frame password once to authorize that key. The password goes to Windows Credential Manager only after the Frame accepts it; it is never written to settings, files or command lines. Windows' optional **OpenSSH Client** feature is required.
-4. Optional but recommended: tray menu → **SteamVR driver** → *Install*. Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) to allow more than 232 Mbps.
+4. **Required for H.264:** tray menu → **SteamVR driver** → *Install* (choosing H.264 without it offers to install it, or tells you what to do if SteamVR is running; SteamVR is never restarted by the tray). The tray also brings an out-of-date driver up to date at start when SteamVR is closed.
+   Optional: **Bitrate limit patch** → *Install* (SteamVR closed; if Steam lives under Program Files, use *Restart as administrator* once) to allow more than 232 Mbps.
 5. Choose **H.264** in the tray menu (or on the HUD). With SteamVR closed the choice is remembered and applied when SteamVR starts; the tray never launches SteamVR itself.
 
 ## Using it

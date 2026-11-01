@@ -208,7 +208,7 @@ public sealed partial class TrayApp : ApplicationContext
     }
 
     private async Task ChangeTargetAsync(int mbps) =>
-        Report(await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch, ConfirmRestart));
+        Report(await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch));
 
     private void Report(ChangeOutcome outcome)
     {
@@ -223,14 +223,6 @@ public sealed partial class TrayApp : ApplicationContext
     private static Task<string?> AskPassword() =>
         Task.FromResult(PromptDialog.Ask("Frame password", "Enter the Frame user password. It is kept in Windows Credential Manager (encrypted for this Windows account) so H.264 can come back after SteamVR or the PC restarts, and is stored only once the Frame accepts it.", true));
 
-    private static Task<bool> ConfirmArmRestart() => Task.FromResult(MessageBox.Show(
-        "SteamVR is running. Switching to H.264 restarts SteamVR once (your session will be interrupted). Restart SteamVR now?\n\nClose SteamVR and choose No to arm without a restart: it will wait for SteamVR to start.",
-        "Restart SteamVR?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2, 0) == DialogResult.Yes);
-
-    private static Task<bool> ConfirmRestart() => Task.FromResult(MessageBox.Show(
-        "This change needs SteamVR to restart (your session will be interrupted). Restart SteamVR now?\n\nChoose No to use the new setting the next time you switch to H.264.",
-        "Restart SteamVR?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2, 0) == DialogResult.Yes);
-
     private void ShowSetup()
     {
         if (_setupForm is { IsDisposed: false }) { _setupForm.Activate(); return; }
@@ -242,15 +234,42 @@ public sealed partial class TrayApp : ApplicationContext
     {
         TrayLog("Arm requested");
         if (!_setup.IsConfigured()) { ShowSetup(); Balloon("Setup needed", "Finish the connection check, then choose H.264.", ToolTipIcon.Info); return; }
-        await _controller.ArmAsync(AskPassword, ConfirmPatch, ConfirmArmRestart);
+        if (!await EnsureDriverAsync()) return;
+        await _controller.ArmAsync(AskPassword, ConfirmPatch);
         if (_controller.Current.State is TrayState.Armed or TrayState.Waiting)
             Balloon("H.264", _controller.Current.Message, ToolTipIcon.Info);
     }
 
+    /// <summary>H.264 works through the SteamVR driver. Missing or out of date: offer to install it, or say what to do if SteamVR is holding the old one.</summary>
+    private Task<bool> EnsureDriverAsync()
+    {
+        if (_driver.Inspect() == SteamVrDriverState.Installed) return Task.FromResult(true);
+        if (!_driver.PackageAvailable) { Balloon("SteamVR driver", "This build does not include the SteamVR driver, which H.264 needs.", ToolTipIcon.Error); return Task.FromResult(false); }
+        if (OpenVrSettings.IsRunning)
+        {
+            // Nothing can be installed while SteamVR has the driver open, and a dialog on the desktop is invisible in the headset: say it on both.
+            Balloon("H.264 needs the SteamVR driver", "Close SteamVR, then choose H.264 again (or tray menu: SteamVR driver > Install).", ToolTipIcon.Warning);
+            return Task.FromResult(false);
+        }
+        var answer = MessageBox.Show("H.264 needs the CodecSwapper SteamVR driver, which is " + (_driver.IsRegistered() ? "not this tray's version." : "not installed.") +
+            " It is a small driver SteamVR loads at start to carry the H.264 encoder; it can be removed from the tray menu at any time.\n\nInstall it now?",
+            "SteamVR driver", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1, 0);
+        if (answer != DialogResult.Yes) return Task.FromResult(false);
+        try { _driver.Install(); return Task.FromResult(true); }
+        catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException)
+        { Balloon("SteamVR driver", error.Message, ToolTipIcon.Error); return Task.FromResult(false); }
+    }
+
     private Task<bool> ConfirmPatch(BitratePatchStatus status)
     {
+        if (status.VrServerRunning)
+        {
+            // The patch edits a file SteamVR has open, and a dialog on the desktop is invisible in the headset: say it on both.
+            Balloon("Bitrate limit patch needed", $"Above {TrayController.PatchFreeMaxMbps} Mbps needs the bitrate patch. Close SteamVR, then use the tray menu: Bitrate limit patch > Install.", ToolTipIcon.Warning);
+            return Task.FromResult(false);
+        }
         var answer = MessageBox.Show($"Bitrates above {TrayController.PatchFreeMaxMbps} Mbps need a small patch to SteamVR's Steam Link driver (driver_vrlink.dll). A verified backup of the original is kept and the patch can be removed from this menu.\n\n" +
-            (status.VrServerRunning ? "SteamVR is running; close it first, then choose H.264 again.\n\n" : "") + "Install the patch now?",
+            "Install the patch now?",
             "Bitrate limit patch", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1, 0);
         return Task.FromResult(answer == DialogResult.Yes);
     }
@@ -411,6 +430,7 @@ public sealed partial class TrayApp : ApplicationContext
         _icon.BalloonTipText = Truncate(text, 250);
         _icon.BalloonTipIcon = icon;
         _icon.ShowBalloonTip(6000);
+        ShowOnHud(title, text, icon);
     }
 
     private static string Truncate(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";

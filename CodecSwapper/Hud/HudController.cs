@@ -146,7 +146,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private static bool ControlsChanged(HudView was, HudView now) =>
         was.OpenMenu != now.OpenMenu || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
-        || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
+        || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
     {

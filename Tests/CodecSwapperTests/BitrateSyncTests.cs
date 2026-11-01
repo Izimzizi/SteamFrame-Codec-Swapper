@@ -15,7 +15,7 @@ public sealed class BitrateSyncTests
     }
 
     private static Task<ChangeOutcome> Change(TrayController controller, int mbps) =>
-        controller.ChangeTargetAsync(mbps, () => Task.FromResult<string?>(null), _ => Task.FromResult(true), () => Task.FromResult(true));
+        controller.ChangeTargetAsync(mbps, () => Task.FromResult<string?>(null), _ => Task.FromResult(true));
 
     [Fact]
     public async Task Disarmed_change_is_written_live_when_SteamVR_runs()

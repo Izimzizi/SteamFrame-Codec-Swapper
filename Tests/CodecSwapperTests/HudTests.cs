@@ -539,4 +539,20 @@ public sealed class GpuOverlayTextureTests
         texture.Update(pixels);
         Assert.Equal(first, texture.Texture);
     }
+
+    [Fact]
+    public void A_notice_is_drawn_on_the_panel_in_both_states()
+    {
+        foreach (var interactive in new[] { true, false })
+        {
+            var plain = HudView.Empty with { Interactive = interactive };
+            var noticed = plain with { Notice = "H.264 needs the SteamVR driver. Close SteamVR, then choose H.264 again." };
+            using var a = HudPanel.Render(plain, null);
+            using var b = HudPanel.Render(noticed, null);
+            var differs = false;
+            for (var y = 200; y < 600 && !differs; y += 4)
+                for (var x = 30; x < 600 && !differs; x += 4) differs = a.GetPixel(x, y) != b.GetPixel(x, y);
+            Assert.True(differs);
+        }
+    }
 }

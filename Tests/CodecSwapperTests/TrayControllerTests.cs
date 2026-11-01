@@ -116,26 +116,33 @@ public sealed class TrayControllerTests
         public FramePreferences Prefs { get; } = new() { CodecTargetMbps = 300 };
         public FakeLive Live { get; } = new();
         public int Saves { get; private set; }
-        public int RestartPrompts { get; private set; }
-        public bool AllowRestart { get; set; } = true;
         public TrayController Controller { get; }
-        public bool Driver { get; set; }
+        public bool Driver { get; set; } = true;
         public Rig() => Controller = new(Codec, Vault, Patch, Prefs, () => { Saves++; return Task.CompletedTask; }, Live, () => Driver);
         public Task<ChangeOutcome> Change(int mbps, string? typed = null, bool allowPatch = true) =>
-            Controller.ChangeTargetAsync(mbps, () => Task.FromResult(typed), _ => Task.FromResult(allowPatch), () => { RestartPrompts++; return Task.FromResult(AllowRestart); });
-        public Task<bool> Arm(string? typed = null, bool allowPatch = true, bool allowRestart = true) =>
-            Controller.ArmAsync(() => Task.FromResult(typed), _ => Task.FromResult(allowPatch), () => { RestartPrompts++; return Task.FromResult(allowRestart); });
+            Controller.ChangeTargetAsync(mbps, () => Task.FromResult(typed), _ => Task.FromResult(allowPatch));
+        public Task<bool> Arm(string? typed = null, bool allowPatch = true) =>
+            Controller.ArmAsync(() => Task.FromResult(typed), _ => Task.FromResult(allowPatch));
         public Task Disarm(string? typed = null) => Controller.DisarmAsync(() => Task.FromResult(typed));
     }
 
     [Fact]
-    public async Task Arming_with_the_SteamVR_driver_installed_never_asks_to_restart_a_running_SteamVR()
+    public async Task Arming_with_the_SteamVR_driver_installed_flips_the_codec_in_a_running_SteamVR()
     {
         var rig = new Rig { Driver = true };
         rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live();
         Assert.True(await rig.Arm());
-        Assert.Equal(0, rig.RestartPrompts);
         Assert.True(Assert.Single(rig.Codec.Switches).Request.Driver);
+    }
+
+    [Fact]
+    public async Task Arming_without_the_SteamVR_driver_changes_nothing_and_says_the_driver_is_needed()
+    {
+        var rig = new Rig { Driver = false };
+        rig.Vault.Stored = "pw";
+        Assert.False(await rig.Arm());
+        Assert.Empty(rig.Codec.Switches); Assert.False(rig.Prefs.KeepH264);
+        Assert.Equal(TrayState.Error, rig.Controller.Current.State); Assert.Equal(TrayController.DriverNeeded, rig.Controller.Current.Message);
     }
 
     [Fact]
@@ -198,14 +205,14 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Arming_with_a_stored_password_starts_a_kept_H264_session_that_restarts_a_running_SteamVR_once()
+    public async Task Arming_with_a_stored_password_starts_a_kept_H264_session_in_a_running_SteamVR()
     {
         var rig = new Rig { };
         rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live();
         Assert.True(await rig.Arm());
         var call = Assert.Single(rig.Codec.Switches);
         Assert.Equal(300, call.Request.TargetMbps); Assert.Equal("vbr", call.Request.RateControl); Assert.Equal(2, call.Request.Preset);
-        Assert.Equal("pw", call.Password); Assert.False(call.Resume); Assert.Equal(1, rig.RestartPrompts);
+        Assert.Equal("pw", call.Password); Assert.False(call.Resume);
         Assert.True(rig.Prefs.KeepH264); Assert.Equal(TrayState.Armed, rig.Controller.Current.State);
         Assert.Equal(0, rig.Vault.Saves);
     }
@@ -217,16 +224,7 @@ public sealed class TrayControllerTests
         rig.Live.SteamVrRunning = false; rig.Vault.Stored = "pw"; rig.Codec.AfterSwitch = Live("waiting");
         Assert.True(await rig.Arm());
         var call = Assert.Single(rig.Codec.Switches);
-        Assert.True(call.Resume); Assert.Equal(0, rig.RestartPrompts); Assert.Equal(TrayState.Waiting, rig.Controller.Current.State);
-    }
-
-    [Fact]
-    public async Task Declining_the_SteamVR_restart_arms_nothing()
-    {
-        var rig = new Rig();
-        rig.Vault.Stored = "pw";
-        Assert.False(await rig.Arm(allowRestart: false));
-        Assert.Empty(rig.Codec.Switches); Assert.False(rig.Prefs.KeepH264);
+        Assert.True(call.Resume); Assert.Equal(TrayState.Waiting, rig.Controller.Current.State);
     }
 
     [Fact]
@@ -412,7 +410,7 @@ public sealed class TrayControllerTests
         await rig.Controller.RefreshAsync();
         Assert.Equal(ChangeOutcome.AppliedLive, await rig.Change(400));
         Assert.Equal([400], rig.Codec.Rates); Assert.Equal([400], rig.Live.Applied);
-        Assert.Equal(["rate"], rig.Codec.Calls); Assert.Equal(0, rig.RestartPrompts);
+        Assert.Equal(["rate"], rig.Codec.Calls);
         Assert.Equal(400, rig.Prefs.CodecTargetMbps); Assert.Equal(TrayState.Armed, rig.Controller.Current.State); Assert.Equal(400, rig.Controller.Current.TargetMbps);
     }
 
@@ -499,20 +497,14 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task A_session_that_cannot_change_live_is_re_applied_only_after_the_user_agrees_to_the_restart()
+    public async Task A_session_that_cannot_change_live_is_started_again_without_restarting_SteamVR()
     {
         var rig = new Rig();
         rig.Vault.Stored = "pw"; rig.Prefs.KeepH264 = true; rig.Codec.Status = Live(target: 300); rig.Codec.AfterSwitch = Live(target: 400);
         await rig.Controller.RefreshAsync();
         Assert.Equal(ChangeOutcome.Reapplied, await rig.Change(400));
-        Assert.Equal(1, rig.RestartPrompts); Assert.Empty(rig.Codec.Rates);
+        Assert.Empty(rig.Codec.Rates);
         var call = Assert.Single(rig.Codec.Switches); Assert.Equal(400, call.Request.TargetMbps);
-
-        var declined = new Rig { AllowRestart = false };
-        declined.Prefs.KeepH264 = true; declined.Codec.Status = Live(target: 300);
-        await declined.Controller.RefreshAsync();
-        Assert.Equal(ChangeOutcome.Declined, await declined.Change(400));
-        Assert.Empty(declined.Codec.Switches); Assert.Empty(declined.Codec.Rates); Assert.Equal(400, declined.Prefs.CodecTargetMbps);
     }
 
     [Fact]
