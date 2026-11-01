@@ -394,6 +394,22 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void With_expand_on_hover_the_panel_shrinks_as_soon_as_the_laser_leaves_it()
+    {
+        var rig = new Rig();
+        rig.Settings.ExpandOnHover = true;
+        rig.Tick();
+        rig.Api.Events.Enqueue(rig.Click("codec:h264", OverlayEventKind.MouseMove));
+        rig.Tick();
+        var uploads = rig.Api.Uploads;
+        rig.Api.Events.Enqueue(new(OverlayEventKind.FocusLeave, 4, 0, 0));
+        rig.Api.Events.Enqueue(rig.Click("codec:h264"));
+        rig.Tick();
+        Assert.Empty(rig.Actions.Calls);
+        Assert.True(rig.Api.Uploads > uploads);
+    }
+
+    [Fact]
     public void The_slider_marks_350_and_a_click_near_the_mark_lands_exactly_on_it()
     {
         Assert.Equal(350, HudPanel.SliderValue(HudPanel.SliderX(350)));

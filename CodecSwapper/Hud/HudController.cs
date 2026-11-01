@@ -25,7 +25,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView? _drawn;
     private string? _drawnHover, _hover;
     private DateTime _lastUpload = DateTime.MinValue, _nextConnect = DateTime.MinValue, _laserAt = DateTime.MinValue;
-    private static readonly TimeSpan LaserHold = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan LaserHold = TimeSpan.FromSeconds(1), HoverHold = TimeSpan.FromMilliseconds(400);
     private bool _repositioning;
     private Pose _draftPose;
     private float _draftWidth;
@@ -74,7 +74,12 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         // The laser only reaches the HUD while the dashboard is open; anything else is ignored so a stray event can never press a button.
         // SteamVR does not always report a dashboard that was already open when the HUD joined, so the laser moving over the panel counts as proof it is open (a click alone never does).
         var events = api.PollEvents(_overlay);
-        if (events.Any(e => e.Kind == OverlayEventKind.MouseMove)) _laserAt = at;
+        // The laser leaving the panel is reported, so in hover mode the panel shrinks at once; the hold only covers a missed report.
+        foreach (var e in events)
+        {
+            if (e.Kind is OverlayEventKind.MouseMove or OverlayEventKind.FocusEnter) _laserAt = at;
+            else if (e.Kind == OverlayEventKind.FocusLeave) _laserAt = DateTime.MinValue;
+        }
         UpdateDashboard(at);
         if (_dashboard) foreach (var overlayEvent in events) Handle(overlayEvent);
         // A release can be missed (the laser left the panel): commit a held slider once its events stop.
@@ -88,7 +93,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private void UpdateDashboard(DateTime at)
     {
-        var open = (!settings.ExpandOnHover && api.DashboardVisible()) || at - _laserAt < LaserHold;
+        var open = (!settings.ExpandOnHover && api.DashboardVisible()) || at - _laserAt < (settings.ExpandOnHover ? HoverHold : LaserHold);
         if (open == _dashboard) return;
         _dashboard = open;
         log?.Invoke(open ? "HUD: dashboard opened, controls shown" : "HUD: dashboard closed, readouts only");

@@ -175,7 +175,7 @@ public static class HudPanel
             if (view.Busy) g.DrawString("Applying…", small, accentBrush, 430, 14);
         }
         if (!view.Repositioning && !settingsPage) DrawGraph(g, view, small, accent);
-        if (compact) g.DrawString("Open the dashboard to change settings", small, grey, 22, 334);
+        if (compact) g.DrawString(view.ExpandOnHover ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
         foreach (var button in Layout(view))

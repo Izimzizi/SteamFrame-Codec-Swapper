@@ -1,6 +1,6 @@
 namespace CodecSwapper;
 
-public enum OverlayEventKind { MouseMove, MouseDown, MouseUp, Other }
+public enum OverlayEventKind { MouseMove, MouseDown, MouseUp, FocusEnter, FocusLeave, Other }
 
 /// <summary>A laser event on the overlay: x and y are in the mouse scale the overlay was given (panel pixels), origin bottom-left; Device is the controller that produced it.</summary>
 public readonly record struct OverlayEvent(OverlayEventKind Kind, uint Device, float X, float Y);

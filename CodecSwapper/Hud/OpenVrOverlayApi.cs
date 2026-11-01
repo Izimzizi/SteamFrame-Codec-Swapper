@@ -12,7 +12,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
 {
     private const string OverlayVersion = "IVROverlay_028", SystemVersion = "IVRSystem_026";
     private const int ApplicationOverlay = 2, StandingUniverse = 1, MouseInput = 1, MaxDevices = 64, EventSize = 64;
-    private const uint MouseMove = 300, MouseDown = 301, MouseUp = 302;
+    private const uint MouseMove = 300, MouseDown = 301, MouseUp = 302, FocusEnter = 303, FocusLeave = 304;
     // Slot numbers: position among the virtual methods of the interface class in openvr.h.
     private const int CreateOverlaySlot = 1, DestroyOverlaySlot = 3, ErrorNameSlot = 8, SetAlphaSlot = 16, SetWidthSlot = 22, SetTrackedDeviceRelativeSlot = 35,
         SetTextureSlot = 60, ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62, IsDashboardVisibleSlot = 68;
@@ -189,7 +189,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         while (events.Count < 64 && ((delegate* unmanaged<nint, ulong, byte*, uint, byte>)Slot(_overlay, PollOverlayEventSlot))(_overlay, overlay, buffer, EventSize) != 0)
         {
             var type = *(uint*)buffer;
-            var kind = type switch { MouseMove => OverlayEventKind.MouseMove, MouseDown => OverlayEventKind.MouseDown, MouseUp => OverlayEventKind.MouseUp, _ => OverlayEventKind.Other };
+            var kind = type switch { MouseMove => OverlayEventKind.MouseMove, MouseDown => OverlayEventKind.MouseDown, MouseUp => OverlayEventKind.MouseUp, FocusEnter => OverlayEventKind.FocusEnter, FocusLeave => OverlayEventKind.FocusLeave, _ => OverlayEventKind.Other };
             events.Add(new(kind, *(uint*)(buffer + 4), *(float*)(buffer + 16), *(float*)(buffer + 20)));
         }
         return events;
