@@ -202,8 +202,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "hide": Fire(actions.HideAsync); break;
             case "page": _page = parts[1] == "close" ? "" : parts[1]; _menu = ""; _drawn = null; break;
             case "set":
-                if (parts[1] == "autoshow") settings.AutoShow = !settings.AutoShow;
-                else if (parts[1] == "expand") settings.ExpandOnHover = !settings.ExpandOnHover;
+                if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
+                else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
                 Persist(); _drawn = null;
                 break;
             case "size": _draftWidth = Math.Clamp(_draftWidth * (parts[1] == "+" ? 1.12f : 1 / 1.12f), HudSettings.MinimumWidth, HudSettings.MaximumWidth); break;

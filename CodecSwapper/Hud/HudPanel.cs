@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// page:settings, page:close, set:autoshow, set:expand, reposition, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:expand:dashboard|hover, reposition, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -84,9 +84,9 @@ public static class HudPanel
         if (view.Page == "settings")
         {
             buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
-            Row(70, 64, [("set:autoshow", $"Show when SteamVR starts: {(view.AutoShow ? "On" : "Off")}", view.AutoShow, true)]);
-            Row(150, 64, [("set:expand", $"Expand: {(view.ExpandOnHover ? "when the laser points at it" : "when the dashboard opens")}", false, true)]);
-            Row(230, 64, [("reposition", "Reposition HUD", false, true)]);
+            Row(104, 52, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
+            Row(222, 52, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
+            Row(318, 52, [("reposition", "Reposition HUD", false, true)]);
             return buttons;
         }
         var control = !view.Busy;
@@ -152,7 +152,9 @@ public static class HudPanel
         }
         else if (settingsPage)
         {
-            g.DrawString("Hide HUD takes the panel away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With Show when SteamVR\nstarts off, the HUD stays hidden until you show it from the tray menu.", small, grey, 22, 316);
+            g.DrawString("Show the HUD when SteamVR starts", normal, white, 22, 70);
+            g.DrawString("Show the controls when", normal, white, 22, 188);
+            g.DrawString("Hide HUD takes the panel away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With the first option Off, the\nHUD stays hidden until you show it from the tray menu.", small, grey, 22, 394);
         }
         else
         {
@@ -277,6 +279,7 @@ public static class HudPanel
     private static GraphicsPath Rounded(Rectangle r, int radius)
     {
         var path = new GraphicsPath();
+        radius = Math.Min(radius, Math.Min(r.Width, r.Height) / 2 - 1);
         var d = radius * 2;
         path.AddArc(r.X, r.Y, d, d, 180, 90);
         path.AddArc(r.Right - d, r.Y, d, d, 270, 90);

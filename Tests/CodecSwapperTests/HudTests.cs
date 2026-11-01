@@ -343,7 +343,7 @@ public sealed class HudControllerTests
         Assert.DoesNotContain(HudPanel.Layout(rig.View with { Interactive = true }), b => b.Id == "reposition");
         rig.Press("page:settings");
         Assert.Equal("settings", rig.Hud.Page);
-        rig.Press("set:autoshow");
+        rig.Press("set:autoshow:off");
         Assert.False(rig.Settings.AutoShow);
         rig.Press("reposition");
         Assert.True(rig.Hud.Repositioning);
@@ -352,7 +352,7 @@ public sealed class HudControllerTests
         rig.Press("page:close");
         Assert.Equal("", rig.Hud.Page);
         rig.Press("page:settings");
-        rig.Press("set:expand");
+        rig.Press("set:expand:hover");
         Assert.True(rig.Settings.ExpandOnHover);
         Assert.Equal(2, rig.Saves);
         using var bitmap = HudPanel.Render(HudView.Empty with { Connected = true, Interactive = true, Page = "settings" }, null);
