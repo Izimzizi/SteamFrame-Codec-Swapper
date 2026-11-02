@@ -162,7 +162,7 @@ public static class HudPanel
             g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 130);
             if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the Always visible style.", small, grey, 22, 204);
             else g.DrawString("Show the controls when", normal, white, 22, 206);
-            g.DrawString("Fade out when looking more than this far away", normal, white, 22, 280);
+            g.DrawString("Fade out when facing more than this away from me", normal, white, 22, 280);
             g.DrawString("Fade out beyond this distance from the headset", normal, white, 22, 354);
             g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. It can be turned\nback on any time in the tray menu: VR HUD > Show HUD on a controller. With the\nfirst option Off, the HUD stays hidden until you show it from the tray menu.", small, grey, 22, 496);
         }

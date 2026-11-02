@@ -299,16 +299,17 @@ public sealed class HudControllerTests
     }
 
     [Fact]
-    public void The_HUD_and_the_watch_fade_out_when_they_are_away_from_where_the_headset_looks()
+    public void The_HUD_and_the_watch_each_fade_out_when_they_face_away_from_the_viewer()
     {
         var rig = new Rig();
         rig.Settings.Watch = true; rig.Settings.PanelOpen = true; rig.Settings.FadeAngle = 60;
-        rig.Api.Poses[0] = Pose.Identity;                                   // the headset looks along -Z
-        rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, -.5f));         // the hand is held out in front
+        rig.Settings.SetPlacement(Pose.Identity, .2f); rig.Settings.SetIconPlacement(Pose.Identity, .05f);   // both face +Z, the way the hand faces
+        rig.Api.Poses[0] = Pose.Identity;                                   // the headset at the origin
+        rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, -.5f));         // the hand in front of it, facing back at it
         rig.Tick();
         Assert.Equal(1f, rig.Api.Alpha[7]);
         Assert.Equal(1f, rig.Api.Alpha[8]);
-        rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, .6f));          // the hand drops behind the head
+        rig.Api.Poses[3] = Pose.Rotation(180, 0, 0, new(0, 0, -.5f));      // the hand turns its back to the headset
         rig.Tick(); rig.Tick();
         Assert.Equal(0f, rig.Api.Alpha[7]);
         Assert.Equal(0f, rig.Api.Alpha[8]);
@@ -319,6 +320,7 @@ public sealed class HudControllerTests
     {
         var rig = new Rig();
         rig.Settings.FadeDistanceCm = 20;
+        rig.Settings.SetPlacement(Pose.Identity, .2f);
         rig.Api.Poses[0] = Pose.Identity;
         rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, -.5f));
         rig.Tick(); rig.Tick();

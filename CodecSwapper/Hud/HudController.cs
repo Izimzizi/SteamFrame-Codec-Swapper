@@ -127,7 +127,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_repositioning) StopRepositioning();
     }
 
-    // Fading out: the HUD and the watch dim when they are far from where the headset looks (angle) or far from the headset (distance).
+    // Fading out: the HUD and the watch each dim when they face more than the chosen angle away from the viewer (the angle between the
+    // direction the picture faces and the line to the headset), or when they are further from the headset than the chosen distance.
     private const float FadeBandDegrees = 12f;
     private float _panelAlpha = 1f, _iconAlpha = 1f;
     private DateTime _fadeAt = DateTime.MinValue;
@@ -139,12 +140,12 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (at - _fadeAt < TimeSpan.FromMilliseconds(50)) return;
         _fadeAt = at;
         if (!api.TryDevicePose(0, out var head) || !api.TryDevicePose(device, out var carrier)) return;
-        SetAlphas(FadeAlpha(head, carrier.Then(_repositioning ? _draftPose : settings.Pose).T), FadeAlpha(head, carrier.Then(_repositioning ? _draftIconPose : settings.IconPose).T));
+        SetAlphas(FadeAlpha(head, carrier.Then(_repositioning ? _draftPose : settings.Pose)), FadeAlpha(head, carrier.Then(_repositioning ? _draftIconPose : settings.IconPose)));
     }
 
-    private float FadeAlpha(Pose head, Vector3 position)
+    private float FadeAlpha(Pose head, Pose overlayInWorld)
     {
-        var toward = position - head.T;
+        var toward = head.T - overlayInWorld.T;
         var distance = toward.Length();
         var alpha = 1f;
         if (settings.FadeDistanceCm > 0)
@@ -154,8 +155,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         if (settings.FadeAngle > 0 && distance > 1e-3f)
         {
-            var forward = head.Rotate(-Vector3.UnitZ);
-            var degrees = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(toward), forward), -1f, 1f)) * 180f / MathF.PI;
+            var facing = overlayInWorld.Rotate(Vector3.UnitZ);
+            var degrees = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(toward), Vector3.Normalize(facing)), -1f, 1f)) * 180f / MathF.PI;
             alpha = Math.Min(alpha, Math.Clamp(1 - (degrees - settings.FadeAngle) / FadeBandDegrees, 0f, 1f));
         }
         return alpha;
