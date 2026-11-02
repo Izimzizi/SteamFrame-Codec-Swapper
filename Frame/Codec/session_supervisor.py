@@ -452,6 +452,23 @@ class Supervisor:
   if result.get('code')==34:raise RuntimeError('This SteamVR session streams a Default (HEVC) picture too large for H.264, so it cannot switch to H.264 live. Restart SteamVR to use H.264.')
   if result.get('code'):raise RuntimeError('The hook refused the '+mode+' mode (code '+str(result.get('code'))+', stock encoders '+str(result.get('stock_sessions'))+' of '+str(result.get('sessions'))+' sessions).')
   return result
+ def hook_width(self,what):
+  return self.stats('width',what)
+ def narrow_for_h264(self):
+  """Lower SteamVR's stream width to what H.264 can take while the stream still runs on HEVC, and wait until the driver's HEVC
+  encoder has been set up at that size. The user's own width is kept by the hook and put back by widen_after_hevc."""
+  result=self.hook_width('h264')
+  if result.get('code'):raise RuntimeError('The stream width could not be lowered for H.264 (code '+str(result.get('code'))+').')
+  deadline=time.time()+12
+  while time.time()<deadline:
+   info=self.stats('switch-info')
+   if 0<info.get('picture_width',0)<=1024 and 0<info.get('picture_height',0)<=4096:return
+   time.sleep(.4)
+  self.hook_width('restore')
+  raise RuntimeError('SteamVR did not lay the stream out in 1024 px for H.264.')
+ def widen_after_hevc(self):
+  try:self.hook_width('restore')
+  except Exception as error:self.log('could not restore the stream width: '+str(error)[:200])
  def set_mode(self,mode,operation_id=''):
   """Switch the running SteamVR between H.264 and its own HEVC without restarting it: the stream stops, the hook and the Frame's
   client flip together, the stream starts again. On any failure the previous codec is put back."""
@@ -476,6 +493,11 @@ class Supervisor:
   self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,
    message='Switching the stream to '+('stock HEVC' if mode=='stock' else 'H.264')+'.')
   touched=[False]
+  if mode=='h264':
+   try:self.phase='lowering the stream width';self.narrow_for_h264()
+   except Exception as error:
+    self.update(state='ready',active_codec='HEVC',stream_pid=self.pid,message='The switch did not start ('+str(error)[:120]+'); the stream is unchanged.')
+    raise
   def flip(wanted):
    # The stream is stopped, so the hook and the Frame's decoder client may change together.
    touched[0]=True;self.phase='Frame codec activation'
@@ -493,7 +515,7 @@ class Supervisor:
    flip(mode)
    self.phase='starting Frame stream';self.cef('start')
    self.phase='verifying hardware stream'
-   if mode=='stock':self.verify_stock(fps)
+   if mode=='stock':self.verify_stock(fps);self.widen_after_hevc()
    else:self.verify_stream(target,fps)
   except Exception as error:
    self.log('live switch to '+mode+' failed ('+self.phase+'): '+str(error)[:300])
@@ -504,6 +526,7 @@ class Supervisor:
     raise
    try:
     self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle();flip(previous);self.cef('start')
+    if previous=='stock':self.widen_after_hevc()
     self.update(state='ready',active_codec='HEVC' if previous=='stock' else 'H.264',stream_pid=self.pid,
      message='The live switch failed; the stream is back on '+('stock HEVC' if previous=='stock' else 'H.264')+'.')
    except Exception as restore:

@@ -30,6 +30,8 @@ typedef struct HookSwitchInfo {
  uint32_t size,version,mode,sessions,stock_sessions;
  uint32_t last_stock_status;
  uint64_t switches,stock_encodes,stock_locks,stock_errors;
+ // The picture the driver's own encoder was last set up with (0 until it is).
+ uint32_t picture_width,picture_height;
 } HookSwitchInfo;
 // Stream-width control done from inside vrserver (the driver context's settings interface). action: 0 read, 1 H.264 width, 2 restore.
 typedef struct HookWidthInfo {

@@ -61,8 +61,9 @@ GUID preset_guid(){
 HookBridgeStats stats{sizeof(HookBridgeStats),1};
 // SteamVR sees one set of buffer handles. Each wraps the handle in the H.264 session and the one in the stock HEVC session
 // (when the driver's own API is available), so the codec can change while SteamVR keeps running.
-struct VResource{void* h264=nullptr;void* stock=nullptr;};
-struct VOutput{void* h264=nullptr;void* stock=nullptr;int last=0;LONGLONG started=0;};
+// reg / create keep what SteamVR asked for, so an H.264 handle the encoder refused while HEVC was selected can be made at the switch.
+struct VResource{void* h264=nullptr;void* stock=nullptr;NV_ENC_REGISTER_RESOURCE reg{};};
+struct VOutput{void* h264=nullptr;void* stock=nullptr;int last=0;LONGLONG started=0;NV_ENC_CREATE_BITSTREAM_BUFFER create{};};
 // Encode time as SteamVR sees it: from submitting a picture to its bitstream being ready. Averaged over a second and written to
 // encode-timing.txt in the tray's data folder, where the monitor and the HUD read it.
 double timing_sum=0,timing_max=0;uint32_t timing_frames=0;ULONGLONG timing_window=0;
@@ -190,6 +191,9 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
  if(!session_baseline(encoder,baseline))return false;
  init=source;config=baseline;
  init.version=NV_ENC_INITIALIZE_PARAMS_VER;config.version=NV_ENC_CONFIG_VER;
+ // The maximum the H.264 encoder was started with is never above what it can take, even when SteamVR's is.
+ if(init.maxEncodeWidth)init.maxEncodeWidth=std::min(init.maxEncodeWidth,width_limit());
+ if(init.maxEncodeHeight)init.maxEncodeHeight=std::min(init.maxEncodeHeight,height_limit());
  init.encodeGUID=NV_ENC_CODEC_H264_GUID;init.presetGUID=preset_guid();
  init.tuningInfo=NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;init.enablePTD=1;init.enableMEOnlyMode=0;
  init.encodeConfig=&config;config.profileGUID=NV_ENC_H264_PROFILE_HIGH_GUID;
@@ -226,18 +230,18 @@ NVENCSTATUS NVENCAPI initialize(void* encoder,NV_ENC_INITIALIZE_PARAMS* source){
   stats.width=source->encodeWidth;stats.height=source->encodeHeight;
   stats.source_fps_num=source->frameRateNum;stats.source_fps_den=source->frameRateDen;
   stats.source_async=source->enableEncodeAsync;}
- // Default (HEVC) at a size the H.264 encoder cannot take: only the driver's own encoder is initialized.
- void* stock_only=nullptr;
- {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);
-  if(active_mode==1&&found!=sessions.end()&&found->second.stock&&(source->encodeWidth>width_limit()||source->encodeHeight>height_limit()))stock_only=found->second.stock;}
- if(stock_only){
-  const auto result=static_cast<NVENCSTATUS>(StockInitialize(stock_only,source));
-  std::lock_guard<std::mutex> lock(mutex);stats.last_status=result;stats.initialize_status=result;stats.initialize_error[0]=0;
-  if(result==NV_ENC_SUCCESS)++stats.initializes;else{++stats.errors;++switch_info.stock_errors;}
-  return result;
- }
+ // Default (HEVC) may start at a picture the H.264 encoder cannot take (SteamVR initializes at the widest stream it knows). The
+ // H.264 encoder is then started at the largest picture it can take; once the stream is laid out in 1024 px the switch to
+ // H.264 reconfigures it within that size, and the driver's own HEVC encoder carries the larger pictures meanwhile.
+ NV_ENC_INITIALIZE_PARAMS clamped=*source;
+ {std::lock_guard<std::mutex> lock(mutex);
+  if(active_mode==1){
+   clamped.encodeWidth=std::min(clamped.encodeWidth,width_limit());clamped.encodeHeight=std::min(clamped.encodeHeight,height_limit());
+   if(clamped.maxEncodeWidth)clamped.maxEncodeWidth=std::min(clamped.maxEncodeWidth,width_limit());
+   if(clamped.maxEncodeHeight)clamped.maxEncodeHeight=std::min(clamped.maxEncodeHeight,height_limit());
+  }}
  NV_ENC_INITIALIZE_PARAMS copy{};NV_ENC_CONFIG config{};
- if(!configure(encoder,*source,copy,config)){
+ if(!configure(encoder,clamped,copy,config)){
   std::lock_guard<std::mutex> lock(mutex);stats.initialize_status=NV_ENC_ERR_INVALID_PARAM;
   strcpy_s(stats.initialize_error,"Source layout/rate/dimensions or paired-codec preset rejected");
   return NV_ENC_ERR_INVALID_PARAM;
@@ -283,6 +287,11 @@ NVENCSTATUS reconfigure_h264(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
    auto found=sessions.find(encoder);if(found!=sessions.end()&&old_preset!=requested_preset)found->second.baseline_ready=false;
   }}
  if(!configure(encoder,requested,copy.reInitEncodeParams,config))return reject(NV_ENC_ERR_INVALID_PARAM);
+ // A new picture size needs the encoder reset, with a fresh sequence for the decoder.
+ bool resized=false;
+ {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);
+  resized=found!=sessions.end()&&(found->second.width!=copy.reInitEncodeParams.encodeWidth||found->second.height!=copy.reInitEncodeParams.encodeHeight);}
+ if(resized){copy.resetEncoder=1;copy.forceIDR=1;}
  auto status=api.nvEncReconfigureEncoder(encoder,&copy);
  if(adopted&&status!=NV_ENC_SUCCESS){
   // The encoder refused the new options (a preset cannot always change in place): keep running on the old ones.
@@ -293,15 +302,21 @@ NVENCSTATUS reconfigure_h264(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
   status=api.nvEncReconfigureEncoder(encoder,&copy);
  }
  {std::lock_guard<std::mutex> lock(mutex);++stats.reconfigures;stats.last_status=status;
-  if(status!=NV_ENC_SUCCESS)++stats.errors;
+  if(status!=NV_ENC_SUCCESS){++stats.errors;
+   const char* text=api.nvEncGetLastErrorString?api.nvEncGetLastErrorString(encoder):nullptr;
+   snprintf(stats.initialize_error,sizeof(stats.initialize_error),"H.264 reconfigure to %ux%u: status %d %s",copy.reInitEncodeParams.encodeWidth,copy.reInitEncodeParams.encodeHeight,int(status),text?text:"");}
   else {stats.width=copy.reInitEncodeParams.encodeWidth;stats.height=copy.reInitEncodeParams.encodeHeight;
+   auto found=sessions.find(encoder);if(found!=sessions.end()){found->second.width=stats.width;found->second.height=stats.height;}
    stats.average_bps=config.rcParams.averageBitRate;stats.peak_bps=config.rcParams.maxBitRate;}}
  return status;
 }
 NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
  bool h264_session=true;
  {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())h264_session=found->second.h264;}
- const auto h264=h264_session?reconfigure_h264(encoder,source):NV_ENC_SUCCESS;
+ // While HEVC is selected a picture beyond the H.264 limits is the driver's HEVC encoder's alone.
+ bool oversize=false;
+ {std::lock_guard<std::mutex> lock(mutex);oversize=active_mode==1&&source&&(source->reInitEncodeParams.encodeWidth>width_limit()||source->reInitEncodeParams.encodeHeight>height_limit());}
+ const auto h264=h264_session&&!oversize?reconfigure_h264(encoder,source):NV_ENC_SUCCESS;
  void* stock=nullptr;int mode=0;
  {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())stock=found->second.stock;mode=active_mode;}
  if(!stock)return h264;
@@ -315,9 +330,13 @@ NVENCSTATUS NVENCAPI create_output(void* encoder,NV_ENC_CREATE_BITSTREAM_BUFFER*
  NV_ENC_CREATE_BITSTREAM_BUFFER copy{};
  if(!upgrade(source,copy,old_common,NV_ENC_CREATE_BITSTREAM_BUFFER_VER))return NV_ENC_ERR_INVALID_VERSION;
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
- const auto status=session->h264?api.nvEncCreateBitstreamBuffer(encoder,&copy):NV_ENC_SUCCESS;
+ auto status=session->h264?api.nvEncCreateBitstreamBuffer(encoder,&copy):NV_ENC_SUCCESS;
+ const auto asked=copy;
+ // Refused while HEVC is selected (a buffer sized for a picture H.264 cannot take): made at the switch instead.
+ const bool deferred=status!=NV_ENC_SUCCESS&&active_mode==1&&session->stock;
+ if(deferred){status=NV_ENC_SUCCESS;copy.bitstreamBuffer=nullptr;}
  if(status!=NV_ENC_SUCCESS)return status;
- auto* output=new VOutput{session->h264?copy.bitstreamBuffer:nullptr,nullptr,0};
+ auto* output=new VOutput{session->h264?copy.bitstreamBuffer:nullptr,nullptr,0};output->create=asked;
  if(session->stock&&StockCreateOutput(session->stock,source,&output->stock)){output->stock=nullptr;++switch_info.stock_errors;}
  session->outputs.insert(output);source->bitstreamBuffer=output;
  return status;
@@ -333,9 +352,12 @@ NVENCSTATUS NVENCAPI register_resource(void* encoder,NV_ENC_REGISTER_RESOURCE* s
  NV_ENC_REGISTER_RESOURCE copy{};
  if(!upgrade(source,copy,old_register,NV_ENC_REGISTER_RESOURCE_VER))return NV_ENC_ERR_INVALID_VERSION;
  std::lock_guard<std::mutex> lock(mutex);auto* session=find_session(encoder);if(!session)return NV_ENC_ERR_INVALID_ENCODERDEVICE;
- const auto status=session->h264?api.nvEncRegisterResource(encoder,&copy):NV_ENC_SUCCESS;
+ auto status=session->h264?api.nvEncRegisterResource(encoder,&copy):NV_ENC_SUCCESS;
+ const auto asked=copy;
+ const bool deferred=status!=NV_ENC_SUCCESS&&active_mode==1&&session->stock;
+ if(deferred){status=NV_ENC_SUCCESS;copy.registeredResource=nullptr;}
  if(status!=NV_ENC_SUCCESS)return status;
- auto* resource=new VResource{session->h264?copy.registeredResource:nullptr,nullptr};
+ auto* resource=new VResource{session->h264?copy.registeredResource:nullptr,nullptr};resource->reg=asked;
  if(session->stock&&StockRegister(session->stock,source,&resource->stock)){resource->stock=nullptr;++switch_info.stock_errors;}
  session->resources.insert(resource);source->registeredResource=resource;
  return status;
@@ -354,7 +376,7 @@ NVENCSTATUS NVENCAPI map_resource(void* encoder,NV_ENC_MAP_INPUT_RESOURCE* sourc
  auto* resource=static_cast<VResource*>(source->registeredResource);if(!session->resources.count(resource))return NV_ENC_ERR_INVALID_PTR;
  // The codec is chosen here, per frame: the mapped handle remembers which session it belongs to.
  const int on=((active_mode==1||!session->h264)&&session->stock&&resource->stock)?1:0;
- if(!on&&!session->h264)return NV_ENC_ERR_INVALID_PTR;
+ if(!on&&(!session->h264||!resource->h264))return NV_ENC_ERR_INVALID_PTR;
  void* real=nullptr;uint32_t format=0;NVENCSTATUS status;
  if(on)status=static_cast<NVENCSTATUS>(StockMap(session->stock,source,resource->stock,&real,&format));
  else{copy.registeredResource=resource->h264;status=api.nvEncMapInputResource(encoder,&copy);real=copy.mappedResource;format=copy.mappedBufferFmt;}
@@ -570,7 +592,12 @@ extern "C" int HOOK_CALL HookSetLegacyMode(uint32_t mode){
   for(auto& entry:sessions)if(!entry.second.stock)return -3;
  }
  // A session made for a wide HEVC picture has no H.264 encoder beside it and cannot be switched to H.264.
- if(mode==0)for(auto& entry:sessions)if(!entry.second.h264)return -4;
+ if(mode==0)for(auto& entry:sessions){
+  if(!entry.second.h264)return -4;
+  // Handles the H.264 encoder refused while HEVC was selected are made now.
+  for(auto* item:entry.second.resources)if(!item->h264){auto request=item->reg;if(api.nvEncRegisterResource(entry.first,&request)!=NV_ENC_SUCCESS)return -4;item->h264=request.registeredResource;}
+  for(auto* item:entry.second.outputs)if(!item->h264){auto request=item->create;if(api.nvEncCreateBitstreamBuffer(entry.first,&request)!=NV_ENC_SUCCESS)return -4;item->h264=request.bitstreamBuffer;}
+ }
  if(active_mode!=int(mode)){active_mode=int(mode);last_codec=0;++switch_info.switches;}
  return 0;
 }
@@ -579,6 +606,7 @@ extern "C" int HOOK_CALL HookGetLegacySwitchInfo(HookSwitchInfo* output){
  std::lock_guard<std::mutex> lock(mutex);*output=switch_info;output->mode=uint32_t(active_mode);
  output->sessions=uint32_t(sessions.size());output->stock_sessions=0;
  for(auto& entry:sessions)if(entry.second.stock)++output->stock_sessions;
+ StockEncodeSize(&output->picture_width,&output->picture_height);
  return 0;
 }
 

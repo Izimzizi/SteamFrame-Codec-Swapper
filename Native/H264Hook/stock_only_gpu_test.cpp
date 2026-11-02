@@ -56,8 +56,40 @@ int main(){
   if(initialized!=NV_ENC_SUCCESS)throw std::runtime_error(std::string("stock-only initialize: ")+std::to_string(initialized));
   HookSwitchInfo info{sizeof(info),1};
   if(HookGetLegacySwitchInfo(&info)||info.stock_sessions!=1||info.stock_errors)throw std::runtime_error("The stock encoder did not take the tall picture");
-  // Such a session has no H.264 encoder beside it: a switch to H.264 is refused instead of sending HEVC frames to an H.264 decoder.
-  if(HookSetLegacyMode(0)!=-4)throw std::runtime_error("H.264 mode was accepted for a session without an H.264 encoder");
+  // The H.264 encoder beside it was started at the largest picture it takes. After SteamVR lays the stream out in 1024 px
+  // (a reconfigure to 1024 x 4096) the switch to H.264 succeeds and the same session encodes H.264.
+  {
+   const uint32_t small_width=1024,small_height=4096;
+   NV_ENC_INITIALIZE_PARAMS narrow=init;narrow.encodeWidth=narrow.darWidth=small_width;narrow.encodeHeight=narrow.darHeight=small_height;
+   NV_ENC_RECONFIGURE_PARAMS narrowed{};narrowed.version=NV_ENC_RECONFIGURE_PARAMS_VER;narrowed.reInitEncodeParams=narrow;
+   check(api.nvEncReconfigureEncoder(encoder,&narrowed),"reconfigure to 1024");
+   if(HookSetLegacyMode(0)!=0)throw std::runtime_error("The switch to H.264 was refused after the stream was laid out in 1024 px");
+   D3D11_TEXTURE2D_DESC narrow_desc{};narrow_desc.Width=small_width;narrow_desc.Height=small_height;narrow_desc.MipLevels=narrow_desc.ArraySize=1;narrow_desc.Format=DXGI_FORMAT_NV12;
+   narrow_desc.SampleDesc.Count=1;narrow_desc.Usage=D3D11_USAGE_DEFAULT;narrow_desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+   ComPtr<ID3D11Texture2D> small_texture;if(FAILED(device->CreateTexture2D(&narrow_desc,nullptr,&small_texture)))throw std::runtime_error("Small texture failed");
+   NV_ENC_REGISTER_RESOURCE small_resource{};small_resource.version=NV_ENC_REGISTER_RESOURCE_VER;small_resource.resourceType=NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX;
+   small_resource.resourceToRegister=small_texture.Get();small_resource.width=small_width;small_resource.height=small_height;small_resource.bufferFormat=NV_ENC_BUFFER_FORMAT_NV12;small_resource.bufferUsage=NV_ENC_INPUT_IMAGE;
+   check(api.nvEncRegisterResource(encoder,&small_resource),"register 1024");
+   NV_ENC_CREATE_BITSTREAM_BUFFER small_buffer{};small_buffer.version=NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
+   check(api.nvEncCreateBitstreamBuffer(encoder,&small_buffer),"output 1024");
+   for(uint32_t i=0;i<10;++i){
+    NV_ENC_MAP_INPUT_RESOURCE mapped{};mapped.version=NV_ENC_MAP_INPUT_RESOURCE_VER;mapped.registeredResource=small_resource.registeredResource;
+    check(api.nvEncMapInputResource(encoder,&mapped),"map 1024");
+    NV_ENC_PIC_PARAMS picture{};picture.version=NV_ENC_PIC_PARAMS_VER;picture.inputWidth=small_width;picture.inputHeight=small_height;
+    picture.inputBuffer=mapped.mappedResource;picture.bufferFmt=mapped.mappedBufferFmt;picture.pictureStruct=NV_ENC_PIC_STRUCT_FRAME;
+    picture.outputBitstream=small_buffer.bitstreamBuffer;picture.frameIdx=i;picture.inputTimeStamp=i*1000000/fps;
+    check(api.nvEncEncodePicture(encoder,&picture),"encode 1024");
+    NV_ENC_LOCK_BITSTREAM locked{};locked.version=NV_ENC_LOCK_BITSTREAM_VER;locked.outputBitstream=small_buffer.bitstreamBuffer;
+    check(api.nvEncLockBitstream(encoder,&locked),"lock 1024");
+    const auto* data=static_cast<const uint8_t*>(locked.bitstreamBufferPtr);
+    if(!locked.bitstreamSizeInBytes||(!i&&has_hevc_vps(data,locked.bitstreamSizeInBytes)))throw std::runtime_error("The H.264 frame is empty or HEVC");
+    check(api.nvEncUnlockBitstream(encoder,small_buffer.bitstreamBuffer),"unlock 1024");check(api.nvEncUnmapInputResource(encoder,mapped.mappedResource),"unmap 1024");
+   }
+   check(api.nvEncDestroyBitstreamBuffer(encoder,small_buffer.bitstreamBuffer),"destroy output 1024");
+   check(api.nvEncUnregisterResource(encoder,small_resource.registeredResource),"unregister 1024");
+   if(HookSetLegacyMode(1))throw std::runtime_error("Back to stock refused");
+   narrowed.reInitEncodeParams=init;check(api.nvEncReconfigureEncoder(encoder,&narrowed),"reconfigure back to the wide picture");
+  }
   D3D11_TEXTURE2D_DESC desc{};desc.Width=width;desc.Height=height;desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_NV12;
   desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_DEFAULT;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
   ComPtr<ID3D11Texture2D> texture;if(FAILED(device->CreateTexture2D(&desc,nullptr,&texture)))throw std::runtime_error("Texture failed");
@@ -96,5 +128,8 @@ int main(){
   if(HookGetLegacySwitchInfo(&info)||info.sessions)throw std::runtime_error("A session was left open");
   std::cout<<"{\"stock_only\":true,\"frames\":"<<frames<<",\"width\":"<<width<<",\"height\":"<<height<<",\"h264_caps_height\":"<<h264_height<<",\"stock_caps_height\":"<<stock_height<<"}\n";
   return 0;
- }catch(const std::exception& error){std::cerr<<error.what()<<"\n";return 1;}
+ }catch(const std::exception& error){std::cerr<<error.what()<<"\n";
+  HookBridgeStats failed{sizeof(failed),1};
+  if(!HookGetLegacyBridgeStats(&failed))std::cerr<<"bridge: size "<<failed.width<<"x"<<failed.height<<", reconfigures "<<failed.reconfigures<<", errors "<<failed.errors<<", last status "<<failed.last_status<<", initialize "<<failed.initialize_status<<" "<<failed.initialize_error<<"\n";
+  return 1;}
 }

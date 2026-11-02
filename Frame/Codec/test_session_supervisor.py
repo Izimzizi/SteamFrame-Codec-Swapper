@@ -499,9 +499,11 @@ class LiveModeTests(LiveRateTests):
   return instance
  def wire(self,instance,calls,mode='h264',stock_sessions=1,fail=None):
   def stats(action='stats',*arguments):
-   if action=='switch-info':return {'mode':mode,'stock_sessions':stock_sessions,'sessions':1}
+   if action=='switch-info':return {'mode':mode,'stock_sessions':stock_sessions,'sessions':1,'picture_width':1024,'picture_height':4096}
    if action=='mode':calls.append('hook '+arguments[0]);return {'code':0}
+   if action=='width':instance.width_calls.append(arguments[0]);return {'code':0}
    raise AssertionError(action)
+  instance.width_calls=[]
   instance.stats=stats
   instance.stop_frame_stream=lambda:calls.append('cef stop') or True
   instance.wait_decoder_idle=lambda *a:calls.append('idle')
@@ -531,7 +533,17 @@ class LiveModeTests(LiveRateTests):
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
    instance.set_mode('h264','op')
   self.assertEqual(calls,['cef stop','idle','frame client-h264','hook h264','cef start','verify h264'])
+  self.assertEqual(instance.width_calls,['h264'])
   self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
+ def test_a_stream_that_stays_wide_leaves_the_stream_unchanged_and_the_width_restored(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls,mode='stock')
+  base=instance.stats
+  instance.stats=lambda action='stats',*a:dict(base(action,*a),picture_width=1344,picture_height=5376) if action=='switch-info' else base(action,*a)
+  moment=iter(range(0,1000,5))
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update'),patch.object(instance,'log'),patch.object(service.time,'sleep'),patch.object(service.time,'time',lambda:next(moment)):
+   with self.assertRaisesRegex(RuntimeError,'1024 px'):instance.set_mode('h264','op')
+  self.assertEqual(instance.width_calls,['h264','restore']);self.assertNotIn('cef stop',calls)
  def test_a_failed_switch_puts_the_previous_codec_back(self):
   instance=self.make();calls=[]
   self.wire(instance,calls,fail='stock')
@@ -560,7 +572,8 @@ class DriverSessionTests(LiveModeTests):
   info={'mode':'stock','stock_sessions':1,'sessions':1}
   def stats(action='stats',*arguments):
    calls.append(action)
-   if action=='switch-info':return dict(info)
+   if action=='switch-info':return dict(info,picture_width=1024,picture_height=4096)
+   if action=='width':return {'code':0}
    if action=='configure':return {'code':0}
    if action=='mode':info['mode']=arguments[0];return {'code':0}
    raise AssertionError(action)

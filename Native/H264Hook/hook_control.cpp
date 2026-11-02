@@ -104,7 +104,7 @@ int wmain(int argc,wchar_t** argv){
    result=call(process.value,address,&argument);SIZE_T read=0;
    if(!ReadProcessMemory(process.value,argument.address,&info,sizeof(info),&read)||read!=sizeof(info))throw std::runtime_error("Switch state unavailable");
    std::cout<<"{\"pid\":"<<pid<<",\"code\":"<<result<<",\"mode\":\""<<(info.mode==1?"stock":"h264")<<"\",\"sessions\":"<<info.sessions<<",\"stock_sessions\":"<<info.stock_sessions
-    <<",\"switches\":"<<info.switches<<",\"stock_encodes\":"<<info.stock_encodes<<",\"stock_locks\":"<<info.stock_locks<<",\"stock_errors\":"<<info.stock_errors<<",\"last_stock_status\":"<<info.last_stock_status<<"}\n";
+    <<",\"switches\":"<<info.switches<<",\"stock_encodes\":"<<info.stock_encodes<<",\"stock_locks\":"<<info.stock_locks<<",\"stock_errors\":"<<info.stock_errors<<",\"last_stock_status\":"<<info.last_stock_status<<",\"picture_width\":"<<info.picture_width<<",\"picture_height\":"<<info.picture_height<<"}\n";
   }else if(action==L"identity"){
    HookTrialIdentity identity{sizeof(identity),1};Remote argument(process.value,sizeof(identity));write(process.value,argument,&identity,sizeof(identity));
    result=call(process.value,address,&argument);SIZE_T read=0;
