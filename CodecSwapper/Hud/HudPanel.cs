@@ -200,7 +200,7 @@ public static class HudPanel
 
     public const int IconSize = 128;
 
-    /// <summary>The round watch icon: the codec in short, lit when the laser is on it, ringed when the panel is open.</summary>
+    /// <summary>The round watch icon: a 270 degree gauge that fills with the live bitrate (a tick marks the target), the Mbps figure in the middle and the codec under it. Lit when the laser is on it, ringed in orange when the panel is open.</summary>
     public static Bitmap RenderIcon(HudView view, bool hover, bool open)
     {
         var bitmap = new Bitmap(IconSize, IconSize, PixelFormat.Format32bppArgb);
@@ -210,11 +210,31 @@ public static class HudPanel
         var accent = open ? Color.FromArgb(255, 170, 60) : Color.FromArgb(70, 160, 255);
         var disc = new Rectangle(6, 6, IconSize - 12, IconSize - 12);
         using (var back = new SolidBrush(Color.FromArgb(hover ? 245 : 225, hover ? 36 : 18, hover ? 42 : 20, hover ? 54 : 26))) g.FillEllipse(back, disc);
-        using (var ring = new Pen(accent, hover || open ? 8 : 5)) g.DrawEllipse(ring, disc);
-        using var font = new Font("Segoe UI Semibold", view.Codec.Length > 4 ? 22f : 30f);
-        using var brush = new SolidBrush(view.Connected && view.Codec == "H.264" ? Color.FromArgb(110, 220, 140) : Color.White);
+        if (hover || open) { using var ring = new Pen(accent, 4); g.DrawEllipse(ring, disc); }
+
+        const float StartAngle = 135, Sweep = 270;
+        var arc = new Rectangle(22, 22, IconSize - 44, IconSize - 44);
+        using (var track = new Pen(Color.FromArgb(70, accent), 11) { StartCap = LineCap.Round, EndCap = LineCap.Round }) g.DrawArc(track, arc, StartAngle, Sweep);
+        var fraction = view.Connected && view.Mbps is { } live ? Math.Clamp(live / TrayController.MaximumMbps, 0, 1) : 0;
+        if (fraction > 0.01)
+        {
+            using var fill = new Pen(accent, 11) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawArc(fill, arc, StartAngle, (float)(Sweep * fraction));
+        }
+        if (view.TargetMbps > 0)
+        {
+            var angle = (StartAngle + Sweep * Math.Clamp(view.TargetMbps / (double)TrayController.MaximumMbps, 0, 1)) * Math.PI / 180;
+            float cx = IconSize / 2f, cy = IconSize / 2f, r = arc.Width / 2f;
+            using var tick = new Pen(Color.White, 3);
+            g.DrawLine(tick, cx + (r - 11) * (float)Math.Cos(angle), cy + (r - 11) * (float)Math.Sin(angle), cx + (r + 9) * (float)Math.Cos(angle), cy + (r + 9) * (float)Math.Sin(angle));
+        }
+
         using var middle = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
-        g.DrawString(view.Codec == "H.264" ? "264" : view.Codec == "HEVC" ? "HEVC" : "SF", font, brush, new Rectangle(0, 0, IconSize, IconSize), middle);
+        using var number = new Font("Segoe UI Semibold", 27f, GraphicsUnit.Pixel);
+        using var label = new Font("Segoe UI Semibold", 15f, GraphicsUnit.Pixel);
+        g.DrawString(view.Connected && view.Mbps is { } shown ? $"{shown:0}" : "—", number, Brushes.White, new Rectangle(0, 36, IconSize, 34), middle);
+        using var codecBrush = new SolidBrush(view.Connected && view.Codec == "H.264" ? Color.FromArgb(110, 220, 140) : Color.FromArgb(190, 196, 206));
+        g.DrawString(view.Codec == "H.264" ? "H.264" : view.Codec == "HEVC" ? "HEVC" : "SF", label, codecBrush, new Rectangle(0, 70, IconSize, 20), middle);
         return bitmap;
     }
 
