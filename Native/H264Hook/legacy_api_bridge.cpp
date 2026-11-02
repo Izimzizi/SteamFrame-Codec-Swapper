@@ -198,7 +198,11 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
  init.encodeGUID=NV_ENC_CODEC_H264_GUID;init.presetGUID=preset_guid();
  init.tuningInfo=NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;init.enablePTD=1;init.enableMEOnlyMode=0;
  init.encodeConfig=&config;config.profileGUID=NV_ENC_H264_PROFILE_HIGH_GUID;
- config.frameIntervalP=1;config.gopLength=requested_fps;
+ config.frameIntervalP=1;
+ // The driver's own keyframe interval is kept (SteamVR's encoder sends one only when asked); a forced one every second made the
+ // picture pulse in quality, since each keyframe takes several frames' worth of the bitrate budget.
+ const uint32_t gop=source.encodeConfig&&source.encodeConfig->gopLength?source.encodeConfig->gopLength:0xffffffffu; // infinite
+ config.gopLength=gop;
  auto& rc=config.rcParams;rc.version=NV_ENC_RC_PARAMS_VER;rc.rateControlMode=requested_rate_control?NV_ENC_PARAMS_RC_CBR:NV_ENC_PARAMS_RC_VBR;
  rc.averageBitRate=requested_fixed?requested_average:std::min(source.encodeConfig->rcParams.averageBitRate,requested_average);
  if(rc.averageBitRate<1000000)rc.averageBitRate=requested_average;
@@ -212,7 +216,7 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
  {
   auto& h264=config.encodeCodecConfig.h264Config;
   h264.level=requested_average>200000000?NV_ENC_LEVEL_AUTOSELECT:NV_ENC_LEVEL_H264_52;
-  h264.idrPeriod=requested_fps;h264.chromaFormatIDC=1;
+  h264.idrPeriod=gop;h264.chromaFormatIDC=1;
   // Advertise the actual small DPB. Without VUI bitstream restrictions, the
   // Frame driver derives 18 capture buffers from level 6.1; VRLink has only
   // 16 backing surfaces and repeatedly fails QBUF at index 16.
