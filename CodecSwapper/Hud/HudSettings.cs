@@ -15,6 +15,10 @@ public sealed class HudSettings
     public bool AutoShow { get; set; } = true;
     /// <summary>The full panel with its controls appears when the laser points at the HUD, instead of when the dashboard opens.</summary>
     public bool ExpandOnHover { get; set; }
+    /// <summary>The HUD stays out of sight until a small round icon on the controller, like a watch on the wrist, is pressed with the laser.</summary>
+    public bool Watch { get; set; } = true;
+    /// <summary>With <see cref="Watch"/>: whether the panel is open right now. Not remembered; a new SteamVR session starts with it closed.</summary>
+    public bool PanelOpen { get; set; }
     /// <summary>"left" or "right".</summary>
     public string Hand { get; set; } = "left";
     /// <summary>The HUD's pose in its controller's space as a row-major 3x4; null means the default placement.</summary>
@@ -27,6 +31,11 @@ public sealed class HudSettings
     public static Pose DefaultPose { get; } = Pose.TryFromMatrix34(
         [0.9874174f, -0.017996771f, 0.1571086f, -0.004516281f, -0.15356612f, 0.12798984f, 0.97981435f, -0.011095941f, -0.0377418f, -0.9916122f, 0.123615704f, 0.27361977f], out var chosen)
         ? chosen : Pose.Rotation(0, -50, 0, new Vector3(0, .18f, -.05f));
+
+    public const float IconWidth = .045f;
+
+    /// <summary>The watch icon in its controller's space: a little behind the controller and above it, lying flat like the panel.</summary>
+    public static Pose IconPose => DefaultPose with { T = new Vector3(0f, .02f, .10f) };
 
     [JsonIgnore] public bool IsLeft => !string.Equals(Hand, "right", StringComparison.OrdinalIgnoreCase);
 
@@ -51,6 +60,8 @@ public sealed class HudSettings
             var loaded = JsonSerializer.Deserialize<HudSettings>(File.ReadAllText(path));
             if (loaded is null) return new();
             loaded.Enabled = loaded.AutoShow;
+            loaded.PanelOpen = false;
+            loaded.PanelOpen = false;
             loaded.Hand = loaded.IsLeft ? "left" : "right";
             loaded.WidthMeters = float.IsFinite(loaded.WidthMeters) ? Math.Clamp(loaded.WidthMeters, MinimumWidth, MaximumWidth) : DefaultWidth;
             return loaded;

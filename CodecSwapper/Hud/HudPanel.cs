@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// page:settings, page:close, set:autoshow:on|off, set:expand:dashboard|hover, reposition, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, reposition, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -85,8 +85,9 @@ public static class HudPanel
         {
             buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
             Row(104, 52, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
-            Row(222, 52, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
-            Row(318, 52, [("reposition", "Reposition HUD", false, true)]);
+            Row(184, 52, [("set:style:watch", "Watch icon", view.Watch, true), ("set:style:panel", "Always visible", !view.Watch, true)]);
+            Row(302, 52, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
+            Row(386, 52, [("reposition", "Reposition HUD", false, true)]);
             return buttons;
         }
         var control = !view.Busy;
@@ -153,8 +154,9 @@ public static class HudPanel
         else if (settingsPage)
         {
             g.DrawString("Show the HUD when SteamVR starts", normal, white, 22, 70);
-            g.DrawString("Show the controls when", normal, white, 22, 188);
-            g.DrawString("Hide HUD takes the panel away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With the first option Off, the\nHUD stays hidden until you show it from the tray menu.", small, grey, 22, 394);
+            g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 152);
+            g.DrawString(view.Watch ? "Show the controls (Watch always uses the laser)" : "Show the controls when", normal, white, 22, 270);
+            g.DrawString("Hide HUD takes the HUD away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With the first option Off, the\nHUD stays hidden until you show it from the tray menu.", small, grey, 22, 470);
         }
         else
         {
@@ -176,7 +178,7 @@ public static class HudPanel
         }
         if (!view.Repositioning && !settingsPage) DrawGraph(g, view, small, accent);
         if (compact) { using var cogFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center }; g.DrawString("⚙", symbol, grey, new Rectangle(Width - 20 - 44, 10, 44, 40), cogFormat); }   // the cogwheel stays visible when collapsed, as an invitation to point at the HUD
-        if (compact) g.DrawString(view.ExpandOnHover ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
+        if (compact) g.DrawString(view.ExpandOnHover || view.Watch ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
         foreach (var button in Layout(view))
@@ -193,6 +195,26 @@ public static class HudPanel
             var font = button.Id == "page:settings" ? symbol : button.Bounds.Height < 40 ? small : normal;
             g.DrawString(button.Text, font, button.Enabled ? white : grey, button.Bounds, format);
         }
+        return bitmap;
+    }
+
+    public const int IconSize = 128;
+
+    /// <summary>The round watch icon: the codec in short, lit when the laser is on it, ringed when the panel is open.</summary>
+    public static Bitmap RenderIcon(HudView view, bool hover, bool open)
+    {
+        var bitmap = new Bitmap(IconSize, IconSize, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        var accent = open ? Color.FromArgb(255, 170, 60) : Color.FromArgb(70, 160, 255);
+        var disc = new Rectangle(6, 6, IconSize - 12, IconSize - 12);
+        using (var back = new SolidBrush(Color.FromArgb(hover ? 245 : 225, hover ? 36 : 18, hover ? 42 : 20, hover ? 54 : 26))) g.FillEllipse(back, disc);
+        using (var ring = new Pen(accent, hover || open ? 8 : 5)) g.DrawEllipse(ring, disc);
+        using var font = new Font("Segoe UI Semibold", view.Codec.Length > 4 ? 22f : 30f);
+        using var brush = new SolidBrush(view.Connected && view.Codec == "H.264" ? Color.FromArgb(110, 220, 140) : Color.White);
+        using var middle = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
+        g.DrawString(view.Codec == "H.264" ? "264" : view.Codec == "HEVC" ? "HEVC" : "SF", font, brush, new Rectangle(0, 0, IconSize, IconSize), middle);
         return bitmap;
     }
 

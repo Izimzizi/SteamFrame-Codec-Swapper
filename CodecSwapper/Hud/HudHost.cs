@@ -42,7 +42,7 @@ public static class HudHost
                     else if (message.Type == "settings" && message.Settings is not null)
                     {
                         settings.Enabled = message.Settings.Enabled; settings.Hand = message.Settings.Hand; settings.FlipLaserY = message.Settings.FlipLaserY;
-                        settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover;
+                        settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover; settings.Watch = message.Settings.Watch;
                         // The helper owns the placement while the user is moving the HUD.
                         if (!hud.Repositioning) { settings.Placement = message.Settings.Placement; settings.WidthMeters = message.Settings.WidthMeters; }
                     }

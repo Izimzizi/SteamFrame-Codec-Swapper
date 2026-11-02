@@ -116,7 +116,7 @@ public sealed class HudPanelTests
     [Fact]
     public void Buttons_never_overlap_each_other_or_leave_the_panel()
     {
-        foreach (var view in new[] { View(), View(reposition: true) })
+        foreach (var view in new[] { View(), View(reposition: true), View() with { Page = "settings" }, View() with { Page = "settings", Watch = true } })
         {
             var buttons = HudPanel.Layout(view);
             foreach (var button in buttons) Assert.True(new System.Drawing.Rectangle(0, 0, HudPanel.Width, HudPanel.Height).Contains(button.Bounds), button.Id);
@@ -186,23 +186,25 @@ public sealed class HudControllerTests
         public bool Running = true, CanConnect = true, Dashboard = true;
         public uint Left = 3, Right = 4;
         public readonly List<string> Calls = [];
-        public readonly Queue<OverlayEvent> Events = new();
+        public readonly Queue<OverlayEvent> Events = new(), IconEvents = new();
+        public readonly Dictionary<ulong, bool> Visible = [];
+        private ulong _created = 6;
         public readonly Dictionary<uint, Pose> Poses = [];
         public Pose LastRelative; public uint LastDevice = IOverlayApi.NoDevice; public float LastWidth; public int Uploads;
         public bool TryConnect(out string error) { error = CanConnect ? "" : "no SteamVR"; if (CanConnect) { Connected = true; Calls.Add("connect"); } return CanConnect; }
         public void Disconnect() { Connected = false; Calls.Add("disconnect"); }
         public bool StillRunning() => Running;
-        public ulong CreateOverlay(string key, string name) { Calls.Add("create"); return 7; }
+        public ulong CreateOverlay(string key, string name) { Calls.Add("create"); return ++_created; }
         public void DestroyOverlay(ulong overlay) => Calls.Add("destroy");
         public void SetWidth(ulong overlay, float meters) => LastWidth = meters;
         public void SetAlpha(ulong overlay, float alpha) { }
         public void EnableLaser(ulong overlay, int w, int h) => Calls.Add($"laser {w}x{h}");
         public void SetImage(ulong overlay, byte[] rgba, int width, int height) => Uploads++;
-        public void SetVisible(ulong overlay, bool visible) => Calls.Add(visible ? "show" : "hide");
+        public void SetVisible(ulong overlay, bool visible) { Calls.Add(visible ? "show" : "hide"); Visible[overlay] = visible; }
         public uint ControllerIndex(bool left) => left ? Left : Right;
         public void AttachToDevice(ulong overlay, uint device, Pose relative) { LastDevice = device; LastRelative = relative; }
         public bool TryDevicePose(uint device, out Pose pose) => Poses.TryGetValue(device, out pose);
-        public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay) { var list = Events.ToList(); Events.Clear(); return list; }
+        public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay) { var queue = overlay == 7 ? Events : IconEvents; var list = queue.ToList(); queue.Clear(); return list; }
         public bool DashboardVisible() => Dashboard;
         public void Dispose() { }
     }
@@ -220,7 +222,7 @@ public sealed class HudControllerTests
     {
         public readonly FakeApi Api = new();
         public readonly Actions Actions = new();
-        public readonly HudSettings Settings = new() { Enabled = true };
+        public readonly HudSettings Settings = new() { Enabled = true, Watch = false };
         public int Saves; public bool SteamVr = true;
         public HudView View = HudView.Empty with { Connected = true, TargetMbps = 300, RateControl = "vbr", Preset = 2, VbvFrames = 2 };
         public readonly HudController Hud;
@@ -236,6 +238,52 @@ public sealed class HudControllerTests
         public void Press(string id) { Api.Events.Enqueue(Click(id)); Tick(); }
         // Laser at panel x on the slider's line (GL space).
         public OverlayEvent Slide(OverlayEventKind kind, float x, uint device = 4) => new(kind, device, x, HudPanel.Height - (HudPanel.SliderArea.Top + 40));
+    }
+
+    [Fact]
+    public void In_watch_style_the_panel_waits_behind_a_round_icon_that_opens_and_closes_it()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true;
+        rig.Tick();
+        Assert.False(rig.Api.Visible[7]);
+        Assert.True(rig.Api.Visible[8]);
+        Assert.Equal(HudSettings.IconPose, rig.Api.LastRelative);
+        rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();
+        Assert.True(rig.Api.Visible[7]);
+        Assert.True(rig.Settings.PanelOpen);
+        rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();
+        Assert.False(rig.Api.Visible[7]);
+    }
+
+    [Fact]
+    public void Closing_the_panel_from_the_icon_drops_a_half_finished_interaction()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.PanelOpen = true;
+        rig.Tick();
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100));
+        rig.Press("menu:rc");
+        Assert.Equal("rc", rig.Hud.OpenMenu);
+        rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();
+        Assert.Equal("", rig.Hud.OpenMenu);
+    }
+
+    [Fact]
+    public void Choosing_the_always_visible_style_removes_the_icon_and_keeps_the_panel()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.PanelOpen = true;
+        rig.Tick();
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100));
+        rig.Press("page:settings");
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100));
+        rig.Press("set:style:panel");
+        rig.Tick();
+        Assert.False(rig.Settings.Watch);
+        Assert.Contains("destroy", rig.Api.Calls);
+        Assert.True(rig.Api.Visible[7]);
+        Assert.True(rig.Saves > 0);
     }
 
     [Fact]

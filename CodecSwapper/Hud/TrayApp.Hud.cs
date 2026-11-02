@@ -84,6 +84,7 @@ public sealed partial class TrayApp
                 _hudSettings.WidthMeters = message.Settings.WidthMeters;
                 _hudSettings.AutoShow = message.Settings.AutoShow;
                 _hudSettings.ExpandOnHover = message.Settings.ExpandOnHover;
+                _hudSettings.Watch = message.Settings.Watch;
                 SaveHud();
                 break;
             case "action":

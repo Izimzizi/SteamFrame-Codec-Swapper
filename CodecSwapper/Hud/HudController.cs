@@ -15,10 +15,14 @@ public interface IHudActions
 /// </summary>
 public sealed class HudController(IOverlayApi api, HudSettings settings, Func<HudView> readView, IHudActions actions, Action saveSettings, Func<bool> steamVrRunning, Action<string>? log = null) : IDisposable
 {
-    private const string OverlayKey = "steamframe.tray.hud";
+    private const string OverlayKey = "steamframe.tray.hud", IconKey = "steamframe.tray.hud.icon";
     private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(100), InteractionUpload = TimeSpan.FromMilliseconds(25), SlideIdle = TimeSpan.FromMilliseconds(600), CommitHold = TimeSpan.FromSeconds(4);
 
-    private ulong _overlay;
+    private ulong _overlay, _icon;
+    private uint _iconDevice = IOverlayApi.NoDevice;
+    private string? _iconDrawn;
+    private bool _iconHover, _panelVisible;
+    private DateTime _iconUpload = DateTime.MinValue;
     private uint _attachedTo = IOverlayApi.NoDevice;
     private Pose _attachedPose;
     private float _attachedWidth;
@@ -68,11 +72,15 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (device == IOverlayApi.NoDevice)
         {
             // The controller is off or not seen yet: keep the panel out of the way until it is back.
-            if (_attachedTo != IOverlayApi.NoDevice) { api.SetVisible(_overlay, false); _attachedTo = IOverlayApi.NoDevice; }
+            if (_attachedTo != IOverlayApi.NoDevice) { api.SetVisible(_overlay, false); _attachedTo = IOverlayApi.NoDevice; _panelVisible = false; }
+            if (_iconDevice != IOverlayApi.NoDevice && _icon != 0) { api.SetVisible(_icon, false); _iconDevice = IOverlayApi.NoDevice; }
             return;
         }
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
+        TickIcon(device, at);
+        ApplyPanelVisibility();
+        if (!_panelVisible) return;
         // The laser only reaches the HUD while the dashboard is open; anything else is ignored so a stray event can never press a button.
         // SteamVR does not always report a dashboard that was already open when the HUD joined, so the laser moving over the panel counts as proof it is open (a click alone never does).
         var events = api.PollEvents(_overlay);
@@ -95,10 +103,12 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private void UpdateDashboard(DateTime at)
     {
-        var open = (!settings.ExpandOnHover && api.DashboardVisible()) || at - _laserAt < (settings.ExpandOnHover ? HoverHold : LaserHold);
+        // The watch icon opens the panel with the laser, not the dashboard, so the controls follow the laser there.
+        var hover = settings.ExpandOnHover || settings.Watch;
+        var open = (!hover && api.DashboardVisible()) || at - _laserAt < (hover ? HoverHold : LaserHold);
         if (open == _dashboard) return;
         _dashboard = open;
-        log?.Invoke(open ? "HUD: controls shown" : "HUD: readouts only" + (settings.ExpandOnHover ? (_leftByEvent ? " (laser left)" : " (no laser movement)") : ""));
+        log?.Invoke(open ? "HUD: controls shown" : "HUD: readouts only" + (hover ? (_leftByEvent ? " (laser left)" : " (no laser movement)") : ""));
         _leftByEvent = false;
         _expandedAt = open ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         // The picture changes shape, so it is redrawn at once instead of waiting for the next data refresh.
@@ -109,11 +119,66 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_repositioning) StopRepositioning();
     }
 
+    private bool ShowPanel => !settings.Watch || settings.PanelOpen;
+
+    // The watch: a small round overlay on the controller. Pressing it with the laser opens and closes the panel.
+    private void TickIcon(uint device, DateTime at)
+    {
+        if (!settings.Watch) { DestroyIcon(); return; }
+        if (_icon == 0)
+        {
+            _icon = api.CreateOverlay(IconKey, "SteamFrame HUD button");
+            if (_icon == 0) return;
+            api.SetAlpha(_icon, 1f);
+            api.SetWidth(_icon, HudSettings.IconWidth);
+            api.EnableLaser(_icon, HudPanel.IconSize, HudPanel.IconSize);
+            _iconDevice = IOverlayApi.NoDevice; _iconDrawn = null;
+            log?.Invoke("HUD: watch icon created");
+        }
+        if (_iconDevice != device)
+        {
+            api.AttachToDevice(_icon, device, HudSettings.IconPose);
+            api.SetVisible(_icon, true);
+            _iconDevice = device;
+        }
+        foreach (var e in api.PollEvents(_icon))
+        {
+            if (e.Kind is OverlayEventKind.MouseMove or OverlayEventKind.FocusEnter) _iconHover = true;
+            else if (e.Kind == OverlayEventKind.FocusLeave) _iconHover = false;
+            else if (e.Kind == OverlayEventKind.MouseDown) { settings.PanelOpen = !settings.PanelOpen; log?.Invoke("HUD: panel " + (settings.PanelOpen ? "opened" : "closed") + " from the watch icon"); }
+        }
+        var view = readView();
+        var key = $"{view.Codec}|{view.Connected}|{_iconHover}|{settings.PanelOpen}";
+        if (key == _iconDrawn || at - _iconUpload < InteractionUpload) return;
+        using var bitmap = HudPanel.RenderIcon(view, _iconHover, settings.PanelOpen);
+        api.SetImage(_icon, HudPanel.ToRgba(bitmap), HudPanel.IconSize, HudPanel.IconSize);
+        _iconDrawn = key; _iconUpload = at;
+    }
+
+    private void DestroyIcon()
+    {
+        if (_icon != 0 && api.Connected) { try { api.DestroyOverlay(_icon); } catch (Exception) { /* SteamVR went first */ } }
+        _icon = 0; _iconDevice = IOverlayApi.NoDevice; _iconDrawn = null; _iconHover = false;
+    }
+
+    // In Watch style the panel is only there while it is open; closing it drops any half-finished interaction.
+    private void ApplyPanelVisibility()
+    {
+        if (_attachedTo == IOverlayApi.NoDevice || ShowPanel == _panelVisible) return;
+        _panelVisible = ShowPanel;
+        api.SetVisible(_overlay, _panelVisible);
+        _drawn = null;
+        if (_panelVisible) return;
+        _menu = ""; _page = ""; _sliding = null; _hover = null; _grab = null; _dashboard = false;
+        if (_repositioning) StopRepositioning();
+    }
+
     public void Teardown()
     {
         _grab = null;
+        DestroyIcon();
         if (_overlay != 0 && api.Connected) { try { api.DestroyOverlay(_overlay); } catch (Exception) { /* SteamVR went first */ } }
-        _overlay = 0; _attachedTo = IOverlayApi.NoDevice; _drawn = null;
+        _overlay = 0; _attachedTo = IOverlayApi.NoDevice; _drawn = null; _panelVisible = false;
         if (api.Connected) api.Disconnect();
     }
 
@@ -135,14 +200,14 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     {
         api.SetWidth(_overlay, width);
         api.AttachToDevice(_overlay, device, pose);
-        if (_attachedTo == IOverlayApi.NoDevice) { api.SetVisible(_overlay, true); log?.Invoke($"HUD: shown on device {device}"); }
+        if (_attachedTo == IOverlayApi.NoDevice) { _panelVisible = ShowPanel; api.SetVisible(_overlay, _panelVisible); log?.Invoke($"HUD: {(_panelVisible ? "shown" : "ready")} on device {device}"); }
         _attachedTo = device; _attachedPose = pose; _attachedWidth = width;
     }
 
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch };
         if (_sliding is { } held) return view with { TargetMbps = held };
         if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
         return view;
@@ -167,7 +232,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
@@ -218,6 +283,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
                 else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
+                else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;
             case "size": _draftWidth = Math.Clamp(_draftWidth * (parts[1] == "+" ? 1.12f : 1 / 1.12f), HudSettings.MinimumWidth, HudSettings.MaximumWidth); break;
