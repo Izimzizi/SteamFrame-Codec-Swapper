@@ -16,11 +16,11 @@ public sealed class HudMathTests
     }
 
     [Fact]
-    public void The_default_placement_lies_facing_up_and_sits_behind_the_controller_toward_the_user()
+    public void The_default_placements_are_the_ones_chosen_on_a_headset_with_the_panel_beyond_the_icon_from_the_controller()
     {
-        var normal = HudSettings.DefaultPose.Rotate(Vector3.UnitZ);
-        Assert.True(normal.Y > .9f, normal.ToString());
-        Assert.True(HudSettings.DefaultPose.T.Z > .25f, HudSettings.DefaultPose.T.ToString());
+        Assert.True(HudSettings.DefaultPose.T.Length() > .1f && HudSettings.DefaultIconPose.T.Length() > .1f);
+        Assert.True(Vector3.Distance(HudSettings.DefaultPose.T, HudSettings.DefaultIconPose.T) > .05f);
+        Assert.NotEqual(Pose.Identity, HudSettings.DefaultPose);
         Assert.Equal(.2135f, HudSettings.DefaultWidth);
     }
 

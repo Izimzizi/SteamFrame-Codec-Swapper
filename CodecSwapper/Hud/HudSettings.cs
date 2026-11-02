@@ -27,15 +27,17 @@ public sealed class HudSettings
     /// <summary>Laser coordinates arrive in GL space (origin bottom-left); turn this off if a build reports them top-left.</summary>
     public bool FlipLaserY { get; set; } = true;
 
-    /// <summary>The placement the author chose on a headset (Reposition, then Save): a 21 cm panel lying flat above the controller and 27 cm back toward the user, clear of the controller models SteamVR draws over overlays.</summary>
+    /// <summary>The placement the author chose on a headset (Reposition, then Save): a 21 cm panel beside the controller, clear of the controller models SteamVR draws over overlays.</summary>
     public static Pose DefaultPose { get; } = Pose.TryFromMatrix34(
-        [0.9874174f, -0.017996771f, 0.1571086f, -0.004516281f, -0.15356612f, 0.12798984f, 0.97981435f, -0.011095941f, -0.0377418f, -0.9916122f, 0.123615704f, 0.27361977f], out var chosen)
+        [0.04150998f, -0.72687185f, -0.6855175f, -0.12338108f, 0.037100255f, -0.68451434f, 0.72805476f, -0.10563135f, -0.9984491f, -0.055654407f, -0.0014470436f, 0.18358722f], out var chosen)
         ? chosen : Pose.Rotation(0, -50, 0, new Vector3(0, .18f, -.05f));
 
     public const float IconMinimumWidth = .02f, IconMaximumWidth = .10f, DefaultIconWidth = .045f;
 
     /// <summary>The watch icon in its controller's space: a little behind the controller and above it, lying flat like the panel.</summary>
-    public static Pose DefaultIconPose { get; } = DefaultPose with { T = new Vector3(0f, .02f, .10f) };
+    public static Pose DefaultIconPose { get; } = Pose.TryFromMatrix34(
+        [0.04230489f, -0.38319105f, -0.92269987f, -0.022165954f, 0.09310796f, -0.9179956f, 0.3855063f, 0.0037904978f, -0.9947569f, -0.1022195f, -0.0031575633f, 0.19146925f], out var chosenIcon)
+        ? chosenIcon : DefaultPose with { T = new Vector3(0f, .02f, .10f) };
 
     /// <summary>The watch icon's pose in its controller's space as a row-major 3x4; null means <see cref="DefaultIconPose"/>.</summary>
     public float[]? IconPlacement { get; set; }
