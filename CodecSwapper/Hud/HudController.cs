@@ -133,7 +133,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     // direction the picture faces and the line to the headset), or when they are further from the headset than the chosen distance.
     private const float FadeBandDegrees = 4f;
     // The headset's tracked point sits behind the eyes; the angle is measured to the eyes, which matters at arm's length.
-    private const float EyeForwardMeters = .08f;
+    private const float EyeForwardMeters = .14f;
     private float _panelAlpha = 1f, _iconAlpha = 1f;
     private DateTime _fadeAt = DateTime.MinValue;
 
