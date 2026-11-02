@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, reposition, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, reposition, counters, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -107,7 +107,7 @@ public static class HudPanel
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
         Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        Row(540, 52, [("hide", "Hide HUD", false, true)]);
+        Row(540, 52, [("counters", "Reset frame counters", false, true), ("hide", "Hide HUD", false, true)]);
         return buttons;
     }
 

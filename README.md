@@ -59,6 +59,7 @@ Download `CodecSwapper.zip` from the [Releases page](https://github.com/Izimzizi
 | **Encoder settings** | Rate control, preset and VBV, for both codecs. |
 | **Stream monitor** | The monitor. Double-clicking the tray icon opens/closes it. |
 | **Record stream log** | One CSV row per second, setup in `#` header lines. |
+| **Reset dropped-frame counters** | Starts the held-back, dropped and late frame totals again from zero (the HUD has the same as *Reset frame counters*). The "last 60 s" figure is not affected. |
 | **VR HUD** | Show or hide the HUD (on by default), attach left/right, reset position. |
 | **Start with Windows** | Re-arms at login if it was armed. |
 | **Frame connection…**, **Password** | Reopen setup; set or forget the stored Frame password. |

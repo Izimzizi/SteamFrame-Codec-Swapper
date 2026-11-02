@@ -15,6 +15,21 @@ public sealed class HealthReader
     private CompositorTiming? _compositor;
     private CompositorTimingSnapshot? _lastCompositor;
     private int _tick;
+    // The totals as the logs and the compositor report them, and the values they had when the readout was last reset.
+    private long _rawHeld, _rawDropped, _rawLate, _rawReprojected;
+    private long _baseHeld, _baseDropped, _baseLate, _baseReprojected;
+
+    /// <summary>Starts the held-back, dropped, late and reprojected totals again from zero. The "last 60 s" figures are not touched.</summary>
+    public void ResetCounters()
+    {
+        (_baseHeld, _baseDropped, _baseLate, _baseReprojected) = (_rawHeld, _rawDropped, _rawLate, _rawReprojected);
+    }
+
+    private static long Since(long raw, ref long baseline)
+    {
+        if (raw < baseline) baseline = 0;   // the source restarted its count
+        return raw - baseline;
+    }
 
     public HealthReader(SteamPaths paths, string diagnosticsDirectory)
     {
@@ -37,7 +52,9 @@ public sealed class HealthReader
 
         if (health is null && _lastCompositor is null) return null;
         var composite = _lastCompositor;
-        return new(health?.SenderThrottleEvents ?? 0, health?.ThrottleEventsLastMinute ?? 0, health?.LinkStalls ?? 0,
-            composite is { Available: true }, composite?.DroppedFrames ?? 0, composite?.LateRenderFrames ?? 0, composite?.ReprojectedFrames ?? 0);
+        _rawHeld = health?.SenderThrottleEvents ?? 0;
+        _rawDropped = composite?.DroppedFrames ?? 0; _rawLate = composite?.LateRenderFrames ?? 0; _rawReprojected = composite?.ReprojectedFrames ?? 0;
+        return new(Since(_rawHeld, ref _baseHeld), health?.ThrottleEventsLastMinute ?? 0, health?.LinkStalls ?? 0,
+            composite is { Available: true }, Since(_rawDropped, ref _baseDropped), Since(_rawLate, ref _baseLate), Since(_rawReprojected, ref _baseReprojected));
     }
 }

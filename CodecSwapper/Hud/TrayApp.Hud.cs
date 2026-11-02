@@ -97,6 +97,7 @@ public sealed partial class TrayApp
                     "codec" => actions.SetCodecAsync(message.H264),
                     "bitrate" => actions.SetBitrateAsync(message.Mbps),
                     "hide" => actions.HideAsync(),
+                    "counters" => actions.ResetCountersAsync(),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
                     _ => Task.CompletedTask
                 };
@@ -210,6 +211,8 @@ public sealed partial class TrayApp
         });
 
         public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
+
+        public Task ResetCountersAsync() { app._healthReader?.ResetCounters(); return Task.CompletedTask; }
 
         /// <summary>The HUD's own button: it vanishes with the HUD, so the way back is told on the desktop.</summary>
         public Task HideAsync()

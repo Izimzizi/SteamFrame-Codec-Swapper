@@ -17,6 +17,8 @@ public sealed partial class TrayApp : ApplicationContext
     private readonly StatsService _statsService;
     private readonly StatsForm _stats;
     private readonly ToolStripMenuItem _record = new("Record stream log");
+    private readonly ToolStripMenuItem _resetCounters = new("Reset dropped-frame counters");
+    private HealthReader? _healthReader;
     private readonly NotifyIcon _icon = new() { Visible = true };
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 2000 };
     private readonly ToolStripMenuItem _status = new() { Enabled = false, AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 24), TextAlign = ContentAlignment.MiddleLeft };
@@ -60,7 +62,7 @@ public sealed partial class TrayApp : ApplicationContext
         catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { /* the SteamVR driver menu still offers it */ }
         _controller = new TrayController(new CodecServiceAdapter(_codec), new CredentialVault(new FrameCredentialStore()), _patch, _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), _liveBitrate, () => _driver.Inspect() == SteamVrDriverState.Installed);
         _setup = new SetupCheck(new ProcessRunner(), _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), new CredentialVault(new FrameCredentialStore()), SetupEnvironment.ForThisPc(_paths, Path.Combine(AppContext.BaseDirectory, "CodecLab")), _patch);
-        _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: new HealthReader(_paths, AppData.DiagnosticsDirectory).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed, timing: now => EncodeTiming.Read(AppData.EncodeTimingPath, now)), () => _controller.Current);
+        _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: (_healthReader = new HealthReader(_paths, AppData.DiagnosticsDirectory)).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed, timing: now => EncodeTiming.Read(AppData.EncodeTimingPath, now)), () => _controller.Current);
         _stats = new StatsForm(_statsService);
         _menuSlider = new MenuBitrateSlider(_bitrateLabel, mbps => RunAsync(() => ChangeTargetAsync(mbps)));
         BuildMenu();
@@ -101,6 +103,7 @@ public sealed partial class TrayApp : ApplicationContext
         _useDefault.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : Task.CompletedTask);
         _statsItem.Click += (_, _) => ToggleStats();
         _record.Click += (_, _) => ToggleRecording();
+        _resetCounters.Click += (_, _) => _healthReader?.ResetCounters();
         _startup.Click += (_, _) => { try { StartupRegistration.Set(!StartupRegistration.IsEnabled); } catch (Exception error) { Balloon("Start with Windows", error.Message, ToolTipIcon.Error); } };
         _setPassword.Click += async (_, _) => await RunAsync(SetPasswordAsync);
         _forgetPassword.Click += async (_, _) => await RunAsync(() =>
@@ -124,7 +127,7 @@ public sealed partial class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, hudMenu, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, _resetCounters, hudMenu, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {

@@ -7,6 +7,8 @@ public interface IHudActions
     Task SetBitrateAsync(int mbps);
     Task SetEncoderAsync(string rateControl, int preset, int vbvFrames);
     Task HideAsync();
+    /// <summary>Starts the held-back / dropped / late frame totals again from zero.</summary>
+    Task ResetCountersAsync();
 }
 
 /// <summary>
@@ -160,9 +162,11 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             else if (e.Kind == OverlayEventKind.MouseDown) { settings.PanelOpen = !settings.PanelOpen; log?.Invoke("HUD: panel " + (settings.PanelOpen ? "opened" : "closed") + " from the watch icon"); }
         }
         var view = readView();
-        var key = $"{view.Codec}|{view.Connected}|{_iconHover}|{settings.PanelOpen}";
+        // Everything the face shows is in the key, so the gauge follows the readings as often as the graph does (10 Hz); hover and open are repainted at once.
+        var key = $"{view.Codec}|{view.Connected}|{_iconHover}|{settings.PanelOpen}|{view.Mbps:0}|{view.TargetMbps}";
+        var touched = _iconDrawn is null || !_iconDrawn.StartsWith($"{view.Codec}|{view.Connected}|{_iconHover}|{settings.PanelOpen}|", StringComparison.Ordinal);
         // Sent again every few seconds even when nothing changed, so an icon SteamVR dropped while it was still starting up comes back.
-        if ((key == _iconDrawn && at - _iconUpload < TimeSpan.FromSeconds(3)) || at - _iconUpload < InteractionUpload) return;
+        if ((key == _iconDrawn && at - _iconUpload < TimeSpan.FromSeconds(3)) || at - _iconUpload < (touched ? InteractionUpload : DataUpload)) return;
         using var bitmap = HudPanel.RenderIcon(view, _iconHover, settings.PanelOpen);
         api.SetImage(_icon, HudPanel.ToRgba(bitmap), HudPanel.IconSize, HudPanel.IconSize);
         _iconDrawn = key; _iconUpload = at;
@@ -292,6 +296,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
             case "reposition": StartRepositioning(); break;
             case "hide": Fire(actions.HideAsync); break;
+            case "counters": Fire(actions.ResetCountersAsync); break;
             case "page": _page = parts[1] == "close" ? "" : parts[1]; _menu = ""; _drawn = null; break;
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";

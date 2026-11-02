@@ -216,6 +216,7 @@ public sealed class HudControllerTests
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
         public Task HideAsync() { Calls.Add("hud off"); return Task.CompletedTask; }
+        public Task ResetCountersAsync() { Calls.Add("reset counters"); return Task.CompletedTask; }
     }
 
     private sealed class Rig
@@ -269,6 +270,31 @@ public sealed class HudControllerTests
         rig.Press("reposition");
         rig.Tick(); rig.Tick();
         Assert.True(rig.Hud.Repositioning);
+    }
+
+    [Fact]
+    public void The_watch_gauge_follows_the_readings_at_once_not_every_few_seconds()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true;
+        rig.Tick();
+        var before = rig.Api.Uploads;
+        rig.Tick();
+        Assert.Equal(before, rig.Api.Uploads);                       // nothing changed
+        rig.View = rig.View with { Mbps = 120 }; rig.Tick();
+        Assert.Equal(before + 1, rig.Api.Uploads);
+        rig.View = rig.View with { Mbps = 180 }; rig.Tick();
+        Assert.Equal(before + 2, rig.Api.Uploads);
+    }
+
+    [Fact]
+    public void The_reset_counters_button_asks_the_tray_to_start_the_frame_counts_again()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100));
+        rig.Press("counters");
+        Assert.Contains("reset counters", rig.Actions.Calls);
     }
 
     [Fact]
