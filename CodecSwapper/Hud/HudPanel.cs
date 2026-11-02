@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int GazeBias = 0, int PeripheralBias = 0)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, slide:angle, slide:dist (the fade-out sliders), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, slide:angle, slide:dist (the fade-out sliders), page:quality, slide:gaze, slide:periph, fov:reset (the foveation page), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -41,6 +41,10 @@ public static class HudPanel
     /// <summary>The fade-out sliders: the left end is Off (0), then whole steps of five.</summary>
     public static readonly int[] FadeAngleChoices = [0, ..Enumerable.Range(2, 17).Select(i => i * 5)];          // Off, 10-90 degrees
     public static readonly int[] FadeDistanceChoices = [0, ..Enumerable.Range(7, 14).Select(i => i * 5)];       // Off, 35-100 cm
+    public static readonly int[] GazeBiasChoices = [..Enumerable.Range(-20, 33)];          // -20..12
+    public static readonly int[] PeripheralBiasChoices = [..Enumerable.Range(-12, 44)];    // -12..31
+    public static readonly Rectangle GazeBiasArea = new(20, 150, Width - 40, 70);
+    public static readonly Rectangle PeripheralBiasArea = new(20, 250, Width - 40, 70);
     public static readonly Rectangle FadeAngleArea = new(20, 276, Width - 40, 70);
     public static readonly Rectangle FadeDistanceArea = new(20, 350, Width - 40, 70);
 
@@ -105,6 +109,14 @@ public static class HudPanel
             Row(430, 44, [("reposition", "Reposition HUD", false, true), ("hide", "Hide HUD", false, true)]);
             return buttons;
         }
+        if (view.Page == "quality")
+        {
+            buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
+            buttons.Add(new("slide:gaze", GazeBiasArea, "", false, true));
+            buttons.Add(new("slide:periph", PeripheralBiasArea, "", false, true));
+            Row(350, 52, [("fov:reset", "Reset to SteamVR's own map", false, true)]);
+            return buttons;
+        }
         var control = !view.Busy;
         buttons.Add(new("page:settings", new(Width - margin - 44, 10, 44, 40), "⚙", false, true));
         Row(334, 56, [("codec:h264", "H.264", view.H264Selected, control), ("codec:hevc", "Default (HEVC)", !view.H264Selected, control)]);
@@ -122,7 +134,7 @@ public static class HudPanel
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
         Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        Row(540, 52, [("counters", "Reset frame counters", false, true)]);
+        Row(540, 52, [("counters", "Reset frame counters", false, true), ("page:quality", "Foveation quality ▸", false, true)]);
         return buttons;
     }
 
@@ -144,6 +156,7 @@ public static class HudPanel
         var accent = view.Repositioning ? Color.FromArgb(255, 170, 60) : Color.FromArgb(70, 160, 255);
         var compact = !view.Interactive && !view.Repositioning;
         var settingsPage = view.Page == "settings" && view.Interactive && !view.Repositioning;
+        var qualityPage = view.Page == "quality" && view.Interactive && !view.Repositioning;
         using (var path = Rounded(new Rectangle(0, 0, Width - 1, (compact ? CompactHeight : Height) - 1), 26))
         {
             using var back = new SolidBrush(Color.FromArgb(235, 18, 20, 26));
@@ -160,11 +173,16 @@ public static class HudPanel
         using var grey = new SolidBrush(Color.FromArgb(170, 178, 190));
         using var accentBrush = new SolidBrush(accent);
 
-        g.DrawString(view.Repositioning ? "Reposition the HUD" : settingsPage ? "HUD settings" : "SteamFrame", title, accentBrush, 22, 14);
+        g.DrawString(view.Repositioning ? "Reposition the HUD" : settingsPage ? "HUD settings" : qualityPage ? "Foveation quality" : "SteamFrame", title, accentBrush, 22, 14);
         if (view.Repositioning)
         {
             g.DrawString(view.Watch ? "Hold the trigger on the panel or the watch icon with\nthe other hand's laser and move it, then Save." : "Hold the trigger on the panel with the other\nhand's laser and move it, then Save.", normal, white, 22, 62);
             g.DrawString($"Attached to the {view.Hand} controller." + (view.Watch ? $"  Smaller/Larger resize the {(view.Target == "icon" ? "watch icon" : "panel")}." : ""), small, grey, 22, 128);
+        }
+        else if (qualityPage)
+        {
+            g.DrawString("Added to SteamVR's own quality map, for both codecs. Lower is sharper and\nneeds more bitrate; higher is softer. 0 leaves the map as SteamVR made it.\nIt applies to the next frame once you let go of a slider.", small, grey, 22, 54);
+            g.DrawString("Works while the SteamVR driver is installed.", small, grey, 22, 430);
         }
         else if (settingsPage)
         {
@@ -192,14 +210,16 @@ public static class HudPanel
             if (view.Status.Length > 0) g.DrawString(Trim(view.Status, 86), small, grey, 22, 168);
             if (view.Busy) g.DrawString("Applying…", small, accentBrush, 430, 14);
         }
-        if (!view.Repositioning && !settingsPage) DrawGraph(g, view, small, accent);
+        if (!view.Repositioning && !settingsPage && !qualityPage) DrawGraph(g, view, small, accent);
         if (compact) { using var cogFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center }; g.DrawString("⚙", symbol, grey, new Rectangle(Width - 20 - 44, 10, 44, 40), cogFormat); }   // the cogwheel stays visible when collapsed, as an invitation to point at the HUD
         if (compact) g.DrawString(view.ExpandOnHover ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
-        if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
+        if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage && !qualityPage) DrawNotice(g, view, small);
         foreach (var button in Layout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
+            if (button.Id == "slide:gaze") { DrawChoiceSlider(g, button.Bounds, "Gaze region (where you look)", Signed(view.GazeBias), GazeBiasChoices, view.GazeBias, hover == button.Id, normal, white, accent); continue; }
+            if (button.Id == "slide:periph") { DrawChoiceSlider(g, button.Bounds, "Periphery (the rest of the picture)", Signed(view.PeripheralBias), PeripheralBiasChoices, view.PeripheralBias, hover == button.Id, normal, white, accent); continue; }
             if (button.Id == "slide:angle") { DrawChoiceSlider(g, button.Bounds, "Fade out when facing more than this away from me", view.FadeAngle == 0 ? "Off" : $"{view.FadeAngle}°", FadeAngleChoices, view.FadeAngle, hover == button.Id, normal, white, accent); continue; }
             if (button.Id == "slide:dist") { DrawChoiceSlider(g, button.Bounds, "Fade out beyond this distance from the headset", view.FadeDistance == 0 ? "Off" : $"{view.FadeDistance / 100.0:0.00} m", FadeDistanceChoices, view.FadeDistance, hover == button.Id, normal, white, accent); continue; }
             var hot = hover == button.Id && button.Enabled;
@@ -270,6 +290,8 @@ public static class HudPanel
         using var format = new StringFormat { Trimming = StringTrimming.EllipsisWord };
         g.DrawString(view.Notice, font, brush, new RectangleF(area.Left + 12, area.Top + 8, area.Width - 24, area.Height - 16), format);
     }
+
+    private static string Signed(int value) => value > 0 ? $"+{value}" : value.ToString();
 
     private static void DrawChoiceSlider(Graphics g, Rectangle area, string label, string shown, int[] choices, int value, bool hot, Font font, Brush text, Color accent)
     {

@@ -6,6 +6,7 @@
 #include <string>
 #include "nvEncodeAPI11.h"
 #include "stock_forward.h"
+#include "foveation_bias.h"
 
 namespace {
 NV_ENCODE_API_FUNCTION_LIST table{};
@@ -156,6 +157,9 @@ int StockEncode(void* encoder,const void* picture,void* input,void* output,uint3
  // The caller's picture is read-only here: submit a copy that names this session's own input and output.
  auto copy=*static_cast<const NV_ENC_PIC_PARAMS*>(picture);
  copy.inputBuffer=input;copy.outputBitstream=output;copy.encodePicFlags|=extra_flags;
+ // The foveation bias (foveation.txt) rides on a copy of the driver's quality map; the map is only read during this call.
+ thread_local std::vector<int8_t> biased;
+ if(copy.qpDeltaMap&&copy.qpDeltaMapSize)copy.qpDeltaMap=const_cast<int8_t*>(FoveationApplyMap(copy.qpDeltaMap,copy.qpDeltaMapSize,copy.inputWidth,biased));
  return status(table.nvEncEncodePicture(encoder,&copy));
 }
 int StockLock(void* encoder,void* params,void* output){

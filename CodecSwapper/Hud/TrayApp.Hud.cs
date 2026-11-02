@@ -89,6 +89,12 @@ public sealed partial class TrayApp
                 _hudSettings.Watch = message.Settings.Watch;
                 _hudSettings.FadeAngle = message.Settings.FadeAngle;
                 _hudSettings.FadeDistanceCm = message.Settings.FadeDistanceCm;
+                if (_hudSettings.FoveationGaze != message.Settings.FoveationGaze || _hudSettings.FoveationPeriphery != message.Settings.FoveationPeriphery)
+                {
+                    _hudSettings.FoveationGaze = message.Settings.FoveationGaze;
+                    _hudSettings.FoveationPeriphery = message.Settings.FoveationPeriphery;
+                    FoveationBias.Write(AppData.FoveationFile, _hudSettings.FoveationGaze, _hudSettings.FoveationPeriphery);
+                }
                 SaveHud();
                 break;
             case "action":
