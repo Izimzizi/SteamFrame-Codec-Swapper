@@ -137,6 +137,22 @@ static void read_h264_limit(){
 // H.264 can take a stream no wider than 1024 px, so while it is the codec the width is lowered and the user's own value is put
 // back afterwards. The original is kept in a file so a crash of SteamVR or the tray cannot leave the lowered value behind.
 static void* settings=nullptr;
+// While H.264 is the codec the driver's stream width is never read wider than 1024: the settings object's GetInt32 is wrapped, so a
+// wider value typed into SteamVR's settings is not acted on at all (no new layout, no glitch). The stored value is left as it is.
+using GetInt32Function=int(*)(void*,const char*,const char*,int*);
+static GetInt32Function original_get_int=nullptr;
+static int hooked_get_int(void* self,const char* section,const char* key,int* error){
+ const int value=original_get_int(self,section,key,error);
+ if(section&&key&&!strcmp(section,"driver_vrlink")&&!strcmp(key,"streamFormatWidth")&&value>1024&&HookIsH264Selected())return 1024;
+ return value;
+}
+static void wrap_get_int(){
+ if(!settings||original_get_int)return;
+ void** slot=&(*static_cast<void***>(settings))[6];
+ DWORD old=0;if(!VirtualProtect(slot,sizeof(void*),PAGE_READWRITE,&old))return;
+ original_get_int=reinterpret_cast<GetInt32Function>(*slot);*slot=reinterpret_cast<void*>(&hooked_get_int);
+ VirtualProtect(slot,sizeof(void*),old,&old);
+}
 static const char* const vrlink="driver_vrlink";
 static std::string restore_path(){const auto directory=data_folder();return directory.empty()?std::string():directory+"\\width-restore.txt";}
 static int settings_get_int(const char* key,bool* ok){
@@ -222,6 +238,7 @@ struct Provider{
    int error=0;auto* table=*static_cast<void***>(context);
    settings=reinterpret_cast<void*(*)(void*,const char*,int*)>(table[0])(context,"IVRSettings_003",&error);
    if(error)settings=nullptr;
+   wrap_get_int();
    driver_note(settings?"driver Init: settings interface available":"driver Init: settings interface unavailable");
    // A previous session may have ended while the width was lowered.
    restore_width();

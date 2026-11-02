@@ -40,6 +40,7 @@ typedef struct HookWidthInfo {
  uint32_t settings_ready,pending_restore;
 } HookWidthInfo;
 // Called (from the encoder thread) when SteamVR asks for a picture H.264 cannot take while H.264 is the codec.
+HOOK_API int HOOK_CALL HookIsH264Selected(void);
 HOOK_API int HOOK_CALL HookSetOversizeHandler(void (*handler)());
 HOOK_API int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory);
 HOOK_API int HOOK_CALL HookSetLegacyMode(uint32_t mode);

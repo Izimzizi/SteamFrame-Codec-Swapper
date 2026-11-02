@@ -583,6 +583,7 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  return 0;
 }
 
+extern "C" int HOOK_CALL HookIsH264Selected(void){std::lock_guard<std::mutex> lock(mutex);return active_mode==0?1:0;}
 extern "C" int HOOK_CALL HookSetOversizeHandler(void (*handler)()){std::lock_guard<std::mutex> lock(mutex);oversize_handler=handler;return 0;}
 extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory){
  std::lock_guard<std::mutex> lock(mutex);return StockSetTable(sdk11_table,bytes,factory);
