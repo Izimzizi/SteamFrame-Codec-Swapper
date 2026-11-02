@@ -45,10 +45,10 @@ int wmain(int argc,wchar_t** argv){
  try{
   if(argc!=4&&argc!=5&&argc!=7&&argc!=8&&argc!=12)throw std::runtime_error("Use hook_control PID DLL install|configure|stats|identity|switch-info|remove, or mode h264|stock [average_bps peak_bps fixed_target [fps [codec rate_control preset vbv_frames]]]");
   const auto pid=std::stoul(argv[1]);const auto path=std::filesystem::canonical(argv[2]).wstring();const std::wstring action=argv[3];
-  if(action!=L"install"&&action!=L"configure"&&action!=L"stats"&&action!=L"remove"&&action!=L"identity"&&action!=L"mode"&&action!=L"switch-info")throw std::runtime_error("Unknown trial action");
+  if(action!=L"install"&&action!=L"configure"&&action!=L"stats"&&action!=L"remove"&&action!=L"identity"&&action!=L"mode"&&action!=L"switch-info"&&action!=L"width")throw std::runtime_error("Unknown trial action");
   HookTrialConfig config{sizeof(config),5,100000000,115000000,0,120,0,2,1};
   if(action==L"mode"&&argc!=5)throw std::runtime_error("Use hook_control PID DLL mode h264|stock");
-  if(argc==5&&action!=L"mode")throw std::runtime_error("Only mode takes one argument");
+  if(argc==5&&action!=L"mode"&&action!=L"width")throw std::runtime_error("Only mode takes one argument");
   if(argc>=7){
    if(action!=L"install"&&action!=L"configure")throw std::runtime_error("Budget arguments require install or configure");
    auto number=[](const wchar_t* input){size_t count=0;const auto value=std::stoull(input,&count);if(count!=wcslen(input)||value>UINT32_MAX)throw std::runtime_error("Invalid budget argument");return static_cast<uint32_t>(value);};
@@ -84,11 +84,20 @@ int wmain(int argc,wchar_t** argv){
    if(!remote)throw std::runtime_error("Trial DLL did not load");
   }
   const auto local=LoadLibraryExW(path.c_str(),nullptr,DONT_RESOLVE_DLL_REFERENCES);if(!local)throw std::runtime_error("Trial exports unavailable");
-  const char* name=action==L"mode"?"HookSwitchMode":action==L"switch-info"?"HookReadSwitchInfo":action==L"install"?"HookInstallTrial":action==L"configure"?"HookReconfigure":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
+  const char* name=action==L"width"?"HookStreamWidth":action==L"mode"?"HookSwitchMode":action==L"switch-info"?"HookReadSwitchInfo":action==L"install"?"HookInstallTrial":action==L"configure"?"HookReconfigure":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
   const auto symbol=GetProcAddress(local,name);if(!symbol)throw std::runtime_error("Required trial export missing");
   auto address=reinterpret_cast<uint8_t*>(remote)+(reinterpret_cast<uint8_t*>(symbol)-reinterpret_cast<uint8_t*>(local));
   DWORD result=0;
-  if(action==L"mode"||action==L"switch-info"){
+  if(action==L"width"){
+   HookWidthInfo info{sizeof(info),1};
+   const std::wstring what=argc==5?argv[4]:L"read";
+   if(what==L"h264")info.action=1;else if(what==L"restore")info.action=2;else if(what!=L"read")throw std::runtime_error("Width is read, h264 or restore");
+   Remote argument(process.value,sizeof(info));write(process.value,argument,&info,sizeof(info));
+   result=call(process.value,address,&argument);SIZE_T read=0;
+   if(!ReadProcessMemory(process.value,argument.address,&info,sizeof(info),&read)||read!=sizeof(info))throw std::runtime_error("Width state unavailable");
+   std::cout<<"{\"pid\":"<<pid<<",\"code\":"<<result<<",\"settings\":"<<info.settings_ready<<",\"width\":"<<info.width<<",\"automatic\":"<<info.automatic
+    <<",\"pending_restore\":"<<info.pending_restore<<",\"original_width\":"<<info.original_width<<",\"original_automatic\":"<<info.original_automatic<<"}\n";
+  }else if(action==L"mode"||action==L"switch-info"){
    HookSwitchInfo info{sizeof(info),1};
    if(action==L"mode"){const std::wstring wanted=argv[4];if(wanted!=L"h264"&&wanted!=L"stock")throw std::runtime_error("Mode is h264 or stock");info.mode=wanted==L"stock"?1:0;}
    Remote argument(process.value,sizeof(info));write(process.value,argument,&info,sizeof(info));

@@ -133,17 +133,92 @@ static void read_h264_limit(){
   char note[96];snprintf(note,sizeof(note),"H.264 size limit %ux%u from h264-limit.txt",width,count>=2?height:0);driver_note(note);
  }
 }
+// ---- Stream width, changed from inside vrserver ------------------------------------------------------------------------------
+// H.264 can take a stream no wider than 1024 px, so while it is the codec the width is lowered and the user's own value is put
+// back afterwards. The original is kept in a file so a crash of SteamVR or the tray cannot leave the lowered value behind.
+static void* settings=nullptr;
+static const char* const vrlink="driver_vrlink";
+static std::string restore_path(){const auto directory=data_folder();return directory.empty()?std::string():directory+"\\width-restore.txt";}
+static int settings_get_int(const char* key,bool* ok){
+ int error=0;auto* table=*static_cast<void***>(settings);
+ const auto value=reinterpret_cast<int(*)(void*,const char*,const char*,int*)>(table[6])(settings,vrlink,key,&error);
+ if(ok)*ok=error==0;return value;
+}
+static bool settings_get_bool(const char* key,bool* ok){
+ int error=0;auto* table=*static_cast<void***>(settings);
+ const auto value=reinterpret_cast<bool(*)(void*,const char*,const char*,int*)>(table[5])(settings,vrlink,key,&error);
+ if(ok)*ok=error==0;return value;
+}
+static void settings_set_int(const char* key,int value){
+ int error=0;auto* table=*static_cast<void***>(settings);
+ reinterpret_cast<void(*)(void*,const char*,const char*,int,int*)>(table[2])(settings,vrlink,key,value,&error);
+}
+static void settings_set_bool(const char* key,bool value){
+ int error=0;auto* table=*static_cast<void***>(settings);
+ reinterpret_cast<void(*)(void*,const char*,const char*,bool,int*)>(table[1])(settings,vrlink,key,value,&error);
+}
+static bool read_restore(int& width,int& automatic){
+ const auto path=restore_path();if(path.empty())return false;
+ FILE* file=fopen(path.c_str(),"r");if(!file)return false;
+ const int count=fscanf(file,"%d %d",&width,&automatic);fclose(file);return count==2;
+}
+static void restore_width(){
+ int width=0,automatic=0;
+ if(!settings||!read_restore(width,automatic))return;
+ if(width>0)settings_set_int("streamFormatWidth",width);
+ settings_set_bool("automaticStreamFormatWidth",automatic!=0);
+ DeleteFileA(restore_path().c_str());
+ char note[96];snprintf(note,sizeof(note),"stream width restored to %d (automatic %d)",width,automatic);driver_note(note);
+}
+extern "C" __declspec(dllexport) DWORD WINAPI HookStreamWidth(void* argument){
+ auto* info=static_cast<HookWidthInfo*>(argument);
+ if(!info||info->size!=sizeof(HookWidthInfo)||info->version!=1)return 19;
+ info->settings_ready=settings?1:0;
+ if(!settings)return 40;
+ int saved_width=0,saved_automatic=0;
+ info->pending_restore=read_restore(saved_width,saved_automatic)?1:0;
+ if(info->action==1){
+  bool ok=false;
+  if(!info->pending_restore){
+   const int width=settings_get_int("streamFormatWidth",&ok);const bool known=ok;
+   const bool automatic=settings_get_bool("automaticStreamFormatWidth",&ok);
+   saved_width=known?width:0;saved_automatic=automatic?1:0;
+   const auto path=restore_path();FILE* file=path.empty()?nullptr:fopen(path.c_str(),"w");
+   if(!file)return 41;
+   fprintf(file,"%d %d\n",saved_width,saved_automatic);fclose(file);info->pending_restore=1;
+  }
+  int target_width=info->width>0?info->width:1024;
+  if(saved_width>0&&saved_width<target_width)target_width=saved_width;
+  target_width&=~31;
+  settings_set_bool("automaticStreamFormatWidth",false);
+  settings_set_int("streamFormatWidth",target_width);
+  char note[96];snprintf(note,sizeof(note),"stream width set to %d for H.264 (user value %d)",target_width,saved_width);driver_note(note);
+ }else if(info->action==2)restore_width();
+ info->pending_restore=read_restore(saved_width,saved_automatic)?1:0;
+ info->original_width=saved_width;info->original_automatic=saved_automatic;
+ bool ok=false;
+ info->width=settings_get_int("streamFormatWidth",&ok);info->automatic=settings_get_bool("automaticStreamFormatWidth",&ok)?1:0;
+ return 0;
+}
 namespace {
 struct Provider{
- virtual int Init(void*){
+ virtual int Init(void* context){
   read_h264_limit();
+  if(context){
+   int error=0;auto* table=*static_cast<void***>(context);
+   settings=reinterpret_cast<void*(*)(void*,const char*,int*)>(table[0])(context,"IVRSettings_003",&error);
+   if(error)settings=nullptr;
+   driver_note(settings?"driver Init: settings interface available":"driver Init: settings interface unavailable");
+   // A previous session may have ended while the width was lowered.
+   restore_width();
+  }
   const HookTrialConfig defaults{sizeof(HookTrialConfig),5,500000000,500000000,0,90,0,2,2};
   const auto code=install(defaults,false);
   if(!code){resident=true;HookSetDefaultLegacyMode(1);}
   char note[96];snprintf(note,sizeof(note),"driver Init: hook %s (code %lu), starting as stock HEVC",code?"not installed":"installed",code);driver_note(note);
   return 0; // never fail SteamVR's start over this
  }
- virtual void Cleanup(){driver_note("driver Cleanup");}
+ virtual void Cleanup(){restore_width();driver_note("driver Cleanup");}
  virtual const char* const* GetInterfaceVersions(){static const char* const none[]={nullptr};return none;}
  virtual void RunFrame(){}
  virtual bool ShouldBlockStandbyMode(){return false;}

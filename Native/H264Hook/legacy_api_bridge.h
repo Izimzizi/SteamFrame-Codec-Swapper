@@ -31,6 +31,12 @@ typedef struct HookSwitchInfo {
  uint32_t last_stock_status;
  uint64_t switches,stock_encodes,stock_locks,stock_errors;
 } HookSwitchInfo;
+// Stream-width control done from inside vrserver (the driver context's settings interface). action: 0 read, 1 H.264 width, 2 restore.
+typedef struct HookWidthInfo {
+ uint32_t size,version,action,status;
+ int32_t width,automatic,original_width,original_automatic;
+ uint32_t settings_ready,pending_restore;
+} HookWidthInfo;
 HOOK_API int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory);
 HOOK_API int HOOK_CALL HookSetLegacyMode(uint32_t mode);
 HOOK_API int HOOK_CALL HookGetLegacySwitchInfo(HookSwitchInfo*);
