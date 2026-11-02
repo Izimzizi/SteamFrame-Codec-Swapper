@@ -86,7 +86,7 @@ public static class HudPanel
             buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
             Row(104, 52, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
             Row(184, 52, [("set:style:watch", "Watch icon", view.Watch, true), ("set:style:panel", "Always visible", !view.Watch, true)]);
-            Row(302, 52, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
+            if (!view.Watch) Row(302, 52, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
             Row(386, 52, [("reposition", "Reposition HUD", false, true)]);
             return buttons;
         }
@@ -155,7 +155,8 @@ public static class HudPanel
         {
             g.DrawString("Show the HUD when SteamVR starts", normal, white, 22, 70);
             g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 152);
-            g.DrawString(view.Watch ? "Show the controls (Watch always uses the laser)" : "Show the controls when", normal, white, 22, 270);
+            if (view.Watch) g.DrawString("The opened panel is always fully active.\nThe controls only follow the laser or the dashboard\nin the Always visible style.", small, grey, 22, 276);
+            else g.DrawString("Show the controls when", normal, white, 22, 270);
             g.DrawString("Hide HUD takes the HUD away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With the first option Off, the\nHUD stays hidden until you show it from the tray menu.", small, grey, 22, 470);
         }
         else
@@ -178,7 +179,7 @@ public static class HudPanel
         }
         if (!view.Repositioning && !settingsPage) DrawGraph(g, view, small, accent);
         if (compact) { using var cogFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center }; g.DrawString("⚙", symbol, grey, new Rectangle(Width - 20 - 44, 10, 44, 40), cogFormat); }   // the cogwheel stays visible when collapsed, as an invitation to point at the HUD
-        if (compact) g.DrawString(view.ExpandOnHover || view.Watch ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
+        if (compact) g.DrawString(view.ExpandOnHover ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
         foreach (var button in Layout(view))

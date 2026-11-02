@@ -105,10 +105,10 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private void UpdateDashboard(DateTime at)
     {
-        // The watch icon opens the panel with the laser, not the dashboard, so the controls follow the laser there.
-        var hover = settings.ExpandOnHover || settings.Watch;
+        var hover = settings.ExpandOnHover;
         // Carrying the panel or the icon keeps the controls up even when the laser is on the other one.
-        var open = _grab is not null || (!hover && api.DashboardVisible()) || at - _laserAt < (hover ? HoverHold : LaserHold);
+        // Opened from the watch icon the panel is always fully active; the laser and the dashboard only matter in the always-visible style.
+        var open = settings.Watch || _grab is not null || (!hover && api.DashboardVisible()) || at - _laserAt < (hover ? HoverHold : LaserHold);
         if (open == _dashboard) return;
         _dashboard = open;
         log?.Invoke(open ? "HUD: controls shown" : "HUD: readouts only" + (hover ? (_leftByEvent ? " (laser left)" : " (no laser movement)") : ""));

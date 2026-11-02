@@ -257,6 +257,21 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void An_opened_watch_panel_is_fully_active_without_the_laser_or_the_dashboard()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.PanelOpen = true; rig.Api.Dashboard = false;
+        rig.Tick(); rig.Tick(); rig.Tick();
+        rig.Press("page:settings");
+        Assert.Equal("settings", rig.Hud.Page);
+        rig.Tick(); rig.Tick();
+        Assert.Equal("settings", rig.Hud.Page);   // no laser movement, still there
+        rig.Press("reposition");
+        rig.Tick(); rig.Tick();
+        Assert.True(rig.Hud.Repositioning);
+    }
+
+    [Fact]
     public void Closing_the_panel_from_the_icon_drops_a_half_finished_interaction()
     {
         var rig = new Rig();
