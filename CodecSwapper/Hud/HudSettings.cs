@@ -82,7 +82,7 @@ public sealed class HudSettings
             loaded.Enabled = loaded.AutoShow;
             loaded.PanelOpen = false;
             loaded.FadeAngle = Math.Clamp(loaded.FadeAngle, 0, 180);
-            loaded.FadeDistanceCm = Math.Clamp(loaded.FadeDistanceCm, 0, 1000);
+            loaded.FadeDistanceCm = loaded.FadeDistanceCm <= 0 ? 0 : Math.Clamp(loaded.FadeDistanceCm, 35, 100);
             loaded.Hand = loaded.IsLeft ? "left" : "right";
             loaded.IconWidthMeters = float.IsFinite(loaded.IconWidthMeters) ? Math.Clamp(loaded.IconWidthMeters, IconMinimumWidth, IconMaximumWidth) : DefaultIconWidth;
             loaded.WidthMeters = float.IsFinite(loaded.WidthMeters) ? Math.Clamp(loaded.WidthMeters, MinimumWidth, MaximumWidth) : DefaultWidth;

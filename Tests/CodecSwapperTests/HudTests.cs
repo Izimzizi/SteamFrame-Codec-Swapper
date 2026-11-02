@@ -337,7 +337,7 @@ public sealed class HudControllerTests
     public void The_HUD_also_fades_out_beyond_the_chosen_distance_and_stays_when_fading_is_off()
     {
         var rig = new Rig();
-        rig.Settings.FadeDistanceCm = 20;
+        rig.Settings.FadeDistanceCm = 35;
         rig.Settings.SetPlacement(Pose.Identity, .2f);
         rig.Api.Poses[0] = Pose.Identity;
         rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, -.5f));

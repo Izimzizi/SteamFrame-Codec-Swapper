@@ -40,7 +40,7 @@ public static class HudPanel
 
     /// <summary>The fade-out sliders: the left end is Off (0), then whole steps of five.</summary>
     public static readonly int[] FadeAngleChoices = [0, ..Enumerable.Range(2, 17).Select(i => i * 5)];          // Off, 10-90 degrees
-    public static readonly int[] FadeDistanceChoices = [0, ..Enumerable.Range(4, 17).Select(i => i * 5)];       // Off, 20-100 cm
+    public static readonly int[] FadeDistanceChoices = [0, ..Enumerable.Range(7, 14).Select(i => i * 5)];       // Off, 35-100 cm
     public static readonly Rectangle FadeAngleArea = new(20, 276, Width - 40, 70);
     public static readonly Rectangle FadeDistanceArea = new(20, 350, Width - 40, 70);
 
