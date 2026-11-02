@@ -74,9 +74,12 @@ public static class TrayIcons
             graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
             using var fill = new SolidBrush(color);
             graphics.FillEllipse(fill, 1, 1, 30, 30);
-            using var font = new Font("Segoe UI", 15, FontStyle.Bold, GraphicsUnit.Pixel);
-            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            graphics.DrawString("H", font, Brushes.White, new RectangleF(0, 1, 32, 32), format);
+            // The watch's gauge, frozen at about two thirds: a 270 degree track with a lit part and a dot in the middle.
+            using var track = new Pen(Color.FromArgb(90, 255, 255, 255), 3.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            using var lit = new Pen(Color.White, 3.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            graphics.DrawArc(track, 7, 7, 18, 18, 135, 270);
+            graphics.DrawArc(lit, 7, 7, 18, 18, 135, 175);
+            graphics.FillEllipse(Brushes.White, 14, 14, 4, 4);
         }
         var handle = bitmap.GetHicon();
         try { return Cache[state] = (Icon)Icon.FromHandle(handle).Clone(); }
