@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace CodecSwapper;
 
 /// <summary>What a press on the HUD does. The tray implements these with the same calls as its menu.</summary>
@@ -82,6 +84,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
         if (_grab is not null) FollowGrab();   // the icon below is placed from the latest hand position
+        TickFade(device, at);
         TickIcon(device, at);
         ApplyPanelVisibility();
         if (!_panelVisible) return;
@@ -124,6 +127,46 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_repositioning) StopRepositioning();
     }
 
+    // Fading out: the HUD and the watch dim when they are far from where the headset looks (angle) or far from the headset (distance).
+    private const float FadeBandDegrees = 12f;
+    private float _panelAlpha = 1f, _iconAlpha = 1f;
+    private DateTime _fadeAt = DateTime.MinValue;
+
+    private void TickFade(uint device, DateTime at)
+    {
+        var enabled = settings.FadeAngle > 0 || settings.FadeDistanceCm > 0;
+        if (!enabled) { SetAlphas(1f, 1f); return; }
+        if (at - _fadeAt < TimeSpan.FromMilliseconds(50)) return;
+        _fadeAt = at;
+        if (!api.TryDevicePose(0, out var head) || !api.TryDevicePose(device, out var carrier)) return;
+        SetAlphas(FadeAlpha(head, carrier.Then(_repositioning ? _draftPose : settings.Pose).T), FadeAlpha(head, carrier.Then(_repositioning ? _draftIconPose : settings.IconPose).T));
+    }
+
+    private float FadeAlpha(Pose head, Vector3 position)
+    {
+        var toward = position - head.T;
+        var distance = toward.Length();
+        var alpha = 1f;
+        if (settings.FadeDistanceCm > 0)
+        {
+            var limit = settings.FadeDistanceCm / 100f;
+            alpha = Math.Min(alpha, Math.Clamp(1 - (distance - limit) / (limit * .25f), 0f, 1f));
+        }
+        if (settings.FadeAngle > 0 && distance > 1e-3f)
+        {
+            var forward = head.Rotate(-Vector3.UnitZ);
+            var degrees = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(toward), forward), -1f, 1f)) * 180f / MathF.PI;
+            alpha = Math.Min(alpha, Math.Clamp(1 - (degrees - settings.FadeAngle) / FadeBandDegrees, 0f, 1f));
+        }
+        return alpha;
+    }
+
+    private void SetAlphas(float panel, float icon)
+    {
+        if (_overlay != 0 && MathF.Abs(panel - _panelAlpha) > .01f) { api.SetAlpha(_overlay, panel); _panelAlpha = panel; }
+        if (_icon != 0 && MathF.Abs(icon - _iconAlpha) > .01f) { api.SetAlpha(_icon, icon); _iconAlpha = icon; }
+    }
+
     private bool ShowPanel => !settings.Watch || settings.PanelOpen || _repositioning;
 
     // The watch: a small round overlay on the controller. Pressing it with the laser opens and closes the panel.
@@ -134,7 +177,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         {
             _icon = api.CreateOverlay(IconKey, "SteamFrame HUD button");
             if (_icon == 0) return;
-            api.SetAlpha(_icon, 1f);
+            api.SetAlpha(_icon, 1f); _iconAlpha = 1f;
             api.EnableLaser(_icon, HudPanel.IconSize, HudPanel.IconSize);
             _iconDevice = IOverlayApi.NoDevice; _iconDrawn = null;
             log?.Invoke("HUD: watch icon created");
@@ -207,7 +250,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (handle == 0) { log?.Invoke("HUD: the overlay could not be created."); return false; }
         _overlay = handle;
         log?.Invoke("HUD: overlay created");
-        api.SetAlpha(handle, 1f);
+        api.SetAlpha(handle, 1f); _panelAlpha = 1f;
         api.EnableLaser(handle, HudPanel.Width, HudPanel.Height);
         _drawn = null; _attachedTo = IOverlayApi.NoDevice;
         return true;
@@ -224,7 +267,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel" };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm };
         if (_sliding is { } held) return view with { TargetMbps = held };
         if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
         return view;
@@ -249,7 +292,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
@@ -301,6 +344,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
                 else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
+                else if (parts[1] == "fadeangle") settings.FadeAngle = int.Parse(parts[2]);
+                else if (parts[1] == "fadedist") settings.FadeDistanceCm = int.Parse(parts[2]);
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;

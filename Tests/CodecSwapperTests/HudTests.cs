@@ -197,7 +197,8 @@ public sealed class HudControllerTests
         public ulong CreateOverlay(string key, string name) { Calls.Add("create"); return ++_created; }
         public void DestroyOverlay(ulong overlay) => Calls.Add("destroy");
         public void SetWidth(ulong overlay, float meters) => LastWidth = meters;
-        public void SetAlpha(ulong overlay, float alpha) { }
+        public readonly Dictionary<ulong, float> Alpha = [];
+        public void SetAlpha(ulong overlay, float alpha) => Alpha[overlay] = alpha;
         public void EnableLaser(ulong overlay, int w, int h) => Calls.Add($"laser {w}x{h}");
         public void SetImage(ulong overlay, byte[] rgba, int width, int height) => Uploads++;
         public void SetVisible(ulong overlay, bool visible) { Calls.Add(visible ? "show" : "hide"); Visible[overlay] = visible; }
@@ -295,6 +296,36 @@ public sealed class HudControllerTests
         rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100));
         rig.Press("counters");
         Assert.Contains("reset counters", rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_HUD_and_the_watch_fade_out_when_they_are_away_from_where_the_headset_looks()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.PanelOpen = true; rig.Settings.FadeAngle = 60;
+        rig.Api.Poses[0] = Pose.Identity;                                   // the headset looks along -Z
+        rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, -.5f));         // the hand is held out in front
+        rig.Tick();
+        Assert.Equal(1f, rig.Api.Alpha[7]);
+        Assert.Equal(1f, rig.Api.Alpha[8]);
+        rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, .6f));          // the hand drops behind the head
+        rig.Tick(); rig.Tick();
+        Assert.Equal(0f, rig.Api.Alpha[7]);
+        Assert.Equal(0f, rig.Api.Alpha[8]);
+    }
+
+    [Fact]
+    public void The_HUD_also_fades_out_beyond_the_chosen_distance_and_stays_when_fading_is_off()
+    {
+        var rig = new Rig();
+        rig.Settings.FadeDistanceCm = 20;
+        rig.Api.Poses[0] = Pose.Identity;
+        rig.Api.Poses[3] = Pose.Rotation(0, 0, 0, new(0, 0, -.5f));
+        rig.Tick(); rig.Tick();
+        Assert.Equal(0f, rig.Api.Alpha[7]);
+        rig.Settings.FadeDistanceCm = 0;
+        rig.Tick(); rig.Tick();
+        Assert.Equal(1f, rig.Api.Alpha[7]);
     }
 
     [Fact]
@@ -420,6 +451,8 @@ public sealed class HudControllerTests
     {
         var rig = new Rig();
         rig.Tick();
+        rig.Press("page:settings");
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100));
         rig.Press("hide");
         Assert.Equal(["hud off"], rig.Actions.Calls);
     }

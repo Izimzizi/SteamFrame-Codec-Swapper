@@ -19,6 +19,10 @@ public sealed class HudSettings
     public bool Watch { get; set; } = true;
     /// <summary>With <see cref="Watch"/>: whether the panel is open right now. Not remembered; a new SteamVR session starts with it closed.</summary>
     public bool PanelOpen { get; set; }
+    /// <summary>The HUD and the watch fade out when they are more than this many degrees away from where the headset points; 0 keeps them always visible.</summary>
+    public int FadeAngle { get; set; }
+    /// <summary>They also fade out beyond this distance (centimetres) from the headset; 0 means any distance.</summary>
+    public int FadeDistanceCm { get; set; }
     /// <summary>"left" or "right".</summary>
     public string Hand { get; set; } = "left";
     /// <summary>The HUD's pose in its controller's space as a row-major 3x4; null means the default placement.</summary>
@@ -77,7 +81,8 @@ public sealed class HudSettings
             if (loaded is null) return new();
             loaded.Enabled = loaded.AutoShow;
             loaded.PanelOpen = false;
-            loaded.PanelOpen = false;
+            loaded.FadeAngle = Math.Clamp(loaded.FadeAngle, 0, 180);
+            loaded.FadeDistanceCm = Math.Clamp(loaded.FadeDistanceCm, 0, 1000);
             loaded.Hand = loaded.IsLeft ? "left" : "right";
             loaded.IconWidthMeters = float.IsFinite(loaded.IconWidthMeters) ? Math.Clamp(loaded.IconWidthMeters, IconMinimumWidth, IconMaximumWidth) : DefaultIconWidth;
             loaded.WidthMeters = float.IsFinite(loaded.WidthMeters) ? Math.Clamp(loaded.WidthMeters, MinimumWidth, MaximumWidth) : DefaultWidth;

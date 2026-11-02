@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel")
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, reposition, counters, hide, save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, set:fadeangle:N, set:fadedist:CM, reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -37,6 +37,9 @@ public static class HudPanel
     public static readonly Rectangle GraphArea = new(20, 200, Width - 40, 120);
     public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
     private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
+
+    public static readonly int[] FadeAngles = [0, 30, 45, 60, 90];
+    public static readonly int[] FadeDistances = [0, 50, 80, 120, 200];
 
     public static readonly (string Id, string Text)[] RateControls =
         [("vbr", "VBR — the bitrate follows the scene (default)"), ("cbr", "CBR — constant bitrate, steadier on a weak link")];
@@ -84,10 +87,12 @@ public static class HudPanel
         if (view.Page == "settings")
         {
             buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
-            Row(104, 52, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
-            Row(184, 52, [("set:style:watch", "Watch icon", view.Watch, true), ("set:style:panel", "Always visible", !view.Watch, true)]);
-            if (!view.Watch) Row(302, 52, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
-            Row(386, 52, [("reposition", "Reposition HUD", false, true)]);
+            Row(84, 40, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
+            Row(158, 40, [("set:style:watch", "Watch icon", view.Watch, true), ("set:style:panel", "Always visible", !view.Watch, true)]);
+            if (!view.Watch) Row(232, 40, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
+            Row(306, 40, FadeAngles.Select(a => ($"set:fadeangle:{a}", a == 0 ? "Off" : $"{a}°", view.FadeAngle == a, true)).ToArray());
+            Row(380, 40, FadeDistances.Select(d => ($"set:fadedist:{d}", d == 0 ? "Off" : $"{d / 100.0:0.0#} m", view.FadeDistance == d, true)).ToArray());
+            Row(436, 44, [("reposition", "Reposition HUD", false, true), ("hide", "Hide HUD", false, true)]);
             return buttons;
         }
         var control = !view.Busy;
@@ -107,7 +112,7 @@ public static class HudPanel
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
         Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        Row(540, 52, [("counters", "Reset frame counters", false, true), ("hide", "Hide HUD", false, true)]);
+        Row(540, 52, [("counters", "Reset frame counters", false, true)]);
         return buttons;
     }
 
@@ -153,11 +158,13 @@ public static class HudPanel
         }
         else if (settingsPage)
         {
-            g.DrawString("Show the HUD when SteamVR starts", normal, white, 22, 70);
-            g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 152);
-            if (view.Watch) g.DrawString("The opened panel is always fully active.\nThe controls only follow the laser or the dashboard\nin the Always visible style.", small, grey, 22, 276);
-            else g.DrawString("Show the controls when", normal, white, 22, 270);
-            g.DrawString("Hide HUD takes the HUD away until SteamVR starts again (or until you\nchoose VR HUD > Show HUD in the tray menu). With the first option Off, the\nHUD stays hidden until you show it from the tray menu.", small, grey, 22, 470);
+            g.DrawString("Show the HUD when SteamVR starts", normal, white, 22, 56);
+            g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 130);
+            if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the Always visible style.", small, grey, 22, 204);
+            else g.DrawString("Show the controls when", normal, white, 22, 206);
+            g.DrawString("Fade out when looking more than this far away", normal, white, 22, 280);
+            g.DrawString("Fade out beyond this distance from the headset", normal, white, 22, 354);
+            g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. It can be turned\nback on any time in the tray menu: VR HUD > Show HUD on a controller. With the\nfirst option Off, the HUD stays hidden until you show it from the tray menu.", small, grey, 22, 496);
         }
         else
         {
