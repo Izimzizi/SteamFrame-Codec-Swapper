@@ -93,6 +93,7 @@ int active_mode=0; // 0 H.264, 1 stock HEVC
 // The codec that actually produced the last frame (2 H.264, 3 HEVC; 0 until a frame follows a mode change). The mode is only what was asked for.
 uint32_t last_codec=0;
 HookSwitchInfo switch_info{sizeof(HookSwitchInfo),1};
+void (*oversize_handler)()=nullptr;
 struct State {
  void* stock=nullptr;int last_encoded=-1;
  std::unordered_set<VResource*> resources;std::unordered_set<VOutput*> outputs;std::unordered_set<VMapped*> mapped;
@@ -314,8 +315,10 @@ NVENCSTATUS NVENCAPI reconfigure(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source
  bool h264_session=true;
  {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())h264_session=found->second.h264;}
  // While HEVC is selected a picture beyond the H.264 limits is the driver's HEVC encoder's alone.
- bool oversize=false;
- {std::lock_guard<std::mutex> lock(mutex);oversize=active_mode==1&&source&&(source->reInitEncodeParams.encodeWidth>width_limit()||source->reInitEncodeParams.encodeHeight>height_limit());}
+ // While H.264 is selected such a request is not an encoder error either: the stream width is put back to what H.264 takes.
+ bool oversize=false,h264_codec=false;
+ {std::lock_guard<std::mutex> lock(mutex);h264_codec=active_mode!=1;oversize=source&&(source->reInitEncodeParams.encodeWidth>width_limit()||source->reInitEncodeParams.encodeHeight>height_limit());}
+ if(oversize&&h264_codec&&oversize_handler)oversize_handler();
  const auto h264=h264_session&&!oversize?reconfigure_h264(encoder,source):NV_ENC_SUCCESS;
  void* stock=nullptr;int mode=0;
  {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);if(found!=sessions.end())stock=found->second.stock;mode=active_mode;}
@@ -580,6 +583,7 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
  return 0;
 }
 
+extern "C" int HOOK_CALL HookSetOversizeHandler(void (*handler)()){std::lock_guard<std::mutex> lock(mutex);oversize_handler=handler;return 0;}
 extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory){
  std::lock_guard<std::mutex> lock(mutex);return StockSetTable(sdk11_table,bytes,factory);
 }

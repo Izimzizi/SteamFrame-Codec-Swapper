@@ -170,6 +170,19 @@ static void restore_width(){
  DeleteFileA(restore_path().c_str());
  char note[96];snprintf(note,sizeof(note),"stream width restored to %d (automatic %d)",width,automatic);driver_note(note);
 }
+// SteamVR asked for a wider stream while H.264 is the codec (the settings page allows it): put the width back to what H.264 takes.
+// Run on its own thread, at most once a second, so the encoder thread never waits on the settings.
+static DWORD WINAPI clamp_width_thread(void*){
+ settings_set_bool("automaticStreamFormatWidth",false);
+ settings_set_int("streamFormatWidth",1024);
+ driver_note("stream width asked above 1024 while H.264 is the codec: set back to 1024");
+ return 0;
+}
+static void clamp_width(){
+ static ULONGLONG last=0;const auto now=GetTickCount64();
+ if(!settings||(last&&now-last<1000))return;
+ last=now;HANDLE thread=CreateThread(nullptr,0,clamp_width_thread,nullptr,0,nullptr);if(thread)CloseHandle(thread);
+}
 extern "C" __declspec(dllexport) DWORD WINAPI HookStreamWidth(void* argument){
  auto* info=static_cast<HookWidthInfo*>(argument);
  if(!info||info->size!=sizeof(HookWidthInfo)||info->version!=1)return 19;
@@ -204,6 +217,7 @@ namespace {
 struct Provider{
  virtual int Init(void* context){
   read_h264_limit();
+  HookSetOversizeHandler(clamp_width);
   if(context){
    int error=0;auto* table=*static_cast<void***>(context);
    settings=reinterpret_cast<void*(*)(void*,const char*,int*)>(table[0])(context,"IVRSettings_003",&error);
