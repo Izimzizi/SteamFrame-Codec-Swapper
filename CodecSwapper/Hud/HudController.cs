@@ -33,8 +33,9 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private bool _repositioning;
     private bool _leftByEvent;
     private long _expandedAt;                // Stopwatch ticks when the panel was told to expand, until its picture is uploaded
-    private Pose _draftPose;
-    private float _draftWidth;
+    private Pose _draftPose, _draftIconPose, _iconPose;
+    private float _draftWidth, _draftIconWidth, _iconWidth;
+    private bool _resizeIcon;              // Smaller/Larger act on the watch icon (the one grabbed last) instead of the panel
     private Grab? _grab;
     private string _note = "";
     private string _menu = "";
@@ -44,7 +45,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
     private DateTime _committedAt, _lastSlideEvent, _clock;
 
-    private sealed record Grab(uint Device, Pose DeviceAtGrab, Pose PanelAtGrab);
+    private sealed record Grab(uint Device, Pose DeviceAtGrab, Pose PanelAtGrab, bool Icon);
 
     public bool Repositioning => _repositioning;
     public bool Attached => _overlay != 0;
@@ -78,6 +79,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
+        if (_grab is not null) FollowGrab();   // the icon below is placed from the latest hand position
         TickIcon(device, at);
         ApplyPanelVisibility();
         if (!_panelVisible) return;
@@ -105,7 +107,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     {
         // The watch icon opens the panel with the laser, not the dashboard, so the controls follow the laser there.
         var hover = settings.ExpandOnHover || settings.Watch;
-        var open = (!hover && api.DashboardVisible()) || at - _laserAt < (hover ? HoverHold : LaserHold);
+        // Carrying the panel or the icon keeps the controls up even when the laser is on the other one.
+        var open = _grab is not null || (!hover && api.DashboardVisible()) || at - _laserAt < (hover ? HoverHold : LaserHold);
         if (open == _dashboard) return;
         _dashboard = open;
         log?.Invoke(open ? "HUD: controls shown" : "HUD: readouts only" + (hover ? (_leftByEvent ? " (laser left)" : " (no laser movement)") : ""));
@@ -119,7 +122,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_repositioning) StopRepositioning();
     }
 
-    private bool ShowPanel => !settings.Watch || settings.PanelOpen;
+    private bool ShowPanel => !settings.Watch || settings.PanelOpen || _repositioning;
 
     // The watch: a small round overlay on the controller. Pressing it with the laser opens and closes the panel.
     private void TickIcon(uint device, DateTime at)
@@ -130,21 +133,30 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             _icon = api.CreateOverlay(IconKey, "SteamFrame HUD button");
             if (_icon == 0) return;
             api.SetAlpha(_icon, 1f);
-            api.SetWidth(_icon, HudSettings.IconWidth);
             api.EnableLaser(_icon, HudPanel.IconSize, HudPanel.IconSize);
             _iconDevice = IOverlayApi.NoDevice; _iconDrawn = null;
             log?.Invoke("HUD: watch icon created");
         }
-        if (_iconDevice != device)
+        var pose = _repositioning ? _draftIconPose : settings.IconPose;
+        var width = _repositioning ? _draftIconWidth : settings.IconWidthMeters;
+        if (_iconDevice != device || pose != _iconPose || width != _iconWidth)
         {
-            api.AttachToDevice(_icon, device, HudSettings.IconPose);
-            api.SetVisible(_icon, true);
-            _iconDevice = device;
+            api.SetWidth(_icon, width);
+            api.AttachToDevice(_icon, device, pose);
+            if (_iconDevice != device) api.SetVisible(_icon, true);
+            _iconDevice = device; _iconPose = pose; _iconWidth = width;
         }
         foreach (var e in api.PollEvents(_icon))
         {
             if (e.Kind is OverlayEventKind.MouseMove or OverlayEventKind.FocusEnter) _iconHover = true;
             else if (e.Kind == OverlayEventKind.FocusLeave) _iconHover = false;
+            else if (_repositioning)
+            {
+                _laserAt = at;
+                // While the HUD is being moved the icon is carried like the panel instead of opening it.
+                if (e.Kind == OverlayEventKind.MouseDown) BeginGrab(e.Device, true);
+                else if (e.Kind == OverlayEventKind.MouseUp) _grab = null;
+            }
             else if (e.Kind == OverlayEventKind.MouseDown) { settings.PanelOpen = !settings.PanelOpen; log?.Invoke("HUD: panel " + (settings.PanelOpen ? "opened" : "closed") + " from the watch icon"); }
         }
         var view = readView();
@@ -208,7 +220,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel" };
         if (_sliding is { } held) return view with { TargetMbps = held };
         if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
         return view;
@@ -233,7 +245,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
@@ -256,7 +268,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
                 _sliding = HudPanel.SliderValue(e.X); _lastSlideEvent = _clock;
                 break;
             case OverlayEventKind.MouseDown when hit == "grab":
-                if (_repositioning) BeginGrab(e.Device);
+                if (_repositioning) BeginGrab(e.Device, false);
                 break;
             case OverlayEventKind.MouseDown when hit is not null:
                 Press(hit);
@@ -287,12 +299,17 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;
-            case "size": _draftWidth = Math.Clamp(_draftWidth * (parts[1] == "+" ? 1.12f : 1 / 1.12f), HudSettings.MinimumWidth, HudSettings.MaximumWidth); break;
+            case "size":
+                var factor = parts[1] == "+" ? 1.12f : 1 / 1.12f;
+                if (_resizeIcon) _draftIconWidth = Math.Clamp(_draftIconWidth * factor, HudSettings.IconMinimumWidth, HudSettings.IconMaximumWidth);
+                else _draftWidth = Math.Clamp(_draftWidth * factor, HudSettings.MinimumWidth, HudSettings.MaximumWidth);
+                break;
             case "save": SavePlacement(); break;
             case "cancel": StopRepositioning(); break;
             case "default":
                 settings.ResetPlacement(); Persist();
                 _draftPose = settings.Pose; _draftWidth = settings.WidthMeters;
+                _draftIconPose = settings.IconPose; _draftIconWidth = settings.IconWidthMeters;
                 break;
         }
     }
@@ -309,6 +326,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void StartRepositioning()
     {
         _repositioning = true; _menu = ""; _draftPose = settings.Pose; _draftWidth = settings.WidthMeters; _drawn = null;
+        _draftIconPose = settings.IconPose; _draftIconWidth = settings.IconWidthMeters; _resizeIcon = false;
     }
 
     private void StopRepositioning()
@@ -319,6 +337,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void SavePlacement()
     {
         settings.SetPlacement(_draftPose, _draftWidth);
+        settings.SetIconPlacement(_draftIconPose, _draftIconWidth);
         Persist();
         StopRepositioning();
     }
@@ -337,10 +356,11 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     // The panel is carried by the grabbing laser's controller while the trigger is held, then its place is re-expressed on the carrier controller.
-    private void BeginGrab(uint grabber)
+    private void BeginGrab(uint grabber, bool icon)
     {
         if (grabber == _attachedTo || !api.TryDevicePose(grabber, out var grabbed) || !api.TryDevicePose(_attachedTo, out var carrier)) return;
-        _grab = new(grabber, grabbed, carrier.Then(_draftPose));
+        _grab = new(grabber, grabbed, carrier.Then(icon ? _draftIconPose : _draftPose), icon);
+        _resizeIcon = icon; _drawn = null;
     }
 
     private void FollowGrab()
@@ -348,6 +368,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_grab is null) return;
         if (!api.TryDevicePose(_grab.Device, out var grabbed) || !api.TryDevicePose(_attachedTo, out var carrier)) return;
         var panelWorld = grabbed.Then(_grab.DeviceAtGrab.Inverse()).Then(_grab.PanelAtGrab);
-        _draftPose = carrier.Inverse().Then(panelWorld).Orthonormal();
+        var placed = carrier.Inverse().Then(panelWorld).Orthonormal();
+        if (_grab.Icon) _draftIconPose = placed; else _draftPose = placed;
     }
 }

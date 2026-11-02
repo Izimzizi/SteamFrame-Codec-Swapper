@@ -32,10 +32,22 @@ public sealed class HudSettings
         [0.9874174f, -0.017996771f, 0.1571086f, -0.004516281f, -0.15356612f, 0.12798984f, 0.97981435f, -0.011095941f, -0.0377418f, -0.9916122f, 0.123615704f, 0.27361977f], out var chosen)
         ? chosen : Pose.Rotation(0, -50, 0, new Vector3(0, .18f, -.05f));
 
-    public const float IconWidth = .045f;
+    public const float IconMinimumWidth = .02f, IconMaximumWidth = .10f, DefaultIconWidth = .045f;
 
     /// <summary>The watch icon in its controller's space: a little behind the controller and above it, lying flat like the panel.</summary>
-    public static Pose IconPose => DefaultPose with { T = new Vector3(0f, .02f, .10f) };
+    public static Pose DefaultIconPose { get; } = DefaultPose with { T = new Vector3(0f, .02f, .10f) };
+
+    /// <summary>The watch icon's pose in its controller's space as a row-major 3x4; null means <see cref="DefaultIconPose"/>.</summary>
+    public float[]? IconPlacement { get; set; }
+    public float IconWidthMeters { get; set; } = DefaultIconWidth;
+
+    [JsonIgnore] public Pose IconPose => Pose.TryFromMatrix34(IconPlacement, out var pose) ? pose : DefaultIconPose;
+
+    public void SetIconPlacement(Pose pose, float widthMeters)
+    {
+        IconPlacement = pose.Orthonormal().ToMatrix34();
+        IconWidthMeters = Math.Clamp(widthMeters, IconMinimumWidth, IconMaximumWidth);
+    }
 
     [JsonIgnore] public bool IsLeft => !string.Equals(Hand, "right", StringComparison.OrdinalIgnoreCase);
 
@@ -51,6 +63,8 @@ public sealed class HudSettings
     {
         Placement = null;
         WidthMeters = DefaultWidth;
+        IconPlacement = null;
+        IconWidthMeters = DefaultIconWidth;
     }
 
     public static HudSettings Load(string path)
@@ -63,6 +77,7 @@ public sealed class HudSettings
             loaded.PanelOpen = false;
             loaded.PanelOpen = false;
             loaded.Hand = loaded.IsLeft ? "left" : "right";
+            loaded.IconWidthMeters = float.IsFinite(loaded.IconWidthMeters) ? Math.Clamp(loaded.IconWidthMeters, IconMinimumWidth, IconMaximumWidth) : DefaultIconWidth;
             loaded.WidthMeters = float.IsFinite(loaded.WidthMeters) ? Math.Clamp(loaded.WidthMeters, MinimumWidth, MaximumWidth) : DefaultWidth;
             return loaded;
         }

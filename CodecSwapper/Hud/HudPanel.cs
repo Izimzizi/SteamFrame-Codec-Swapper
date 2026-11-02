@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel")
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -148,8 +148,8 @@ public static class HudPanel
         g.DrawString(view.Repositioning ? "Reposition the HUD" : settingsPage ? "HUD settings" : "SteamFrame", title, accentBrush, 22, 14);
         if (view.Repositioning)
         {
-            g.DrawString("Hold the trigger on the panel with the other\nhand's laser and move it, then Save.", normal, white, 22, 62);
-            g.DrawString($"Attached to the {view.Hand} controller.", small, grey, 22, 128);
+            g.DrawString(view.Watch ? "Hold the trigger on the panel or the watch icon with\nthe other hand's laser and move it, then Save." : "Hold the trigger on the panel with the other\nhand's laser and move it, then Save.", normal, white, 22, 62);
+            g.DrawString($"Attached to the {view.Hand} controller." + (view.Watch ? $"  Smaller/Larger resize the {(view.Target == "icon" ? "watch icon" : "panel")}." : ""), small, grey, 22, 128);
         }
         else if (settingsPage)
         {

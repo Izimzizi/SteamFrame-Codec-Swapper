@@ -44,7 +44,7 @@ public static class HudHost
                         settings.Enabled = message.Settings.Enabled; settings.Hand = message.Settings.Hand; settings.FlipLaserY = message.Settings.FlipLaserY;
                         settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover; settings.Watch = message.Settings.Watch;
                         // The helper owns the placement while the user is moving the HUD.
-                        if (!hud.Repositioning) { settings.Placement = message.Settings.Placement; settings.WidthMeters = message.Settings.WidthMeters; }
+                        if (!hud.Repositioning) { settings.Placement = message.Settings.Placement; settings.WidthMeters = message.Settings.WidthMeters; settings.IconPlacement = message.Settings.IconPlacement; settings.IconWidthMeters = message.Settings.IconWidthMeters; }
                     }
                     else if (message.Type == "quit") quit = true;
                 }

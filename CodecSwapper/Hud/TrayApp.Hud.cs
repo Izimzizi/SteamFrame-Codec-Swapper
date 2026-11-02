@@ -82,6 +82,8 @@ public sealed partial class TrayApp
             case "settings" when message.Settings is not null:
                 _hudSettings.Placement = message.Settings.Placement;
                 _hudSettings.WidthMeters = message.Settings.WidthMeters;
+                _hudSettings.IconPlacement = message.Settings.IconPlacement;
+                _hudSettings.IconWidthMeters = message.Settings.IconWidthMeters;
                 _hudSettings.AutoShow = message.Settings.AutoShow;
                 _hudSettings.ExpandOnHover = message.Settings.ExpandOnHover;
                 _hudSettings.Watch = message.Settings.Watch;

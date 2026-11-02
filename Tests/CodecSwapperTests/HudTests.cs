@@ -248,7 +248,7 @@ public sealed class HudControllerTests
         rig.Tick();
         Assert.False(rig.Api.Visible[7]);
         Assert.True(rig.Api.Visible[8]);
-        Assert.Equal(HudSettings.IconPose, rig.Api.LastRelative);
+        Assert.Equal(HudSettings.DefaultIconPose, rig.Api.LastRelative);
         rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();
         Assert.True(rig.Api.Visible[7]);
         Assert.True(rig.Settings.PanelOpen);
@@ -604,6 +604,32 @@ public sealed class HudControllerTests
         Assert.Equal(HudSettings.DefaultPose, rig.Settings.Pose);
         Assert.Equal(HudSettings.DefaultWidth, rig.Settings.WidthMeters);
         Assert.Equal(1, rig.Saves);
+    }
+
+    [Fact]
+    public void Reposition_also_moves_and_resizes_the_watch_icon_and_saves_both()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.PanelOpen = true;
+        rig.Api.Poses[3] = Pose.Identity;
+        rig.Api.Poses[4] = Pose.Rotation(0, 0, 0, new(1, 0, 0));
+        rig.Tick();
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100)); rig.Press("page:settings");
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100)); rig.Press("reposition");
+        Assert.True(rig.Hud.Repositioning);
+        // Trigger on the icon (not the panel), then the other hand moves 5 cm up: only the icon follows.
+        rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();
+        Assert.True(rig.Settings.PanelOpen);
+        rig.Api.Poses[4] = Pose.Rotation(0, 0, 0, new(1, .05f, 0)); rig.Tick();
+        Assert.True(Vector3.Distance(rig.Api.LastRelative.T, HudSettings.DefaultIconPose.T + new Vector3(0, .05f, 0)) < 1e-4f, rig.Api.LastRelative.T.ToString());
+        rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseUp, 4, 60, 60)); rig.Tick();
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100)); rig.Press("size:+");
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 100, 100)); rig.Press("save");
+        Assert.False(rig.Hud.Repositioning);
+        Assert.True(rig.Settings.IconWidthMeters > HudSettings.DefaultIconWidth);
+        Assert.Equal(HudSettings.DefaultWidth, rig.Settings.WidthMeters);
+        Assert.True(Vector3.Distance(rig.Settings.IconPose.T, HudSettings.DefaultIconPose.T + new Vector3(0, .05f, 0)) < 1e-4f);
+        Assert.Equal(HudSettings.DefaultPose, rig.Settings.Pose);
     }
 
     [Fact]
