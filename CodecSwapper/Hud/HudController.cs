@@ -132,6 +132,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     // Fading out: the HUD and the watch each dim when they face more than the chosen angle away from the viewer (the angle between the
     // direction the picture faces and the line to the headset), or when they are further from the headset than the chosen distance.
     private const float FadeBandDegrees = 4f;
+    // The headset's tracked point sits behind the eyes; the angle is measured to the eyes, which matters at arm's length.
+    private const float EyeForwardMeters = .08f;
     private float _panelAlpha = 1f, _iconAlpha = 1f;
     private DateTime _fadeAt = DateTime.MinValue;
 
@@ -158,7 +160,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (settings.FadeAngle > 0 && distance > 1e-3f)
         {
             var facing = overlayInWorld.Rotate(Vector3.UnitZ);
-            var degrees = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(toward), Vector3.Normalize(facing)), -1f, 1f)) * 180f / MathF.PI;
+            var degrees = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(toward + head.Rotate(-Vector3.UnitZ) * EyeForwardMeters), Vector3.Normalize(facing)), -1f, 1f)) * 180f / MathF.PI;
             alpha = Math.Min(alpha, Math.Clamp(1 - (degrees - settings.FadeAngle) / FadeBandDegrees, 0f, 1f));
         }
         return alpha;
