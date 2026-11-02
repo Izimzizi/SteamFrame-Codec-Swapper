@@ -72,7 +72,8 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     {
         if (_overlay == 0 && _system == 0) return;
         _overlay = _system = 0;
-        _gpu?.Dispose(); _gpu = null;
+        foreach (var texture in _textures.Values) texture.Dispose();
+        _textures.Clear();
         try { _shutdown(); } catch (Exception) { /* already gone with SteamVR */ }
     }
 
@@ -104,7 +105,11 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         return 0;
     }
 
-    public void DestroyOverlay(ulong overlay) => ((delegate* unmanaged<nint, ulong, int>)Slot(_overlay, DestroyOverlaySlot))(_overlay, overlay);
+    public void DestroyOverlay(ulong overlay)
+    {
+        ((delegate* unmanaged<nint, ulong, int>)Slot(_overlay, DestroyOverlaySlot))(_overlay, overlay);
+        if (_textures.Remove(overlay, out var texture)) texture.Dispose();
+    }
     public void SetWidth(ulong overlay, float meters) => ((delegate* unmanaged<nint, ulong, float, int>)Slot(_overlay, SetWidthSlot))(_overlay, overlay, meters);
     public void SetAlpha(ulong overlay, float alpha) => ((delegate* unmanaged<nint, ulong, float, int>)Slot(_overlay, SetAlphaSlot))(_overlay, overlay, alpha);
 
@@ -130,11 +135,16 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     {
         try
         {
-            _gpu ??= GpuOverlayTexture.TryCreate(width, height);
-            if (_gpu is null) { _gpuFailed = true; log?.Invoke("HUD: no Direct3D 11 device; using the slower image upload."); return false; }
-            _gpu.Update(rgba);
+            // Each overlay has its own texture: the icon and the panel are different sizes.
+            if (!_textures.TryGetValue(overlay, out var gpu))
+            {
+                gpu = GpuOverlayTexture.TryCreate(width, height);
+                if (gpu is null) { _gpuFailed = true; log?.Invoke("HUD: no Direct3D 11 device; using the slower image upload."); return false; }
+                _textures[overlay] = gpu;
+            }
+            gpu.Update(rgba);
             var texture = stackalloc nint[2];
-            texture[0] = _gpu.Texture;
+            texture[0] = gpu.Texture;
             texture[1] = 0; // ETextureType DirectX (0) and EColorSpace Auto (0)
             var result = ((delegate* unmanaged<nint, ulong, nint*, int>)Slot(_overlay, SetTextureSlot))(_overlay, overlay, texture);
             if (result == 0) return true;
@@ -142,11 +152,12 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException) { log?.Invoke("HUD: texture path unavailable: " + error.Message); }
         _gpuFailed = true;
-        _gpu?.Dispose(); _gpu = null;
+        foreach (var texture in _textures.Values) texture.Dispose();
+        _textures.Clear();
         return false;
     }
 
-    private GpuOverlayTexture? _gpu;
+    private readonly Dictionary<ulong, GpuOverlayTexture> _textures = [];
     private bool _gpuFailed;
 
     public void SetVisible(ulong overlay, bool visible) =>

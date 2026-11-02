@@ -149,7 +149,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         var view = readView();
         var key = $"{view.Codec}|{view.Connected}|{_iconHover}|{settings.PanelOpen}";
-        if (key == _iconDrawn || at - _iconUpload < InteractionUpload) return;
+        // Sent again every few seconds even when nothing changed, so an icon SteamVR dropped while it was still starting up comes back.
+        if ((key == _iconDrawn && at - _iconUpload < TimeSpan.FromSeconds(3)) || at - _iconUpload < InteractionUpload) return;
         using var bitmap = HudPanel.RenderIcon(view, _iconHover, settings.PanelOpen);
         api.SetImage(_icon, HudPanel.ToRgba(bitmap), HudPanel.IconSize, HudPanel.IconSize);
         _iconDrawn = key; _iconUpload = at;
