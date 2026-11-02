@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
-/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, set:fadeangle:N, set:fadedist:CM, reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, slide:angle, slide:dist (the fade-out sliders), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -38,8 +38,18 @@ public static class HudPanel
     public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
     private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
 
-    public static readonly int[] FadeAngles = [0, 30, 45, 60, 90];
-    public static readonly int[] FadeDistances = [0, 50, 80, 120, 200];
+    /// <summary>The fade-out sliders: the left end is Off (0), then whole steps of five.</summary>
+    public static readonly int[] FadeAngleChoices = [0, ..Enumerable.Range(2, 17).Select(i => i * 5)];          // Off, 10-90 degrees
+    public static readonly int[] FadeDistanceChoices = [0, ..Enumerable.Range(4, 17).Select(i => i * 5)];       // Off, 20-100 cm
+    public static readonly Rectangle FadeAngleArea = new(20, 276, Width - 40, 70);
+    public static readonly Rectangle FadeDistanceArea = new(20, 350, Width - 40, 70);
+
+    /// <summary>The value a laser at panel x selects on a settings slider.</summary>
+    public static int ChoiceAt(int[] choices, float x) =>
+        choices[(int)Math.Round(Math.Clamp((x - TrackLeft) / (TrackRight - TrackLeft), 0f, 1f) * (choices.Length - 1))];
+
+    public static float ChoiceX(int[] choices, int value) =>
+        TrackLeft + (TrackRight - TrackLeft) * Math.Max(0, Array.IndexOf(choices, value)) / (float)(choices.Length - 1);
 
     public static readonly (string Id, string Text)[] RateControls =
         [("vbr", "VBR — the bitrate follows the scene (default)"), ("cbr", "CBR — constant bitrate, steadier on a weak link")];
@@ -90,9 +100,9 @@ public static class HudPanel
             Row(84, 40, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
             Row(158, 40, [("set:style:watch", "Watch icon", view.Watch, true), ("set:style:panel", "Always visible", !view.Watch, true)]);
             if (!view.Watch) Row(232, 40, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
-            Row(306, 40, FadeAngles.Select(a => ($"set:fadeangle:{a}", a == 0 ? "Off" : $"{a}°", view.FadeAngle == a, true)).ToArray());
-            Row(380, 40, FadeDistances.Select(d => ($"set:fadedist:{d}", d == 0 ? "Off" : $"{d / 100.0:0.0#} m", view.FadeDistance == d, true)).ToArray());
-            Row(436, 44, [("reposition", "Reposition HUD", false, true), ("hide", "Hide HUD", false, true)]);
+            buttons.Add(new("slide:angle", FadeAngleArea, "", false, true));
+            buttons.Add(new("slide:dist", FadeDistanceArea, "", false, true));
+            Row(430, 44, [("reposition", "Reposition HUD", false, true), ("hide", "Hide HUD", false, true)]);
             return buttons;
         }
         var control = !view.Busy;
@@ -162,8 +172,6 @@ public static class HudPanel
             g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 130);
             if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the Always visible style.", small, grey, 22, 204);
             else g.DrawString("Show the controls when", normal, white, 22, 206);
-            g.DrawString("Fade out when facing more than this away from me", normal, white, 22, 280);
-            g.DrawString("Fade out beyond this distance from the headset", normal, white, 22, 354);
             g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. It can be turned\nback on any time in the tray menu: VR HUD > Show HUD on a controller. With the\nfirst option Off, the HUD stays hidden until you show it from the tray menu.", small, grey, 22, 496);
         }
         else
@@ -192,6 +200,8 @@ public static class HudPanel
         foreach (var button in Layout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
+            if (button.Id == "slide:angle") { DrawChoiceSlider(g, button.Bounds, "Fade out when facing more than this away from me", view.FadeAngle == 0 ? "Off" : $"{view.FadeAngle}°", FadeAngleChoices, view.FadeAngle, hover == button.Id, normal, white, accent); continue; }
+            if (button.Id == "slide:dist") { DrawChoiceSlider(g, button.Bounds, "Fade out beyond this distance from the headset", view.FadeDistance == 0 ? "Off" : $"{view.FadeDistance / 100.0:0.00} m", FadeDistanceChoices, view.FadeDistance, hover == button.Id, normal, white, accent); continue; }
             var hot = hover == button.Id && button.Enabled;
             using var shape = Rounded(button.Bounds, 12);
             using var fill = new SolidBrush(button.Active ? Color.FromArgb(accent.R / 2, accent.G / 2, accent.B / 2)
@@ -259,6 +269,21 @@ public static class HudPanel
         using var brush = new SolidBrush(Color.White);
         using var format = new StringFormat { Trimming = StringTrimming.EllipsisWord };
         g.DrawString(view.Notice, font, brush, new RectangleF(area.Left + 12, area.Top + 8, area.Width - 24, area.Height - 16), format);
+    }
+
+    private static void DrawChoiceSlider(Graphics g, Rectangle area, string label, string shown, int[] choices, int value, bool hot, Font font, Brush text, Color accent)
+    {
+        g.DrawString(label, font, text, area.Left + 2, area.Top);
+        using var right = new StringFormat { Alignment = StringAlignment.Far, FormatFlags = StringFormatFlags.NoWrap };
+        g.DrawString(shown, font, text, new RectangleF(area.Left, area.Top, area.Width - 2, 26), right);
+        var y = area.Top + 46;
+        using var rail = new Pen(Color.FromArgb(70, 76, 90), 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(rail, TrackLeft, y, TrackRight, y);
+        var x = ChoiceX(choices, value);
+        using var filled = new Pen(accent, 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(filled, TrackLeft, y, x, y);
+        using var knob = new SolidBrush(hot ? Color.White : Color.FromArgb(225, 232, 245));
+        g.FillEllipse(knob, x - 15, y - 15, 30, 30);
     }
 
     private static void DrawSlider(Graphics g, HudView view, bool hot, Font font, Brush text, Color accent)

@@ -45,6 +45,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private string _menu = "";
     private string _page = "";
     private bool _dashboard = true;
+    private string? _slidingSetting;       // "slide:angle" or "slide:dist" while a fade-out slider is held
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
     private DateTime _committedAt, _lastSlideEvent, _clock;
@@ -101,6 +102,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_dashboard) foreach (var overlayEvent in events) Handle(overlayEvent);
         // A release can be missed (the laser left the panel): commit a held slider once its events stop.
         if (_sliding is not null && at - _lastSlideEvent > SlideIdle) CommitSlider();
+        if (_slidingSetting is not null && at - _lastSlideEvent > SlideIdle) EndSettingSlide();
         if (_grab is not null) FollowGrab();
         var pose = _repositioning ? _draftPose : settings.Pose;
         var width = _repositioning ? _draftWidth : settings.WidthMeters;
@@ -123,13 +125,13 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         _drawn = null; _lastUpload = DateTime.MinValue;
         if (open) return;
         // Without input a half-finished interaction could never end: drop it.
-        _menu = ""; _page = ""; _sliding = null; _hover = null; _drawn = null;
+        _menu = ""; _page = ""; _sliding = null; _slidingSetting = null; _hover = null; _drawn = null;
         if (_repositioning) StopRepositioning();
     }
 
     // Fading out: the HUD and the watch each dim when they face more than the chosen angle away from the viewer (the angle between the
     // direction the picture faces and the line to the headset), or when they are further from the headset than the chosen distance.
-    private const float FadeBandDegrees = 12f;
+    private const float FadeBandDegrees = 4f;
     private float _panelAlpha = 1f, _iconAlpha = 1f;
     private DateTime _fadeAt = DateTime.MinValue;
 
@@ -300,6 +302,13 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     {
         var y = settings.FlipLaserY ? HudPanel.Height - e.Y : e.Y;
         var hit = HudPanel.HitTest(View(), e.X, y);
+        if (_slidingSetting is not null)
+        {
+            // A held settings slider follows the laser's x anywhere on the panel and takes effect at once; letting go saves it.
+            if (e.Kind == OverlayEventKind.MouseUp) EndSettingSlide();
+            else if (e.Kind == OverlayEventKind.MouseMove) { MoveSettingSlide(e.X); _lastSlideEvent = _clock; _hover = _slidingSetting; }
+            return;
+        }
         if (_sliding is not null)
         {
             // A held slider follows the laser's x anywhere on the panel; letting go commits.
@@ -311,6 +320,9 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         {
             case OverlayEventKind.MouseMove:
                 _hover = hit;
+                break;
+            case OverlayEventKind.MouseDown when hit is "slide:angle" or "slide:dist":
+                _slidingSetting = hit; _lastSlideEvent = _clock; MoveSettingSlide(e.X);
                 break;
             case OverlayEventKind.MouseDown when hit == "slider":
                 _sliding = HudPanel.SliderValue(e.X); _lastSlideEvent = _clock;
@@ -345,8 +357,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
                 else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
-                else if (parts[1] == "fadeangle") settings.FadeAngle = int.Parse(parts[2]);
-                else if (parts[1] == "fadedist") settings.FadeDistanceCm = int.Parse(parts[2]);
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;
@@ -363,6 +373,18 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
                 _draftIconPose = settings.IconPose; _draftIconWidth = settings.IconWidthMeters;
                 break;
         }
+    }
+
+    private void MoveSettingSlide(float x)
+    {
+        if (_slidingSetting == "slide:angle") settings.FadeAngle = HudPanel.ChoiceAt(HudPanel.FadeAngleChoices, x);
+        else settings.FadeDistanceCm = HudPanel.ChoiceAt(HudPanel.FadeDistanceChoices, x);
+    }
+
+    private void EndSettingSlide()
+    {
+        _slidingSetting = null;
+        Persist();
     }
 
     private void CommitSlider()

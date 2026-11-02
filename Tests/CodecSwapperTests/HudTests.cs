@@ -316,6 +316,24 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void The_fade_out_sliders_take_effect_while_held_and_are_saved_on_release()
+    {
+        var rig = new Rig();
+        rig.Tick(); rig.Press("page:settings");
+        var saved = rig.Saves;
+        float Y(System.Drawing.Rectangle area) => HudPanel.Height - (area.Top + 46);
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseDown, 4, HudPanel.ChoiceX(HudPanel.FadeAngleChoices, 30), Y(HudPanel.FadeAngleArea))); rig.Tick();
+        Assert.Equal(30, rig.Settings.FadeAngle);
+        Assert.Equal(saved, rig.Saves);
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseUp, 4, 0, 0)); rig.Tick();
+        Assert.Equal(saved + 1, rig.Saves);
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseDown, 4, 100, Y(HudPanel.FadeDistanceArea)));
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, HudPanel.ChoiceX(HudPanel.FadeDistanceChoices, 60), Y(HudPanel.FadeDistanceArea)));
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseUp, 4, 0, 0)); rig.Tick();
+        Assert.Equal(60, rig.Settings.FadeDistanceCm);
+    }
+
+    [Fact]
     public void The_HUD_also_fades_out_beyond_the_chosen_distance_and_stays_when_fading_is_off()
     {
         var rig = new Rig();
