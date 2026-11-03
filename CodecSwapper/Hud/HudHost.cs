@@ -73,6 +73,7 @@ public static class HudHost
         public Task SetWidthAsync(int width) { send(new() { Type = "action", Kind = "width", Width = width }); return Task.CompletedTask; }
         public Task HideAsync() { send(new() { Type = "action", Kind = "hide" }); return Task.CompletedTask; }
         public Task ResetCountersAsync() { send(new() { Type = "action", Kind = "counters" }); return Task.CompletedTask; }
+        public Task SetMultiPassAsync(int mode) { send(new() { Type = "action", Kind = "multipass", MultiPass = mode }); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames)
         {
             send(new() { Type = "action", Kind = "encoder", RateControl = rateControl, Preset = preset, VbvFrames = vbvFrames });

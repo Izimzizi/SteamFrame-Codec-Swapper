@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0, int MultiPass = 0)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -24,7 +24,7 @@ public sealed record HudView(
 public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Active, bool Enabled);
 
 /// <summary>
-/// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, wslider (stream width), menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
+/// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, wslider (stream width), menu:rc, menu:preset, menu:vbv, menu:mp, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N, mp:N,
 /// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, slide:angle, slide:dist (the fade-out sliders), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
@@ -63,6 +63,10 @@ public static class HudPanel
         [(1, "1 frame — tightest buffer, least latency"), (2, "2 frames — the default"), (4, "4 frames — smoother bitrate"),
          (8, "8 frames — smoother still, more latency"), (16, "16 frames — loosest buffer")];
 
+    public static readonly (int Value, string Short, string Text)[] MultiPasses =
+        [(0, "Off", "Off — one pass, the least encode time (default)"), (1, "1/4 res", "Quarter resolution first pass — closer to the bitrate target, a little more encode time"),
+         (2, "Full res", "Full resolution first pass — the closest to the target, the most encode time")];
+
     /// <summary>The bitrate a laser at panel x selects: whole steps of <see cref="BitrateStep"/> between the tray's limits, pulled onto every 50 Mbps when close to one (as the tray's slider does).</summary>
     public static int SliderValue(float x)
     {
@@ -78,7 +82,7 @@ public static class HudPanel
         TrackLeft + (TrackRight - TrackLeft) * (Math.Clamp(mbps, TrayController.MinimumMbps, TrayController.MaximumMbps) - TrayController.MinimumMbps)
         / (float)(TrayController.MaximumMbps - TrayController.MinimumMbps);
 
-    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", _ => "" };
+    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", "mp" => "Multipass", _ => "" };
 
     public static IReadOnlyList<HudButton> Layout(HudView view)
     {
@@ -118,6 +122,7 @@ public static class HudPanel
             if (view.OpenMenu == "rc") rows.AddRange(RateControls.Select(o => ($"rc:{o.Id}", o.Text, view.RateControl == o.Id)));
             else if (view.OpenMenu == "preset") rows.AddRange(Presets.Select(o => ($"preset:{o.Value}", o.Text, view.Preset == o.Value)));
             else if (view.OpenMenu == "vbv") rows.AddRange(VbvChoices.Select(o => ($"vbv:{o.Value}", o.Text, view.VbvFrames == o.Value)));
+            else if (view.OpenMenu == "mp") rows.AddRange(MultiPasses.Select(o => ($"mp:{o.Value}", o.Text, view.MultiPass == o.Value)));
             for (var i = 0; i < rows.Count; i++)
                 buttons.Add(new(rows[i].Id, new(margin, 438 + i * 25, Width - 2 * margin, 23), rows[i].Text, rows[i].Active, control));
             return buttons;
@@ -126,7 +131,7 @@ public static class HudPanel
         buttons.Add(new("wslider", WidthArea, "", false, control && view.WidthPx > 0));
         Row(546, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        Row(610, 52, [("counters", "Reset frame counters", false, true)]);
+        Row(610, 52, [("menu:mp", $"Multipass: {MultiPasses.FirstOrDefault(o => o.Value == view.MultiPass, MultiPasses[0]).Short} ▾", false, true), ("counters", "Reset frame counters", false, true)]);
         return buttons;
     }
 

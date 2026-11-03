@@ -30,6 +30,8 @@ public sealed class FramePreferences
     public int HookPreset { get; set; } = 2;
     /// <summary>Experiment: the hook's VBV buffer in frames of the average bitrate, 2 (the default, about 99% of the target in tests) to 16, 1 being the old behaviour.</summary>
     public int HookVbvFrames { get; set; } = 2;
+    /// <summary>The encoder's multipass mode for both codecs: 0 off (one pass, the default), 1 a first pass at quarter resolution, 2 a first pass at full resolution. More passes hit the bitrate target more closely and cost encode time.</summary>
+    public int HookMultiPass { get; set; }
     /// <summary>Keep H.264 applied across SteamVR restarts; the Frame password is then kept in Windows Credential Manager.</summary>
     public bool KeepH264 { get; set; }
     public int BitrateSetupVersion { get; set; }

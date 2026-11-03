@@ -19,6 +19,8 @@ public sealed class HudMessage
     public string? RateControl { get; set; }
     public int Preset { get; set; }
     public int VbvFrames { get; set; }
+    /// <summary>The multipass mode, for the "multipass" action.</summary>
+    public int MultiPass { get; set; }
     public string? Line { get; set; }
 
     private static readonly JsonSerializerOptions Options = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };

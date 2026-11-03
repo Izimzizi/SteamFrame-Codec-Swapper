@@ -212,7 +212,7 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
  rc.vbvBufferSize=rc.averageBitRate/requested_fps*requested_vbv_frames;rc.vbvInitialDelay=0;
  rc.enableLookahead=0;rc.lookaheadDepth=0;rc.enableAQ=0;rc.enableTemporalAQ=0;
  rc.enableMinQP=0;rc.enableMaxQP=0;rc.enableInitialRCQP=0;
- rc.multiPass=NV_ENC_MULTI_PASS_DISABLED;rc.zeroReorderDelay=1;rc.qpMapMode=NV_ENC_QP_MAP_DELTA;
+ rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(StockMultiPass());rc.zeroReorderDelay=1;rc.qpMapMode=NV_ENC_QP_MAP_DELTA;
  {
   auto& h264=config.encodeCodecConfig.h264Config;
   h264.level=requested_average>200000000?NV_ENC_LEVEL_AUTOSELECT:NV_ENC_LEVEL_H264_52;

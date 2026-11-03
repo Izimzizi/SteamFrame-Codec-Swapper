@@ -9,7 +9,7 @@ namespace CodecSwapper;
 public static class HevcOptions
 {
     public static string Text(FramePreferences preferences) =>
-        $"enabled=1\nrate_control={(preferences.HookRateControl == "cbr" ? "cbr" : "vbr")}\npreset={Math.Clamp(preferences.HookPreset, 1, 7)}\nvbv={Math.Clamp(preferences.HookVbvFrames, 1, 16)}\n";
+        $"enabled=1\nrate_control={(preferences.HookRateControl == "cbr" ? "cbr" : "vbr")}\npreset={Math.Clamp(preferences.HookPreset, 1, 7)}\nvbv={Math.Clamp(preferences.HookVbvFrames, 1, 16)}\nmultipass={Math.Clamp(preferences.HookMultiPass, 0, 2)}\n";
 
     public static void Write(string path, FramePreferences preferences)
     {

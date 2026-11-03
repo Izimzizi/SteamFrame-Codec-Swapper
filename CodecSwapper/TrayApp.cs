@@ -176,6 +176,8 @@ public sealed partial class TrayApp : ApplicationContext
                 ($"P{p}" + (p == 2 ? " (default)" : ""), () => _preferences.HookPreset == p, () => _preferences.HookPreset = p))]),
             Group("VBV buffer", [..new[] { 1, 2, 4, 8, 16 }.Select<int, (string, Func<bool>, Action)>(v =>
                 ($"{v} frame{(v == 1 ? "" : "s")}" + (v == 2 ? " (default)" : ""), () => _preferences.HookVbvFrames == v, () => _preferences.HookVbvFrames = v))]),
+            Group("Multipass", [..HudPanel.MultiPasses.Select<(int Value, string Short, string Text), (string, Func<bool>, Action)>(m =>
+                (m.Text.Split(" — ")[0] + (m.Value == 0 ? " (default)" : ""), () => _preferences.HookMultiPass == m.Value, () => _preferences.HookMultiPass = m.Value))]),
         ]);
     }
 

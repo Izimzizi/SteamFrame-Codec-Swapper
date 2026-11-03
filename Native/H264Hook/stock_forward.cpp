@@ -33,11 +33,11 @@ int StockOpen(const void* open_params,void** encoder){
  return status(table.nvEncOpenEncodeSessionEx(&copy,encoder));
 }
 // Optional rate-control overrides for the driver's own (HEVC) encoder, read from hevc-options.txt in the tray's data folder:
-//   enabled=1  rate_control=vbr|cbr  preset=1..7  vbv=1..16
+//   enabled=1  rate_control=vbr|cbr  preset=1..7  vbv=1..16  multipass=0|1|2 (off, quarter resolution first pass, full resolution first pass)
 // The file is checked about twice a second, so a change reaches the encoder SteamVR reconfigures before its next frame. Nothing is
 // touched unless enabled=1; the driver's own parameters are copied, never edited in place.
 namespace {
-struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;};
+struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int multipass=0;};
 HevcOptions options;ULONGLONG options_checked=0;
 int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
 int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
@@ -62,6 +62,7 @@ void load_options(){
   else if(sscanf_s(line,"rate_control=%15s",word,(unsigned)sizeof(word))==1)options.cbr=strcmp(word,"cbr")==0;
   else if(sscanf_s(line,"preset=%d",&number)==1&&number>=1&&number<=7)options.preset=number;
   else if(sscanf_s(line,"vbv=%d",&number)==1&&number>=1&&number<=16)options.vbv=number;
+  else if(sscanf_s(line,"multipass=%d",&number)==1&&number>=0&&number<=2)options.multipass=number;
  }
  fclose(file);
 }
@@ -81,8 +82,9 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  // SteamVR reconfigures before every frame with its own preset, and the encoder follows the preset it is given each time, so the chosen
  // one is named on every call, not only when the encoder is created.
  init.presetGUID=preset_guid(options.preset);
+ rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(options.multipass);
  // A changed rate control, buffer or preset needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
- const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000;
+ const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+options.multipass*100000;
  applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
  return true;
@@ -185,5 +187,6 @@ int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv){
  if(!applied_any)return 0;
  *cbr=applied_cbr?1:0;*preset=static_cast<uint32_t>(applied_preset);*vbv=static_cast<uint32_t>(applied_vbv);return 1;
 }
+int StockMultiPass(void){load_options();return options.multipass;}
 int StockDestroy(void* encoder){if(ready)trace("encoder session destroyed");return ready?status(table.nvEncDestroyEncoder(encoder)):NV_ENC_ERR_INVALID_PTR;}
 }

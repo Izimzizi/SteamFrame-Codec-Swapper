@@ -103,6 +103,7 @@ public sealed partial class TrayApp
                     "width" => actions.SetWidthAsync(message.Width),
                     "hide" => actions.HideAsync(),
                     "counters" => actions.ResetCountersAsync(),
+                    "multipass" => actions.SetMultiPassAsync(message.MultiPass),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
                     _ => Task.CompletedTask
                 };
@@ -128,7 +129,7 @@ public sealed partial class TrayApp
             sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps, 1) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
             false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), "",
-            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError, Latency: sample?.Timing?.Describe() ?? "", WidthPx: _hudWidth);
+            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError, Latency: sample?.Timing?.Describe() ?? "", WidthPx: _hudWidth, MultiPass: _preferences.HookMultiPass);
     }
 
     /// <summary>The stream width is read from the settings file (or SteamVR) every couple of seconds while the HUD runs.</summary>
@@ -247,12 +248,19 @@ public sealed partial class TrayApp
             return Task.CompletedTask;
         }
 
-        public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames) => app.RunAsync(async () =>
+        public Task SetMultiPassAsync(int mode) => ApplyEncoderAsync(() => app._preferences.HookMultiPass = Math.Clamp(mode, 0, 2));
+
+        public Task SetEncoderAsync(string rateControl, int preset, int vbvFrames) => ApplyEncoderAsync(() =>
         {
-            if (app.WarnWithoutDriver()) return;
             app._preferences.HookRateControl = rateControl;
             app._preferences.HookPreset = preset;
             app._preferences.HookVbvFrames = vbvFrames;
+        });
+
+        private Task ApplyEncoderAsync(Action change) => app.RunAsync(async () =>
+        {
+            if (app.WarnWithoutDriver()) return;
+            change();
             await app.SaveEncoderOptionsAsync();
             try { if (!await app._controller.ApplyEncoderOptionsAsync()) HudLog("Encoder options saved; there is no live session to apply them to."); }
             catch (Exception error) when (error is not OperationCanceledException) { HudLog("Encoder options not applied live: " + error.Message); }

@@ -217,6 +217,7 @@ public sealed class HudControllerTests
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
         public Task SetWidthAsync(int width) { Calls.Add("width " + width); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
+        public Task SetMultiPassAsync(int mode) { Calls.Add("multipass " + mode); return Task.CompletedTask; }
         public Task HideAsync() { Calls.Add("hud off"); return Task.CompletedTask; }
         public Task ResetCountersAsync() { Calls.Add("reset counters"); return Task.CompletedTask; }
     }
@@ -601,6 +602,20 @@ public sealed class HudControllerTests
         rig.Press("menu:preset"); rig.Press("preset:4");
         rig.Press("menu:vbv"); rig.Press("vbv:8");
         Assert.Equal(["codec True", "codec False", "enc cbr P2 V2", "enc vbr P4 V2", "enc vbr P2 V8"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_multipass_dropdown_offers_off_and_both_two_pass_modes_and_sends_the_choice()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        rig.Press("menu:mp");
+        Assert.Equal("mp", rig.Hud.OpenMenu);
+        Assert.Equal(["mp:0", "mp:1", "mp:2"], HudPanel.Layout(rig.View with { OpenMenu = rig.Hud.OpenMenu }).Select(b => b.Id).Where(id => id.StartsWith("mp:")).ToArray());
+        rig.Press("mp:2");
+        Assert.Equal("", rig.Hud.OpenMenu);
+        Assert.Equal(["multipass 2"], rig.Actions.Calls);
+        Assert.Equal("Multipass", HudPanel.MenuTitle("mp"));
     }
 
     [Fact]

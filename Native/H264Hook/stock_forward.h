@@ -24,6 +24,8 @@ int StockDestroy(void* encoder);
 // The options the driver's own encoder is running with, for the monitor: rate control and buffer as last applied, the preset it was created with
 // (0 when the encoder was created before the options were switched on). Returns 0 when no option has been applied.
 int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv);
+// The multipass mode in hevc-options.txt (0 off, 1 quarter resolution first pass, 2 full resolution first pass): HEVC and H.264 both use it.
+int StockMultiPass(void);
 // The picture size the driver's encoder was initialized with (0 x 0 before the first initialize).
 void StockEncodeSize(uint32_t* width,uint32_t* height);
 // The average and peak rate (bits per second) the driver last asked its encoder for (0 before the first request).

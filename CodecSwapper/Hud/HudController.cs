@@ -10,6 +10,8 @@ public interface IHudActions
     /// <summary>Sets the stream width in pixels (SteamVR's streamFormatWidth).</summary>
     Task SetWidthAsync(int width);
     Task SetEncoderAsync(string rateControl, int preset, int vbvFrames);
+    /// <summary>Sets the encoder's multipass mode (0 off, 1 quarter resolution first pass, 2 full resolution first pass).</summary>
+    Task SetMultiPassAsync(int mode) => Task.CompletedTask;
     Task HideAsync();
     /// <summary>Starts the held-back / dropped / late frame totals again from zero.</summary>
     Task ResetCountersAsync();
@@ -304,7 +306,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private static bool ControlsChanged(HudView was, HudView now) =>
         was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps || was.WidthPx != now.WidthPx
-        || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
+        || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames || was.MultiPass != now.MultiPass;
 
     private void Handle(OverlayEvent e)
     {
@@ -367,6 +369,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "rc": _menu = ""; Fire(() => actions.SetEncoderAsync(parts[1], view.Preset, view.VbvFrames)); break;
             case "preset": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
             case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
+            case "mp": _menu = ""; Fire(() => actions.SetMultiPassAsync(int.Parse(parts[1]))); break;
             case "reposition": StartRepositioning(); break;
             case "hide": Fire(actions.HideAsync); break;
             case "counters": Fire(actions.ResetCountersAsync); break;
