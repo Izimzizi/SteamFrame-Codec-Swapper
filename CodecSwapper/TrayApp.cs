@@ -220,7 +220,20 @@ public sealed partial class TrayApp : ApplicationContext
 
     private async Task ChangeWidthAsync(int width)
     {
-        try { await StreamWidth.ApplyAsync(_paths, width); }
+        try
+        {
+            // A resize makes the Frame's decoder resize in place, and while another program encodes on the Frame (a screen recorder) its recovery from a
+            // glitch can fail and lose the stream. Then the stream restarts around the change, so the decoder starts fresh at the new size.
+            IReadOnlyList<string>? encoding = null;
+            if (OpenVrSettings.IsRunning && await StreamWidth.ChangesStreamAsync(_paths, width))
+                encoding = await new FrameStreamControl(_preferences).ChangeWithRestartAsync(() => StreamWidth.ApplyAsync(_paths, width));
+            if (encoding is null) await StreamWidth.ApplyAsync(_paths, width);
+            else
+            {
+                TrayLog("Width " + width + ": the stream was restarted around the change because " + string.Join(", ", encoding) + " has the Frame's video encoder open");
+                Balloon("Stream width", string.Join(", ", encoding) + " is using the Frame's video encoder, so the stream restarted to change the width safely.", ToolTipIcon.Info);
+            }
+        }
         catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException)
         { Balloon("Stream width not changed", error.Message, ToolTipIcon.Warning); }
     }

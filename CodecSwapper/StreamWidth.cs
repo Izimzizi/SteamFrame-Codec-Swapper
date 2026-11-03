@@ -44,15 +44,25 @@ public static class StreamWidth
     public static Task ApplyAsync(SteamPaths paths, int width, string restorePath) => Task.Run(() =>
     {
         width = Snapped(width);
-        var live = width;
-        if (ReadRestore(restorePath) is not null)
-        {
-            WriteRestore(restorePath, width);
-            live = Math.Min(width, H264Limit);
-        }
+        var held = ReadRestore(restorePath) is not null;
+        var live = LiveWidth(width, held);
+        if (held) WriteRestore(restorePath, width);
         if (OpenVrSettings.IsRunning)
             OpenVrSettings.Apply(paths, new Dictionary<string, object?> { [Automatic] = false, [Key] = live });
         else WriteFile(paths.Config, live);
+    });
+
+    /// <summary>The width SteamVR really gets: while H.264 holds a lowered width the user's choice only goes as far as H.264 takes it.</summary>
+    public static int LiveWidth(int width, bool h264Holds) => h264Holds ? Math.Min(Snapped(width), H264Limit) : Snapped(width);
+
+    /// <summary>Whether applying this width would change the picture SteamVR streams now (it does not while H.264 holds the width at its limit).</summary>
+    public static Task<bool> ChangesStreamAsync(SteamPaths paths, int width) => ChangesStreamAsync(paths, width, RestorePath);
+
+    public static Task<bool> ChangesStreamAsync(SteamPaths paths, int width, string restorePath) => Task.Run(() =>
+    {
+        var target = LiveWidth(width, ReadRestore(restorePath) is not null);
+        try { return OpenVrSettings.Read(paths).StreamWidth != target; }
+        catch (Exception error) when (error is IOException or InvalidOperationException) { return false; }
     });
 
     /// <summary>The restore file the hook writes when H.264 lowers the width: the user's width and whether it was automatic.</summary>

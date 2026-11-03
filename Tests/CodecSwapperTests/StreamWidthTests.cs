@@ -73,6 +73,14 @@ public sealed class StreamWidthTests : IDisposable
         Assert.Equal(1600, await StreamWidth.ReadAsync(new SteamFrame.Core.SteamPaths(_dir, _dir), restore));
     }
 
+    [Theory]
+    [InlineData(1344, false, 1344)]
+    [InlineData(2048, false, 2048)]
+    [InlineData(2048, true, 1024)]
+    [InlineData(960, true, 960)]
+    public void While_H264_holds_the_width_the_stream_only_gets_what_H264_takes(int chosen, bool h264Holds, int live) =>
+        Assert.Equal(live, StreamWidth.LiveWidth(chosen, h264Holds));
+
     [Fact]
     public void A_missing_value_reads_as_null() { File.WriteAllText(File_, "{\"driver_vrlink\": {}}"); Assert.Null(StreamWidth.ReadFile(File_)); }
 }
