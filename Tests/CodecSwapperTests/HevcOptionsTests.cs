@@ -8,7 +8,7 @@ public sealed class HevcOptionsTests
     [Fact]
     public void The_defaults_reach_the_stock_stream_too()
     {
-        Assert.Equal("enabled=1\nrate_control=vbr\npreset=2\nvbv=2\nmultipass=0\n", HevcOptions.Text(new FramePreferences()));
+        Assert.Equal($"enabled=1\nrate_control=vbr\npreset=2\nvbv=2\nmultipass=0\ntarget={new FramePreferences().CodecTargetMbps}\n", HevcOptions.Text(new FramePreferences()));
     }
 
     [Theory]
@@ -24,7 +24,7 @@ public sealed class HevcOptionsTests
     public void The_file_carries_the_chosen_options_and_keeps_them_in_range()
     {
         var text = HevcOptions.Text(new FramePreferences { HookRateControl = "cbr", HookPreset = 9, HookVbvFrames = 0 });
-        Assert.Equal("enabled=1\nrate_control=cbr\npreset=7\nvbv=1\nmultipass=0\n", text);
+        Assert.Equal($"enabled=1\nrate_control=cbr\npreset=7\nvbv=1\nmultipass=0\ntarget={new FramePreferences().CodecTargetMbps}\n", text);
     }
 
     [Fact]

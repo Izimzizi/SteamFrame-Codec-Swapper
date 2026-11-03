@@ -37,7 +37,7 @@ int StockOpen(const void* open_params,void** encoder){
 // The file is checked about twice a second, so a change reaches the encoder SteamVR reconfigures before its next frame. Nothing is
 // touched unless enabled=1; the driver's own parameters are copied, never edited in place.
 namespace {
-struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int multipass=0;bool hold=true;};
+struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int multipass=0;bool hold=true;int target=0;};
 HevcOptions options;ULONGLONG options_checked=0;
 int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
 int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
@@ -64,6 +64,7 @@ void load_options(){
   else if(sscanf_s(line,"vbv=%d",&number)==1&&number>=1&&number<=16)options.vbv=number;
   else if(sscanf_s(line,"multipass=%d",&number)==1&&number>=0&&number<=2)options.multipass=number;
   else if(sscanf_s(line,"hold_target=%d",&number)==1)options.hold=number!=0;
+  else if(sscanf_s(line,"target=%d",&number)==1&&number>=1&&number<=1000)options.target=number;
  }
  fclose(file);
 }
@@ -88,7 +89,12 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  load_options();if(!options.enabled||!source.encodeConfig)return false;
  init=source;config=*source.encodeConfig;init.encodeConfig=&config;
  auto& rc=config.rcParams;
- if(options.hold&&rc.averageBitRate){const Asked held=held_request(rc.averageBitRate,rc.maxBitRate);if(held.average>rc.averageBitRate){rc.averageBitRate=held.average;rc.maxBitRate=held.peak;}}
+ if(options.hold&&rc.averageBitRate){
+  if(options.target>0){
+   // The tray names the user's target: the driver's own request can stay below it for a whole session at a large picture. The peak keeps the 1.15 ratio the driver uses at high rates.
+   rc.averageBitRate=static_cast<uint32_t>(options.target)*1000000u;rc.maxBitRate=static_cast<uint32_t>(static_cast<double>(rc.averageBitRate)*1.15+0.5);
+  }else{const Asked held=held_request(rc.averageBitRate,rc.maxBitRate);if(held.average>rc.averageBitRate){rc.averageBitRate=held.average;rc.maxBitRate=held.peak;}}
+ }
  rc.rateControlMode=options.cbr?NV_ENC_PARAMS_RC_CBR:NV_ENC_PARAMS_RC_VBR;
  if(options.cbr&&rc.averageBitRate)rc.maxBitRate=rc.averageBitRate;
  const uint32_t fps=init.frameRateDen?init.frameRateNum/init.frameRateDen:90;

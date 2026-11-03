@@ -102,6 +102,13 @@ int main(){
    NV_ENC_RECONFIGURE_PARAMS up{},down{};up.reInitEncodeParams=init;up.reInitEncodeParams.encodeConfig=&high;down.reInitEncodeParams=init;down.reInitEncodeParams.encodeConfig=&low;
    CHECK(StockReconfigure(nullptr,&up)==0&&StockReconfigure(nullptr,&down)==0&&seen_config.rcParams.averageBitRate==30000000); }   // hold_target=0 passes the driver's request on
 
+ // The tray names the target: the encoder is held to it even when the driver asks for less all the time, with the driver's 1.15 peak ratio.
+ write_options("enabled=1\nrate_control=vbr\npreset=2\nvbv=2\ntarget=350\n");Sleep(600);
+ { NV_ENC_CONFIG low=config;low.rcParams.averageBitRate=250000000;low.rcParams.maxBitRate=290000000;
+   NV_ENC_RECONFIGURE_PARAMS ask{};ask.reInitEncodeParams=init;ask.reInitEncodeParams.encodeConfig=&low;
+   CHECK(StockReconfigure(nullptr,&ask)==0&&seen_config.rcParams.averageBitRate==350000000&&seen_config.rcParams.maxBitRate==402500000);
+   CHECK(low.rcParams.averageBitRate==250000000); }
+
  // Switched off again: untouched.
  write_options("enabled=0\nrate_control=cbr\n");Sleep(600);
  CHECK(StockInitialize(nullptr,&init)==0);

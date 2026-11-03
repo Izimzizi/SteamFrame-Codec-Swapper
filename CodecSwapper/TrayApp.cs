@@ -481,8 +481,12 @@ public sealed partial class TrayApp : ApplicationContext
         ExitThread();
     }
 
+    private int _hevcTargetWritten;
+
     private void Render(TraySnapshot snapshot)
     {
+        // The HEVC hook holds the encoder to the user's target, so it is told whenever the target changes.
+        if (snapshot.TargetMbps != _hevcTargetWritten) { _hevcTargetWritten = snapshot.TargetMbps; WriteHevcOptions(); }
         _icon.Icon = TrayIcons.For(snapshot.State);
         _icon.Text = Truncate("SteamFrame: " + snapshot.Message, 127);
         _status.Text = snapshot.Message;
