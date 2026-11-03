@@ -621,5 +621,11 @@ extern "C" int HOOK_CALL HookGetLegacySwitchInfo(HookSwitchInfo* output){
 
 extern "C" int HOOK_CALL HookGetLegacyBridgeStats(HookBridgeStats* output){
  if(!output||output->size!=sizeof(HookBridgeStats)||output->version!=1)return -1;
- std::lock_guard<std::mutex> lock(mutex);*output=stats;return 0;
+ std::lock_guard<std::mutex> lock(mutex);*output=stats;
+ // On the driver's own HEVC the H.264 figures are stale: report the rate and picture size its encoder was actually asked for.
+ uint32_t average=0,peak=0,width=0,height=0;
+ if(active_mode==1){StockRequestedRate(&average,&peak);StockEncodeSize(&width,&height);
+  if(average){output->average_bps=average;output->peak_bps=peak;}
+  if(width&&height){output->width=width;output->height=height;}}
+ return 0;
 }

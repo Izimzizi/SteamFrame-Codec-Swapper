@@ -90,10 +90,19 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
 }
 static uint32_t initialized_width=0,initialized_height=0;
 void StockEncodeSize(uint32_t* width,uint32_t* height){*width=initialized_width;*height=initialized_height;}
+// What the driver's encoder was last asked for (average and peak bits per second): the driver's own request, as the monitor shows it.
+static uint32_t requested_average=0,requested_peak=0;
+void StockRequestedRate(uint32_t* average,uint32_t* peak){*average=requested_average;*peak=requested_peak;}
+// Notes the driver's request; every change of the average is written to the log, so a ceiling the driver puts on it can be seen.
+static void note_request(const NV_ENC_CONFIG* config,const char* where){
+ if(!config||!config->rcParams.averageBitRate)return;
+ if(config->rcParams.averageBitRate!=requested_average)trace("%s: the driver asks for avg=%u peak=%u (bits per second)",where,config->rcParams.averageBitRate,config->rcParams.maxBitRate);
+ requested_average=config->rcParams.averageBitRate;requested_peak=config->rcParams.maxBitRate;
+}
 int StockInitialize(void* encoder,void* init){
  if(!ready)return NV_ENC_ERR_INVALID_PTR;
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
- if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;trace("initialize: picture %ux%u (max %ux%u)",initialized_width,initialized_height,original->maxEncodeWidth,original->maxEncodeHeight);}
+ if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;note_request(original->encodeConfig,"initialize");trace("initialize: picture %ux%u (max %ux%u)",initialized_width,initialized_height,original->maxEncodeWidth,original->maxEncodeHeight);}
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){
@@ -111,6 +120,7 @@ int StockReconfigure(void* encoder,void* params){
    trace("reconfigure: picture %ux%u -> %ux%u",initialized_width,initialized_height,original->reInitEncodeParams.encodeWidth,original->reInitEncodeParams.encodeHeight);
   initialized_width=original->reInitEncodeParams.encodeWidth;initialized_height=original->reInitEncodeParams.encodeHeight;
  }
+ if(original)note_request(original->reInitEncodeParams.encodeConfig,"reconfigure");
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;

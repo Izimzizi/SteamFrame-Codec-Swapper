@@ -26,6 +26,8 @@ int StockDestroy(void* encoder);
 int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv);
 // The picture size the driver's encoder was initialized with (0 x 0 before the first initialize).
 void StockEncodeSize(uint32_t* width,uint32_t* height);
+// The average and peak rate (bits per second) the driver last asked its encoder for (0 before the first request).
+void StockRequestedRate(uint32_t* average,uint32_t* peak);
 #ifdef __cplusplus
 }
 #endif
