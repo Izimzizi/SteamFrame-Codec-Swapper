@@ -132,6 +132,13 @@ int StockReconfigure(void* encoder,void* params){
     original->reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize,original->reInitEncodeParams.encodeConfig->rcParams.averageBitRate,
     static_cast<int>(config.rcParams.rateControlMode),config.rcParams.vbvBufferSize,signature_changed?1:0,static_cast<int>(result));
   }
+  if(signature_changed||reconfigure_calls<5){
+   // What else the driver asked for. The hook keeps all of it, so a limit here (a quality target or QP bounds) explains a bitrate that stops short of the target.
+   const auto& d=original->reInitEncodeParams.encodeConfig->rcParams;
+   trace("reconfigure: driver also asked avg=%u max=%u targetQuality=%u minQP=%d(%u/%u/%u) maxQP=%d(%u/%u/%u) aq=%d/%u lookahead=%d multipass=%d tuning=%d",d.averageBitRate,d.maxBitRate,
+    static_cast<unsigned>(d.targetQuality),d.enableMinQP,d.minQP.qpIntra,d.minQP.qpInterP,d.minQP.qpInterB,d.enableMaxQP,d.maxQP.qpIntra,d.maxQP.qpInterP,d.maxQP.qpInterB,
+    d.enableAQ,d.aqStrength,d.enableLookahead,static_cast<int>(d.multiPass),static_cast<int>(original->reInitEncodeParams.tuningInfo));
+  }
   ++reconfigure_calls;
   return status(result);
  }
