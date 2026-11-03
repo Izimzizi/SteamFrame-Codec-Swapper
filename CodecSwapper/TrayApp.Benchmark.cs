@@ -58,8 +58,22 @@ public sealed partial class TrayApp
         TrayLog($"Benchmark started: {settings.StartMbps}-{settings.CeilingMbps} Mbps in steps of {settings.StepMbps}, {settings.Measure.TotalSeconds:0} s each");
         string? saved = null;
         BenchmarkScene? scene = null;
+        FrameActivity.Keeper? awake = null;
         try
         {
+            try
+            {
+                awake = new FrameActivity.Keeper(_preferences);
+                form.ShowStatus("Keeping the headset awake...");
+                await awake.StartAsync(cancel.Token);
+                run.Setup.Add("headset kept awake by the tray");
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException or System.Text.Json.JsonException or KeyNotFoundException)
+            {
+                TrayLog("Benchmark could not extend the headset activity: " + error.Message);
+                await awake!.DisposeAsync(); awake = null;
+                form.ShowStatus("The Frame could not be asked to stay awake; keep the headset awake yourself.");
+            }
             if (settings.UseScene)
             {
                 run.Setup.Add("test scene: built-in moving room");
@@ -83,6 +97,7 @@ public sealed partial class TrayApp
         finally
         {
             if (scene is not null) await scene.DisposeAsync();
+            if (awake is not null) await awake.DisposeAsync();
             _statsService.BenchmarkActive = false;
             _benchmarkCancel = null;
             try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }

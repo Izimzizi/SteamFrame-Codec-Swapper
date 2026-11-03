@@ -53,7 +53,7 @@ public sealed class BenchmarkForm : Form
         var intro = new Label
         {
             AutoSize = true, MaximumSize = new Size(960, 0), Margin = new Padding(0, 0, 0, 8),
-            Text = "Keep the headset awake. With the built-in test scene ticked, a moving high-detail room is shown for you (it replaces whatever VR app is on screen); untick it to test with your own busy game instead, and stay in it until the run ends. The benchmark raises the bitrate target step by step with the codec and encoder settings " +
+            Text = "The run asks the Frame to stay awake. With the built-in test scene ticked, a moving high-detail room is shown for you (it replaces whatever VR app is on screen); untick it to test with your own busy game instead, and stay in it until the run ends. The benchmark raises the bitrate target step by step with the codec and encoder settings " +
                    "that are selected now, measures held-back frames, PC drops, encode time and the rate actually delivered at each step, and judges each one. Your own bitrate target is put back afterwards."
         };
         var options = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4) };

@@ -81,3 +81,15 @@ public sealed class FrameStreamControlTests : IDisposable
         Assert.False(ran);
     }
 }
+
+public sealed class FrameActivityTests
+{
+    [Fact]
+    public void The_lease_script_extends_or_releases_and_nothing_else()
+    {
+        Assert.Contains("ExtendActivityTimeout(0, 60)", FrameActivity.Script(60));
+        Assert.Contains("ExtendActivityTimeout(0, 0)", FrameActivity.Script(0));
+        Assert.DoesNotContain("vrLinkStatus", FrameActivity.Script(60));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FrameActivity.Script(3600));
+    }
+}
