@@ -61,6 +61,8 @@ public sealed partial class TrayApp
         FrameActivity.Keeper? awake = null;
         try
         {
+            // The scene would start SteamVR itself (and fail while the headset is not connected), so SteamVR has to be running first.
+            if (!OpenVrSettings.IsRunning) throw new InvalidOperationException("SteamVR is not running. Start SteamVR, put the headset on and wait for the stream to connect, then start the benchmark.");
             try
             {
                 awake = new FrameActivity.Keeper(_preferences);
