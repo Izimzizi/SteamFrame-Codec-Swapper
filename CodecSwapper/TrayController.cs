@@ -49,6 +49,9 @@ public sealed class TrayController
     }
 
     public event Action<TraySnapshot>? Changed;
+    /// <summary>Written to tray.log: why the tray ended or re-applied a session on its own.</summary>
+    public Action<string>? Log { get; set; }
+    private static string Describe(CodecServiceStatus s) => $"live={s.Live} state={s.State} codec={s.ActiveCodec} driverSession={s.DriverSession} wantH264={s.WantH264} keep={s.Keep}";
     public TraySnapshot Current { get; private set; }
     public int TargetMbps => Math.Clamp(_preferences.CodecTargetMbps, MinimumMbps, MaximumMbps);
     public bool WantsArmed => _preferences.KeepH264;
@@ -194,6 +197,7 @@ public sealed class TrayController
         CancellationToken cancellationToken)
     {
         // A session that cannot take the change live starts again; SteamVR itself keeps running (its driver holds the hook).
+        Log?.Invoke("re-applying H.264 after a bitrate change the live session could not take");
         await ArmAsync(requestPassword, confirmPatch, cancellationToken);
         return ChangeOutcome.Reapplied;
     }
@@ -276,6 +280,7 @@ public sealed class TrayController
             // The supervisor ended on its own (it restores stock when it cannot keep H.264 applied).
             _wasLive = false;
             _preferences.KeepH264 = false;
+            Log?.Invoke("the session ended on its own (" + Describe(status) + "): " + status.Message);
             await _save();
             Publish(new(TrayState.Disarmed, "H.264 was released: " + (status.Message is { Length: > 0 } m ? m : "the codec service ended."), TargetMbps));
             return;
@@ -323,6 +328,7 @@ public sealed class TrayController
                 if (status.Live)
                 {
                     // A session that cannot take this change live: end it, then start a fresh one.
+                    Log?.Invoke("arming: closing the live session first (" + Describe(status) + ")");
                     await _codec.CloseAsync(progress, cancellationToken);
                     steamVrRunning = _live?.SteamVrRunning ?? false;
                 }

@@ -61,6 +61,7 @@ public sealed partial class TrayApp : ApplicationContext
         }
         catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { /* the SteamVR driver menu still offers it */ }
         _controller = new TrayController(new CodecServiceAdapter(_codec), new CredentialVault(new FrameCredentialStore()), _patch, _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), _liveBitrate, () => _driver.Inspect() == SteamVrDriverState.Installed);
+        _controller.Log = TrayLog;
         _setup = new SetupCheck(new ProcessRunner(), _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), new CredentialVault(new FrameCredentialStore()), SetupEnvironment.ForThisPc(_paths, Path.Combine(AppContext.BaseDirectory, "CodecLab")), _patch);
         _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: (_healthReader = new HealthReader(_paths, AppData.DiagnosticsDirectory)).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed, timing: now => EncodeTiming.Read(AppData.EncodeTimingPath, now)), () => _controller.Current);
         _stats = new StatsForm(_statsService);
