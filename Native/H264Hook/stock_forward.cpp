@@ -96,15 +96,16 @@ static uint32_t requested_average=0,requested_peak=0;
 void StockRequestedRate(uint32_t* average,uint32_t* peak){*average=requested_average;*peak=requested_peak;}
 // Once a second the log gets what the encoder really produced next to what it was asked for, so a shortfall can be told from the driver
 // lowering its request: frames, megabits per second, average and largest frame, and the buffer the options gave the encoder.
+static char rate_control_text[400]={};
 static ULONGLONG window_start=0;static uint64_t window_bytes=0,window_frames=0;static uint32_t window_largest=0;
 static void note_output(uint32_t bytes){
  const ULONGLONG now=GetTickCount64();if(!window_start)window_start=now;
  window_bytes+=bytes;++window_frames;if(bytes>window_largest)window_largest=bytes;
  if(now-window_start<1000)return;
  const double seconds=(now-window_start)/1000.0;
- trace("output: %llu frames, %.1f Mbps, frame avg %.0f KB / largest %.0f KB; asked avg=%.1f Mbps peak=%.1f Mbps, buffer %u bits (%.1f KB)",
+ trace("output: %llu frames, %.1f Mbps, frame avg %.0f KB / largest %.0f KB; asked avg=%.1f Mbps peak=%.1f Mbps, buffer %u bits (%.1f KB); driver rate control: %s",
   static_cast<unsigned long long>(window_frames),window_bytes*8/seconds/1e6,window_bytes/1024.0/window_frames,window_largest/1024.0,
-  requested_average/1e6,requested_peak/1e6,applied_vbv_bits,applied_vbv_bits/8192.0);
+  requested_average/1e6,requested_peak/1e6,applied_vbv_bits,applied_vbv_bits/8192.0,rate_control_text);
  window_start=now;window_bytes=0;window_frames=0;window_largest=0;
 }
 // Notes the driver's request; every change of the average is written to the log, so a ceiling the driver puts on it can be seen.
@@ -117,8 +118,7 @@ static void note_rate_control(const NV_ENC_CONFIG* config,const char* where){
   static_cast<int>(rc.rateControlMode),rc.enableMinQP?1:0,rc.minQP.qpInterP,rc.minQP.qpInterB,rc.minQP.qpIntra,rc.enableMaxQP?1:0,rc.maxQP.qpInterP,rc.maxQP.qpInterB,rc.maxQP.qpIntra,
   rc.targetQuality,rc.targetQualityLSB,static_cast<int>(rc.multiPass),rc.enableAQ?1:0,rc.aqStrength,rc.enableTemporalAQ?1:0,rc.enableLookahead?1:0,rc.lookaheadDepth,
   rc.averageBitRate?static_cast<double>(rc.maxBitRate)/rc.averageBitRate:0.0,config->gopLength);
- static char last[400]={};
- if(strcmp(last,text)){trace("%s: the driver's rate control: %s",where,text);memcpy(last,text,sizeof last);}
+ if(strcmp(rate_control_text,text)){trace("%s: the driver's rate control: %s",where,text);memcpy(rate_control_text,text,sizeof rate_control_text);}
 }
 static void note_request(const NV_ENC_CONFIG* config,const char* where){
  if(!config||!config->rcParams.averageBitRate)return;
