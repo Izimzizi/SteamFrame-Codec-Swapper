@@ -111,7 +111,7 @@ int StockInitialize(void* encoder,void* init){
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){
-  trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d)",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode));
+  trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d), multipass %d",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode),initialized_multipass);
   return status(table.nvEncInitializeEncoder(encoder,&patched));
  }
  initialized_multipass=original&&original->encodeConfig?static_cast<int>(original->encodeConfig->rcParams.multiPass):0;
