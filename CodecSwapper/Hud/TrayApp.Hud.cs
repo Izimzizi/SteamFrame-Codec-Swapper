@@ -15,6 +15,8 @@ public sealed partial class TrayApp
     private DateTime _hudNoticeUntil;
     private bool _steamVrSeen;
     private long _steamVrCheckedAt;
+    private int _hudWidth;                   // the stream width the HUD shows (0 until read)
+    private long _hudWidthReadAt;
 
     private void StartHud()
     {
@@ -23,7 +25,7 @@ public sealed partial class TrayApp
         WriteHevcOptions();
         _statsService.Sampled += (sample, _) => _lastSample = sample;
         _steamVrSeen = OpenVrOverlayApi.IsVrServerRunning();
-        _hudTimer.Tick += (_, _) => { FollowSteamVrStart(); PushHudView(); };
+        _hudTimer.Tick += (_, _) => { FollowSteamVrStart(); RefreshHudWidth(); PushHudView(); };
         _hudTimer.Start();
         ApplyHudEnabled();
     }
@@ -98,6 +100,7 @@ public sealed partial class TrayApp
                 {
                     "codec" => actions.SetCodecAsync(message.H264),
                     "bitrate" => actions.SetBitrateAsync(message.Mbps),
+                    "width" => actions.SetWidthAsync(message.Width),
                     "hide" => actions.HideAsync(),
                     "counters" => actions.ResetCountersAsync(),
                     "encoder" when message.RateControl is not null => actions.SetEncoderAsync(message.RateControl, message.Preset, message.VbvFrames),
@@ -125,7 +128,21 @@ public sealed partial class TrayApp
             sample?.Mbps is { } mbps ? Math.Round(mbps) : null, sample?.Fps is { } fps ? Math.Round(fps, 1) : null, tray.TargetMbps, tray.IsArmed,
             tray.State is TrayState.Arming or TrayState.Disarming, status, _preferences.HookRateControl, _preferences.HookPreset, _preferences.HookVbvFrames,
             false, "left", HudView.Pack(_statsService.Sampler.History), HudAverage(), HudEncoder(sample), HudHealth(sample), "",
-            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError, Latency: sample?.Timing?.Describe() ?? "");
+            Notice: DateTime.UtcNow < _hudNoticeUntil ? _hudNotice : "", NoticeIsError: _hudNoticeIsError, Latency: sample?.Timing?.Describe() ?? "", WidthPx: _hudWidth);
+    }
+
+    /// <summary>The stream width is read from the settings file (or SteamVR) every couple of seconds while the HUD runs.</summary>
+    private void RefreshHudWidth()
+    {
+        if (_hud is not { Running: true } || Environment.TickCount64 - _hudWidthReadAt < 2000) return;
+        _hudWidthReadAt = Environment.TickCount64;
+        _ = ReadHudWidthAsync();
+    }
+
+    private async Task ReadHudWidthAsync()
+    {
+        try { if (await StreamWidth.ReadAsync(_paths) is int width && width > 0) _hudWidth = width; }
+        catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { /* shown again at the next read */ }
     }
 
     // The same readouts as the monitor window, as one line each.
@@ -213,6 +230,8 @@ public sealed partial class TrayApp
         });
 
         public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
+
+        public Task SetWidthAsync(int width) => app.RunAsync(async () => { await app.ChangeWidthAsync(StreamWidth.Snapped(width)); app._hudWidth = StreamWidth.Snapped(width); });
 
         public Task ResetCountersAsync() { app._healthReader?.ResetCounters(); return Task.CompletedTask; }
 

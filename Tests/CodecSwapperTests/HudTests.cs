@@ -101,7 +101,7 @@ public sealed class HudSettingsTests : IDisposable
 
 public sealed class HudPanelTests
 {
-    private static HudView View(bool reposition = false, bool busy = false) => HudView.Empty with { Connected = true, TargetMbps = 300, Repositioning = reposition, Busy = busy };
+    private static HudView View(bool reposition = false, bool busy = false) => HudView.Empty with { Connected = true, TargetMbps = 300, WidthPx = 1344, Repositioning = reposition, Busy = busy };
 
     [Fact]
     public void The_laser_finds_each_button_by_its_centre()
@@ -215,6 +215,7 @@ public sealed class HudControllerTests
         public readonly List<string> Calls = [];
         public Task SetCodecAsync(bool h264) { Calls.Add("codec " + h264); return Task.CompletedTask; }
         public Task SetBitrateAsync(int mbps) { Calls.Add("rate " + mbps); return Task.CompletedTask; }
+        public Task SetWidthAsync(int width) { Calls.Add("width " + width); return Task.CompletedTask; }
         public Task SetEncoderAsync(string rc, int preset, int vbv) { Calls.Add($"enc {rc} P{preset} V{vbv}"); return Task.CompletedTask; }
         public Task HideAsync() { Calls.Add("hud off"); return Task.CompletedTask; }
         public Task ResetCountersAsync() { Calls.Add("reset counters"); return Task.CompletedTask; }
@@ -632,6 +633,34 @@ public sealed class HudControllerTests
         rig.Api.Events.Enqueue(rig.Slide(OverlayEventKind.MouseUp, HudPanel.SliderX(400)));
         rig.Tick();
         Assert.Equal(["rate 400"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void Dragging_the_width_slider_commits_one_width_on_release_and_is_inactive_while_the_width_is_unknown()
+    {
+        var rig = new Rig();
+        rig.Tick();
+        Assert.False(HudPanel.Layout(rig.View).Single(x => x.Id == "wslider").Enabled);   // width 0: not read yet
+        rig.View = rig.View with { WidthPx = 1344 };
+        OverlayEvent At(OverlayEventKind kind, int width) => new(kind, 4, HudPanel.ChoiceX(HudPanel.WidthChoices, width), HudPanel.Height - (HudPanel.WidthArea.Top + 46));
+        rig.Api.Events.Enqueue(At(OverlayEventKind.MouseDown, 1344));
+        rig.Api.Events.Enqueue(At(OverlayEventKind.MouseMove, 1700));
+        rig.Api.Events.Enqueue(At(OverlayEventKind.MouseMove, 2048));
+        rig.Tick();
+        Assert.Empty(rig.Actions.Calls);
+        rig.Api.Events.Enqueue(At(OverlayEventKind.MouseUp, 2048));
+        rig.Tick();
+        Assert.Equal(["width 2048"], rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_width_slider_covers_the_tray_sliders_range_in_steps_of_32()
+    {
+        Assert.Equal(StreamWidth.Minimum, HudPanel.WidthChoices[0]);
+        Assert.Equal(StreamWidth.Maximum, HudPanel.WidthChoices[^1]);
+        Assert.All(HudPanel.WidthChoices.Zip(HudPanel.WidthChoices.Skip(1)), pair => Assert.Equal(StreamWidth.Step, pair.Second - pair.First));
+        Assert.Equal(StreamWidth.Maximum, HudPanel.ChoiceAt(HudPanel.WidthChoices, HudPanel.Width + 50));
+        Assert.Equal(1920, HudPanel.ChoiceAt(HudPanel.WidthChoices, HudPanel.ChoiceX(HudPanel.WidthChoices, 1920)));
     }
 
     [Fact]

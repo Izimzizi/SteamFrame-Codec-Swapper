@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -24,18 +24,21 @@ public sealed record HudView(
 public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Active, bool Enabled);
 
 /// <summary>
-/// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
+/// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, wslider (stream width), menu:rc, menu:preset, menu:vbv, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N,
 /// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, slide:angle, slide:dist (the fade-out sliders), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
-    public const int Width = 640, Height = 624, BitrateStep = 5, SnapMbps = 50, SnapReachMbps = 8;
+    public const int Width = 640, Height = 680, BitrateStep = 5, SnapMbps = 50, SnapReachMbps = 8;
     /// <summary>The top of SteamVR's own bitrate slider, marked on the HUD's slider; a click close to it lands exactly on it.</summary>
     public const int MarkerMbps = 350, MarkerReachMbps = 15;
     /// <summary>With the dashboard closed there is no input, so only the readouts are drawn, at the top of the picture: opening the dashboard grows the panel downward and its top edge stays where it was.</summary>
     private const int CompactHeight = 372;
     public static readonly Rectangle GraphArea = new(20, 200, Width - 40, 120);
     public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
+    /// <summary>The stream width slider, under the bitrate one: 0 in the view means the width is not known yet and the slider is inactive.</summary>
+    public static readonly Rectangle WidthArea = new(20, 470, Width - 40, 66);
+    public static readonly int[] WidthChoices = [..Enumerable.Range(0, (StreamWidth.Maximum - StreamWidth.Minimum) / StreamWidth.Step + 1).Select(i => StreamWidth.Minimum + i * StreamWidth.Step)];
     private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
 
     /// <summary>The fade-out sliders: the left end is Off (0), then whole steps of five.</summary>
@@ -120,9 +123,10 @@ public static class HudPanel
             return buttons;
         }
         buttons.Add(new("slider", SliderArea, "", false, control && view.TargetMbps > 0));
-        Row(476, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
+        buttons.Add(new("wslider", WidthArea, "", false, control && view.WidthPx > 0));
+        Row(546, 52, [("menu:rc", $"Rate control: {view.RateControl.ToUpperInvariant()} ▾", false, true), ("menu:preset", $"Preset: P{view.Preset} ▾", false, true),
                       ("menu:vbv", $"VBV: {view.VbvFrames} frame{(view.VbvFrames == 1 ? "" : "s")} ▾", false, true)]);
-        Row(540, 52, [("counters", "Reset frame counters", false, true)]);
+        Row(610, 52, [("counters", "Reset frame counters", false, true)]);
         return buttons;
     }
 
@@ -200,6 +204,7 @@ public static class HudPanel
         foreach (var button in Layout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
+            if (button.Id == "wslider") { DrawChoiceSlider(g, button.Bounds, "Stream width", view.WidthPx > 0 ? $"{view.WidthPx} px" : "—", WidthChoices, StreamWidth.Snapped(view.WidthPx), hover == button.Id, normal, white, accent); continue; }
             if (button.Id == "slide:angle") { DrawChoiceSlider(g, button.Bounds, "Fade out when facing more than this away from me", view.FadeAngle == 0 ? "Off" : $"{view.FadeAngle}°", FadeAngleChoices, view.FadeAngle, hover == button.Id, normal, white, accent); continue; }
             if (button.Id == "slide:dist") { DrawChoiceSlider(g, button.Bounds, "Fade out beyond this distance from the headset", view.FadeDistance == 0 ? "Off" : $"{view.FadeDistance / 100.0:0.00} m", FadeDistanceChoices, view.FadeDistance, hover == button.Id, normal, white, accent); continue; }
             var hot = hover == button.Id && button.Enabled;

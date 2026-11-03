@@ -10,10 +10,12 @@ public sealed class HudMessage
     [JsonPropertyName("t")] public string Type { get; set; } = "";
     public HudView? View { get; set; }
     public HudSettings? Settings { get; set; }
-    /// <summary>Action kind: codec, bitrate or encoder.</summary>
+    /// <summary>Action kind: codec, bitrate, width or encoder.</summary>
     public string? Kind { get; set; }
     public bool H264 { get; set; }
     public int Mbps { get; set; }
+    /// <summary>The stream width in pixels, for the "width" action.</summary>
+    public int Width { get; set; }
     public string? RateControl { get; set; }
     public int Preset { get; set; }
     public int VbvFrames { get; set; }

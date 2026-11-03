@@ -25,8 +25,10 @@ public sealed partial class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _useH264 = new("H.264");
     private readonly ToolStripMenuItem _useDefault = new("Default (HEVC)");
     private readonly MenuBitrateSlider _menuSlider;
+    private readonly MenuWidthSlider _widthSlider;
     private readonly ToolStripMenuItem _rateMenu = new("Encoder settings");
     private readonly ToolStripLabel _bitrateLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
+    private readonly ToolStripLabel _widthLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
     private readonly ToolStripMenuItem _statsItem = new("Stream monitor");
     private readonly ToolStripMenuItem _startup = new("Start with Windows");
     private readonly ToolStripMenuItem _password = new("Frame password");
@@ -66,6 +68,7 @@ public sealed partial class TrayApp : ApplicationContext
         _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: (_healthReader = new HealthReader(_paths, AppData.DiagnosticsDirectory)).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed, timing: now => EncodeTiming.Read(AppData.EncodeTimingPath, now)), () => _controller.Current);
         _stats = new StatsForm(_statsService);
         _menuSlider = new MenuBitrateSlider(_bitrateLabel, mbps => RunAsync(() => ChangeTargetAsync(mbps)));
+        _widthSlider = new MenuWidthSlider(_widthLabel, width => RunAsync(() => ChangeWidthAsync(width)));
         BuildMenu();
         SystemEvents.SessionEnding += OnSessionEnding;
         _controller.Changed += Render;
@@ -128,7 +131,7 @@ public sealed partial class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, _resetCounters, hudMenu, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _widthLabel, _widthSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, _resetCounters, hudMenu, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
@@ -137,6 +140,7 @@ public sealed partial class TrayApp : ApplicationContext
             _record.Checked = _statsService.Recording;
             _admin.Visible = !Elevation.IsElevated;
             _forgetPassword.Enabled = _controller.HasPassword;
+            _ = ShowCurrentWidthAsync();
         };
         _icon.ContextMenuStrip = menu;
     }
@@ -210,6 +214,19 @@ public sealed partial class TrayApp : ApplicationContext
     {
         await _controller.ChangeTargetAsync(mbps, AskPassword, ConfirmPatch);
         await WarnAboveStockCeilingAsync(mbps);
+    }
+
+    private async Task ChangeWidthAsync(int width)
+    {
+        try { await StreamWidth.ApplyAsync(_paths, width); }
+        catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException)
+        { Balloon("Stream width not changed", error.Message, ToolTipIcon.Warning); }
+    }
+
+    private async Task ShowCurrentWidthAsync()
+    {
+        var width = await StreamWidth.ReadAsync(_paths);
+        if (width is int current) _widthSlider.SetValue(current);
     }
 
     /// <summary>SteamVR accepts bitrates up to 350 Mbps, but its unpatched driver streams at most 232: the setting changes and the user is told it will not show yet.</summary>
