@@ -52,6 +52,17 @@ public sealed partial class TrayApp
     /// <summary>Starts SteamVR when it is not running (the headset on the desk then connects by itself) and waits until it is up.</summary>
     private async Task EnsureSteamVrAsync(BenchmarkForm form, CancellationToken token)
     {
+        // A benchmark of a stale hook measures the wrong thing, so the SteamVR driver has to be this tray's version before the run.
+        var outdated = false;
+        try { outdated = _driver.Inspect() == SteamVrDriverState.Outdated; } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        if (outdated && OpenVrSettings.IsRunning)
+            throw new InvalidOperationException("The SteamVR driver installed for this tray is an older version than this tray, so the benchmark would measure the old hook. Close SteamVR and start the benchmark again; it installs the new driver and starts SteamVR itself.");
+        if (outdated)
+        {
+            form.ShowStatus("Updating the SteamVR driver...");
+            TrayLog("Benchmark updates the SteamVR driver before starting SteamVR");
+            try { _driver.Install(); } catch (UnauthorizedAccessException error) { throw new IOException("The SteamVR driver could not be updated: " + error.Message); }
+        }
         if (OpenVrSettings.IsRunning) return;
         var startup = Path.Combine(_paths.SteamVrRoot, "bin", "win64", "vrstartup.exe");
         form.ShowStatus("Starting SteamVR...");
