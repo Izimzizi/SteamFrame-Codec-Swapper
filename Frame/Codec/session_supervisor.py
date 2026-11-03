@@ -508,6 +508,9 @@ class Supervisor:
    else:
     if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
    self.phase='host codec activation';self.hook_mode(wanted)
+   # The user's own width goes back while the stream is stopped, so the decoder starts fresh at that size instead of resizing in place
+   # (an in-place resize can lose the stream, notably while something else is encoding on the Frame).
+   if wanted=='stock':self.widen_after_hevc()
   try:
    self.phase='stopping stream'
    if not self.stop_frame_stream():raise RuntimeError('The Frame did not accept the stream stop; try again in a moment.')
@@ -515,7 +518,7 @@ class Supervisor:
    flip(mode)
    self.phase='starting Frame stream';self.cef('start')
    self.phase='verifying hardware stream'
-   if mode=='stock':self.verify_stock(fps);self.widen_after_hevc()
+   if mode=='stock':self.verify_stock(fps)
    else:self.verify_stream(target,fps)
   except Exception as error:
    self.log('live switch to '+mode+' failed ('+self.phase+'): '+str(error)[:300])
@@ -525,8 +528,9 @@ class Supervisor:
      message='The switch did not start ('+str(error)[:120]+'); the stream is unchanged.')
     raise
    try:
-    self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle();flip(previous);self.cef('start')
-    if previous=='stock':self.widen_after_hevc()
+    self.stop_frame_stream();time.sleep(1);self.wait_decoder_idle();flip(previous)
+    if previous=='h264':self.hook_width('h264')   # the width was already put back for the HEVC attempt; H.264 needs it narrow again before the stream starts
+    self.cef('start')
     self.update(state='ready',active_codec='HEVC' if previous=='stock' else 'H.264',stream_pid=self.pid,
      message='The live switch failed; the stream is back on '+('stock HEVC' if previous=='stock' else 'H.264')+'.')
    except Exception as restore:

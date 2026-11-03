@@ -501,7 +501,7 @@ class LiveModeTests(LiveRateTests):
   def stats(action='stats',*arguments):
    if action=='switch-info':return {'mode':mode,'stock_sessions':stock_sessions,'sessions':1,'picture_width':1024,'picture_height':4096}
    if action=='mode':calls.append('hook '+arguments[0]);return {'code':0}
-   if action=='width':instance.width_calls.append(arguments[0]);return {'code':0}
+   if action=='width':instance.width_calls.append(arguments[0]);calls.append('width '+arguments[0]);return {'code':0}
    raise AssertionError(action)
   instance.width_calls=[]
   instance.stats=stats
@@ -525,14 +525,14 @@ class LiveModeTests(LiveRateTests):
   self.wire(instance,calls)
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
    instance.set_mode('stock','op')
-  self.assertEqual(calls,['cef stop','idle','frame rollback','hook stock','cef start','verify stock'])
+  self.assertEqual(calls,['cef stop','idle','frame rollback','hook stock','width restore','cef start','verify stock'])
   self.assertEqual(update.call_args.kwargs['active_codec'],'HEVC');self.assertTrue(instance.stock_mode)
  def test_switching_back_mounts_the_h264_client_before_the_hook_flips(self):
   instance=self.make();calls=[]
   self.wire(instance,calls,mode='stock')
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
    instance.set_mode('h264','op')
-  self.assertEqual(calls,['cef stop','idle','frame client-h264','hook h264','cef start','verify h264'])
+  self.assertEqual(calls,['width h264','cef stop','idle','frame client-h264','hook h264','cef start','verify h264'])
   self.assertEqual(instance.width_calls,['h264'])
   self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
  def test_a_stream_that_stays_wide_leaves_the_stream_unchanged_and_the_width_restored(self):
@@ -550,8 +550,8 @@ class LiveModeTests(LiveRateTests):
   with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
    with self.assertRaisesRegex(RuntimeError,'no stream'):instance.set_mode('stock','op')
   first=calls.index('cef start')
-  self.assertEqual(calls[:first+1],['cef stop','idle','frame rollback','hook stock','cef start'])
-  self.assertEqual(calls[first+1:],['cef stop','idle','frame client-h264','hook h264','cef start'])
+  self.assertEqual(calls[:first+1],['cef stop','idle','frame rollback','hook stock','width restore','cef start'])
+  self.assertEqual(calls[first+1:],['cef stop','idle','frame client-h264','hook h264','width h264','cef start'])
   self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
  def test_no_switch_without_a_hook_or_a_stock_encoder(self):
   hookless=self.make(live=False)
