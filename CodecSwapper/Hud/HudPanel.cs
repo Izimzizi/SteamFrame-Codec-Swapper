@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0, int MultiPass = 0)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0, int MultiPass = 0, int Guide = 0)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -29,6 +29,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 /// </summary>
 public static class HudPanel
 {
+    public const int GuideSteps = 5;
     public const int Width = 640, Height = 680, BitrateStep = 5, SnapMbps = 50, SnapReachMbps = 8;
     /// <summary>The top of SteamVR's own bitrate slider, marked on the HUD's slider; a click close to it lands exactly on it.</summary>
     public const int MarkerMbps = 350, MarkerReachMbps = 15;
@@ -86,7 +87,32 @@ public static class HudPanel
 
     public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", "mp" => "Multipass", _ => "" };
 
-    public static IReadOnlyList<HudButton> Layout(HudView view)
+    /// <summary>The guide's callout (and its buttons) for a step: what is highlighted, and where the text goes.</summary>
+    public static (Rectangle Highlight, Rectangle Callout, string Text) GuideStep(int step)
+    {
+        var top = new Rectangle(14, 60, Width - 28, 210);
+        var bottom = new Rectangle(14, 470, Width - 28, 200);
+        return step switch
+        {
+            1 => (new(10, 30, Width - 20, 296), bottom, "The live stream: the codec, the bitrate it reaches now, the frame rate and a 60 second graph. The dashed line is your bitrate target."),
+            2 => (new(14, 326, Width - 28, 72), top, "Choose H.264 (up to 500 Mbps, 1024 px wide) or the stock Default (HEVC) stream. The switch takes a few seconds to apply."),
+            3 => (new(14, 392, Width - 28, 150), top, "Bitrate target and stream width. The gold marks, 350 Mbps and 1344 px, are the top of SteamVR's own sliders. Above 350 Mbps needs the bitrate patch."),
+            4 => (new(14, 540, Width - 28, 134), top, "Rate control, preset, VBV buffer and multipass tune the encoder. They apply live, and the defaults suit most setups."),
+            _ => (new(Width - 20 - 60, 4, 64, 56), bottom, "The cogwheel opens the HUD settings: when the HUD appears, fading, repositioning and hiding. You can replay this guide from there."),
+        };
+    }
+
+    public static IReadOnlyList<HudButton> GuideLayout(HudView view)
+    {
+        var callout = GuideStep(view.Guide).Callout;
+        var last = view.Guide >= GuideSteps;
+        return [new("guide:next", new(callout.Right - 12 - 150, callout.Bottom - 12 - 44, 150, 44), last ? "Finish" : "Next", false, true),
+                new("guide:skip", new(callout.Right - 12 - 150 - 10 - 150, callout.Bottom - 12 - 44, 150, 44), "Skip guide", false, true)];
+    }
+
+    public static IReadOnlyList<HudButton> Layout(HudView view) => view.Guide > 0 && view.Interactive && !view.Repositioning ? GuideLayout(view) : ControlLayout(view);
+
+    private static IReadOnlyList<HudButton> ControlLayout(HudView view)
     {
         var buttons = new List<HudButton>();
         if (!view.Interactive) return buttons;
@@ -112,6 +138,7 @@ public static class HudPanel
             buttons.Add(new("slide:angle", FadeAngleArea, "", false, true));
             buttons.Add(new("slide:dist", FadeDistanceArea, "", false, true));
             Row(430, 44, [("reposition", "Reposition HUD", false, true), ("hide", "Hide HUD", false, true)]);
+            Row(486, 40, [("guide:replay", "Show the guide again", false, true)]);
             return buttons;
         }
         var control = !view.Busy;
@@ -183,7 +210,7 @@ public static class HudPanel
             g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 130);
             if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the Always visible style.", small, grey, 22, 204);
             else g.DrawString("Show the controls when", normal, white, 22, 206);
-            g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. It can be turned\nback on any time in the tray menu: VR HUD > Show HUD on a controller. With the\nfirst option Off, the HUD stays hidden until you show it from the tray menu.", small, grey, 22, 496);
+            g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. Turn it back on in the\ntray menu: VR HUD > Show HUD on a controller.", small, grey, 22, 540);
         }
         else
         {
@@ -208,7 +235,7 @@ public static class HudPanel
         if (compact) g.DrawString(view.ExpandOnHover ? "Point the laser at the HUD to change settings" : "Open the dashboard to change settings", small, grey, 22, 334);
         if (view.OpenMenu.Length > 0) g.DrawString(MenuTitle(view.OpenMenu), title, accentBrush, 22, 398);
         if (view.Notice.Length > 0 && !view.Repositioning && !settingsPage) DrawNotice(g, view, small);
-        foreach (var button in Layout(view))
+        foreach (var button in ControlLayout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
             if (button.Id == "wslider") { DrawChoiceSlider(g, button.Bounds, "Stream width", view.WidthPx > 0 ? $"{view.WidthPx} px" : "—", WidthChoices, StreamWidth.Snapped(view.WidthPx), hover == button.Id, normal, white, accent, WidthMarker); continue; }
@@ -225,6 +252,66 @@ public static class HudPanel
             var font = button.Id == "page:settings" ? symbol : button.Bounds.Height < 40 ? small : normal;
             g.DrawString(button.Text, font, button.Enabled ? white : grey, button.Bounds, format);
         }
+        if (view.Guide > 0 && view.Interactive && !view.Repositioning) DrawGuide(g, view, hover, title, normal, white);
+        return bitmap;
+    }
+
+    /// <summary>The guide: everything outside the highlighted part is dimmed, the highlight is outlined in gold and a callout explains it.</summary>
+    private static void DrawGuide(Graphics g, HudView view, string? hover, Font title, Font normal, Brush white)
+    {
+        var (highlight, callout, text) = GuideStep(view.Guide);
+        using var dim = new SolidBrush(Color.FromArgb(185, 6, 8, 12));
+        using (var all = new Region(new Rectangle(0, 0, Width, Height)))
+        {
+            all.Exclude(highlight);
+            g.FillRegion(dim, all);
+        }
+        using (var outline = new Pen(Color.FromArgb(255, 200, 80), 3)) using (var frame = Rounded(highlight, 14)) g.DrawPath(outline, frame);
+        using (var box = Rounded(callout, 16)) using (var fill = new SolidBrush(Color.FromArgb(250, 28, 32, 42))) using (var edge = new Pen(Color.FromArgb(255, 200, 80), 2.5f)) { g.FillPath(fill, box); g.DrawPath(edge, box); }
+        using var gold = new SolidBrush(Color.FromArgb(255, 200, 80));
+        g.DrawString($"Guide  {view.Guide} / {GuideSteps}", title, gold, callout.Left + 16, callout.Top + 10);
+        g.DrawString(text, normal, white, new RectangleF(callout.Left + 16, callout.Top + 46, callout.Width - 32, callout.Height - 110));
+        foreach (var button in GuideLayout(view))
+        {
+            var hot = hover == button.Id;
+            using var shape = Rounded(button.Bounds, 12);
+            using var fill = new SolidBrush(button.Id == "guide:next" ? Color.FromArgb(hot ? 150 : 110, 80, 60) : Color.FromArgb(hot ? 70 : 44, hot ? 76 : 48, hot ? 90 : 58));
+            g.FillPath(fill, shape);
+            using var edge = new Pen(hot || button.Id == "guide:next" ? Color.FromArgb(255, 200, 80) : Color.FromArgb(90, 96, 110), 2);
+            g.DrawPath(edge, shape);
+            using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(button.Text, normal, white, button.Bounds, format);
+        }
+    }
+
+    public const int GuideBubbleWidth = 480, GuideBubbleHeight = 200;
+
+    /// <summary>The first thing the guide shows: a bubble that sits above the watch and points down at it.</summary>
+    public static Bitmap RenderWatchGuide()
+    {
+        var bitmap = new Bitmap(GuideBubbleWidth, GuideBubbleHeight, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        var gold = Color.FromArgb(255, 200, 80);
+        var back = Color.FromArgb(245, 28, 32, 42);
+        var box = new Rectangle(4, 4, GuideBubbleWidth - 9, GuideBubbleHeight - 60);
+        using var body = Rounded(box, 22);
+        using var fill = new SolidBrush(back);
+        using var edge = new Pen(gold, 4);
+        g.FillPath(fill, body);
+        g.DrawPath(edge, body);
+        var middle = GuideBubbleWidth / 2f;
+        PointF[] arrow = [new(middle - 34, box.Bottom - 2), new(middle + 34, box.Bottom - 2), new(middle, GuideBubbleHeight - 6)];
+        g.FillPolygon(fill, arrow);
+        g.DrawLines(edge, new[] { arrow[0], arrow[2], arrow[1] });
+        using var cover = new Pen(back, 6);
+        g.DrawLine(cover, arrow[0].X + 3, box.Bottom - 1, arrow[1].X - 3, box.Bottom - 1);
+        using var head = new Font("Segoe UI Semibold", 24f, GraphicsUnit.Pixel);
+        using var text = new Font("Segoe UI", 21f, GraphicsUnit.Pixel);
+        using var goldBrush = new SolidBrush(gold);
+        g.DrawString("Welcome to SteamFrame", head, goldBrush, 24, 18);
+        g.DrawString("Point your laser at this watch and click it\nto open the panel.", text, Brushes.White, new RectangleF(24, 60, GuideBubbleWidth - 48, 80));
         return bitmap;
     }
 

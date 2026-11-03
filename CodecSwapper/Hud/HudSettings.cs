@@ -23,6 +23,8 @@ public sealed class HudSettings
     public int FadeAngle { get; set; }
     /// <summary>They also fade out beyond this distance (centimetres) from the headset; 0 means any distance.</summary>
     public int FadeDistanceCm { get; set; }
+    /// <summary>Whether the first-run guide has been finished or skipped. Settings has a button to see it again.</summary>
+    public bool GuideDone { get; set; }
     /// <summary>"left" or "right".</summary>
     public string Hand { get; set; } = "left";
     /// <summary>The HUD's pose in its controller's space as a row-major 3x4; null means the default placement.</summary>

@@ -23,10 +23,11 @@ public interface IHudActions
 /// </summary>
 public sealed class HudController(IOverlayApi api, HudSettings settings, Func<HudView> readView, IHudActions actions, Action saveSettings, Func<bool> steamVrRunning, Action<string>? log = null) : IDisposable
 {
-    private const string OverlayKey = "steamframe.tray.hud", IconKey = "steamframe.tray.hud.icon";
+    private const string OverlayKey = "steamframe.tray.hud", IconKey = "steamframe.tray.hud.icon", BubbleKey = "steamframe.tray.hud.guide";
     private static readonly TimeSpan ConnectRetry = TimeSpan.FromSeconds(3), DataUpload = TimeSpan.FromMilliseconds(100), InteractionUpload = TimeSpan.FromMilliseconds(25), SlideIdle = TimeSpan.FromMilliseconds(600), CommitHold = TimeSpan.FromSeconds(4);
 
     private ulong _overlay, _icon;
+    private Pose _bubbleAt; private float _bubbleWidth; private uint _bubbleDevice = IOverlayApi.NoDevice;
     private uint _iconDevice = IOverlayApi.NoDevice;
     private string? _iconDrawn;
     private bool _iconHover, _panelVisible;
@@ -49,6 +50,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private string _menu = "";
     private string _page = "";
     private bool _dashboard = true;
+    private int _guideStep = -2;             // -2 not decided yet, -1 finished or skipped, 0 the bubble at the watch, 1.. the steps on the panel
+    private ulong _bubble;                 // the overlay that points at the watch during step 0
     private string? _slidingSetting;       // "slide:angle" or "slide:dist" while a fade-out slider is held
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _slidingWidth, _committedWidth;   // the same for the stream width slider
@@ -90,6 +93,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         // The attached controller must be known before laser events are handled (a grab needs it); the placement is applied afterwards.
         if (_attachedTo == IOverlayApi.NoDevice) Attach(device, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters);
         if (_grab is not null) FollowGrab();   // the icon below is placed from the latest hand position
+        if (_guideStep == -2) _guideStep = settings.GuideDone ? -1 : settings.Watch ? 0 : 1;
         TickFade(device, at);
         TickIcon(device, at);
         ApplyPanelVisibility();
@@ -175,7 +179,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void SetAlphas(float panel, float icon)
     {
         if (_overlay != 0 && MathF.Abs(panel - _panelAlpha) > .01f) { api.SetAlpha(_overlay, panel); _panelAlpha = panel; }
-        if (_icon != 0 && MathF.Abs(icon - _iconAlpha) > .01f) { api.SetAlpha(_icon, icon); _iconAlpha = icon; }
+        if (_icon != 0 && MathF.Abs(icon - _iconAlpha) > .01f) { api.SetAlpha(_icon, icon); _iconAlpha = icon; if (_bubble != 0) api.SetAlpha(_bubble, icon); }
     }
 
     private bool ShowPanel => !settings.Watch || settings.PanelOpen || _repositioning;
@@ -213,8 +217,14 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
                 if (e.Kind == OverlayEventKind.MouseDown) BeginGrab(e.Device, true);
                 else if (e.Kind == OverlayEventKind.MouseUp) _grab = null;
             }
-            else if (e.Kind == OverlayEventKind.MouseDown) { settings.PanelOpen = !settings.PanelOpen; log?.Invoke("HUD: panel " + (settings.PanelOpen ? "opened" : "closed") + " from the watch icon"); }
+            else if (e.Kind == OverlayEventKind.MouseDown)
+            {
+                settings.PanelOpen = !settings.PanelOpen;
+                log?.Invoke("HUD: panel " + (settings.PanelOpen ? "opened" : "closed") + " from the watch icon");
+                if (_guideStep == 0 && settings.PanelOpen) _guideStep = 1;
+            }
         }
+        TickBubble(device, at);
         var view = readView();
         // Everything the face shows is in the key, so the gauge follows the readings as often as the graph does (10 Hz); hover and open are repainted at once.
         var key = $"{view.Codec}|{view.Connected}|{_iconHover}|{settings.PanelOpen}|{view.Mbps:0}|{view.TargetMbps}";
@@ -226,8 +236,43 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         _iconDrawn = key; _iconUpload = at;
     }
 
+    // Step 0 of the guide: a bubble above the watch, in the watch's own orientation, whose arrow points down at it.
+    private void TickBubble(uint device, DateTime at)
+    {
+        var show = _guideStep == 0 && !settings.PanelOpen && !_repositioning;
+        if (!show) { DestroyBubble(); return; }
+        if (_bubble == 0)
+        {
+            _bubble = api.CreateOverlay(BubbleKey, "SteamFrame HUD guide");
+            if (_bubble == 0) return;
+            api.SetAlpha(_bubble, _iconAlpha);
+            using var picture = HudPanel.RenderWatchGuide();
+            api.SetImage(_bubble, HudPanel.ToRgba(picture), HudPanel.GuideBubbleWidth, HudPanel.GuideBubbleHeight);
+            api.SetVisible(_bubble, true);
+            log?.Invoke("HUD: guide bubble shown at the watch");
+        }
+        var iconWidth = _iconWidth > 0 ? _iconWidth : settings.IconWidthMeters;
+        var width = Math.Max(.20f, iconWidth * 4.6f);
+        var height = width * HudPanel.GuideBubbleHeight / HudPanel.GuideBubbleWidth;
+        // The bubble's lower tip sits a little above the watch's top edge.
+        var local = settings.IconPose.Then(new Pose(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new Vector3(0, iconWidth / 2f + .012f + height / 2f, 0)));
+        if (_bubbleAt != local || _bubbleWidth != width || _bubbleDevice != device)
+        {
+            api.SetWidth(_bubble, width);
+            api.AttachToDevice(_bubble, device, local);
+            _bubbleAt = local; _bubbleWidth = width; _bubbleDevice = device;
+        }
+    }
+
+    private void DestroyBubble()
+    {
+        if (_bubble != 0 && api.Connected) { try { api.DestroyOverlay(_bubble); } catch (Exception) { /* SteamVR went first */ } }
+        _bubble = 0; _bubbleWidth = 0; _bubbleDevice = IOverlayApi.NoDevice;
+    }
+
     private void DestroyIcon()
     {
+        DestroyBubble();
         if (_icon != 0 && api.Connected) { try { api.DestroyOverlay(_icon); } catch (Exception) { /* SteamVR went first */ } }
         _icon = 0; _iconDevice = IOverlayApi.NoDevice; _iconDrawn = null; _iconHover = false;
     }
@@ -278,7 +323,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm, Guide = _guideStep >= 1 && !_repositioning ? _guideStep : 0 };
         if (_slidingWidth is { } heldWidth) view = view with { WidthPx = heldWidth };
         else if (_committedWidth is { } chosenWidth && view.WidthPx != chosenWidth && _clock - _committedAt < CommitHold) view = view with { WidthPx = chosenWidth };
         if (_sliding is { } held) return view with { TargetMbps = held };
@@ -306,7 +351,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private static bool ControlsChanged(HudView was, HudView now) =>
         was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps || was.WidthPx != now.WidthPx
-        || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames || was.MultiPass != now.MultiPass;
+        || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames || was.MultiPass != now.MultiPass || was.Guide != now.Guide;
 
     private void Handle(OverlayEvent e)
     {
@@ -370,6 +415,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "preset": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, int.Parse(parts[1]), view.VbvFrames)); break;
             case "vbv": _menu = ""; Fire(() => actions.SetEncoderAsync(view.RateControl, view.Preset, int.Parse(parts[1]))); break;
             case "mp": _menu = ""; Fire(() => actions.SetMultiPassAsync(int.Parse(parts[1]))); break;
+            case "guide": Guide(parts[1]); break;
             case "reposition": StartRepositioning(); break;
             case "hide": Fire(actions.HideAsync); break;
             case "counters": Fire(actions.ResetCountersAsync); break;
@@ -393,6 +439,15 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
                 _draftIconPose = settings.IconPose; _draftIconWidth = settings.IconWidthMeters;
                 break;
         }
+    }
+
+    private void Guide(string what)
+    {
+        if (what == "replay") { _guideStep = 1; _page = ""; _menu = ""; _drawn = null; return; }
+        if (what == "next" && _guideStep < HudPanel.GuideSteps) { _guideStep++; _drawn = null; return; }
+        _guideStep = -1; settings.GuideDone = true; _drawn = null;   // Finish or Skip
+        Persist();
+        log?.Invoke("HUD: guide finished");
     }
 
     private void MoveSettingSlide(float x)

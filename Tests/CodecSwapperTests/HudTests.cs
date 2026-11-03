@@ -226,7 +226,7 @@ public sealed class HudControllerTests
     {
         public readonly FakeApi Api = new();
         public readonly Actions Actions = new();
-        public readonly HudSettings Settings = new() { Enabled = true, Watch = false };
+        public readonly HudSettings Settings = new() { Enabled = true, Watch = false, GuideDone = true };
         public int Saves; public bool SteamVr = true;
         public HudView View = HudView.Empty with { Connected = true, TargetMbps = 300, RateControl = "vbr", Preset = 2, VbvFrames = 2 };
         public readonly HudController Hud;
@@ -258,6 +258,55 @@ public sealed class HudControllerTests
         Assert.True(rig.Settings.PanelOpen);
         rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();
         Assert.False(rig.Api.Visible[7]);
+    }
+
+    [Fact]
+    public void The_first_run_guide_starts_with_a_bubble_at_the_watch_then_walks_the_panel_and_is_remembered()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.GuideDone = false;
+        rig.Tick();
+        Assert.Equal(3, rig.Api.Calls.Count(c => c == "create"));   // panel, watch, and the bubble pointing at the watch
+        Assert.True(rig.Api.Visible[9]);
+        rig.Api.IconEvents.Enqueue(new(OverlayEventKind.MouseDown, 4, 60, 60)); rig.Tick();   // clicking the watch opens the panel, the bubble goes and step 1 begins
+        Assert.True(rig.Settings.PanelOpen);
+        Assert.Contains("destroy", rig.Api.Calls);
+        var guided = rig.View with { Guide = 1, Interactive = true };
+        for (var step = 1; step < HudPanel.GuideSteps; step++)
+        {
+            rig.Api.Events.Enqueue(Press(guided with { Guide = step }, "guide:next")); rig.Tick();
+        }
+        Assert.False(rig.Settings.GuideDone);
+        rig.Api.Events.Enqueue(Press(guided with { Guide = HudPanel.GuideSteps }, "guide:next")); rig.Tick();   // Finish
+        Assert.True(rig.Settings.GuideDone);
+        Assert.True(rig.Saves > 0);
+        rig.Press("page:settings"); rig.Press("guide:replay");
+        Assert.Equal("", rig.Hud.Page);
+        rig.Api.Events.Enqueue(Press(guided, "guide:skip")); rig.Tick();
+        Assert.True(rig.Settings.GuideDone);
+    }
+
+    private static OverlayEvent Press(HudView view, string id)
+    {
+        var b = HudPanel.Layout(view).Single(x => x.Id == id).Bounds;
+        return new(OverlayEventKind.MouseDown, 4, b.X + b.Width / 2f, HudPanel.Height - (b.Y + b.Height / 2f));
+    }
+
+    [Fact]
+    public void During_the_guide_only_its_buttons_work_and_the_picture_draws()
+    {
+        var view = HudView.Empty with { Connected = true, TargetMbps = 300, WidthPx = 1344, Guide = 3 };
+        Assert.Equal(["guide:next", "guide:skip"], HudPanel.Layout(view).Select(b => b.Id).ToArray());
+        Assert.Equal("grab", HudPanel.HitTest(view, 100, 420));   // the slider under the dimming is not reachable
+        for (var step = 1; step <= HudPanel.GuideSteps; step++)
+        {
+            using var picture = HudPanel.Render(view with { Guide = step }, "guide:next");
+            Assert.Equal(HudPanel.Width, picture.Width);
+            var callout = HudPanel.GuideStep(step).Callout;
+            Assert.All(HudPanel.GuideLayout(view with { Guide = step }), b => Assert.True(callout.Contains(b.Bounds)));
+        }
+        using var bubble = HudPanel.RenderWatchGuide();
+        Assert.Equal(HudPanel.GuideBubbleWidth, bubble.Width);
     }
 
     [Fact]
