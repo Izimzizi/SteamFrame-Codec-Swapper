@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SteamFrame.Core;
 
 namespace CodecSwapper;
@@ -48,6 +49,51 @@ public sealed partial class TrayApp
         return lines;
     }
 
+    /// <summary>Starts SteamVR when it is not running (the headset on the desk then connects by itself) and waits until it is up.</summary>
+    private async Task EnsureSteamVrAsync(BenchmarkForm form, CancellationToken token)
+    {
+        if (OpenVrSettings.IsRunning) return;
+        var startup = Path.Combine(_paths.SteamVrRoot, "bin", "win64", "vrstartup.exe");
+        form.ShowStatus("Starting SteamVR...");
+        TrayLog("Benchmark starts SteamVR");
+        try
+        {
+            System.Diagnostics.Process.Start(File.Exists(startup)
+                ? new System.Diagnostics.ProcessStartInfo(startup) { UseShellExecute = false, CreateNoWindow = true }
+                : new System.Diagnostics.ProcessStartInfo("steam://rungameid/250820") { UseShellExecute = true });
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException) { throw new IOException("SteamVR could not be started: " + error.Message); }
+        for (var seconds = 0; seconds < 90; seconds++)
+        {
+            if (OpenVrSettings.IsRunning) { await Task.Delay(TimeSpan.FromSeconds(3), token); return; }
+            await Task.Delay(1000, token);
+        }
+        throw new IOException("SteamVR did not start within 90 seconds.");
+    }
+
+    /// <summary>
+    /// The scene can only attach once SteamVR has a headset, so it is retried until the Frame has connected (up to two minutes).
+    /// </summary>
+    private async Task<BenchmarkScene> StartSceneWhenHeadsetConnectsAsync(BenchmarkForm form, CancellationToken token)
+    {
+        var waited = Stopwatch.StartNew();
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            var scene = new BenchmarkScene();
+            form.ShowStatus(waited.Elapsed.TotalSeconds < 2 ? "Starting the test scene on the headset..." : $"Waiting for the headset to connect... {waited.Elapsed.TotalSeconds:0} s");
+            try { await scene.StartAsync(_paths.OpenVrApi, token); return scene; }
+            catch (IOException error)
+            {
+                await scene.DisposeAsync();
+                if (waited.Elapsed > TimeSpan.FromSeconds(120))
+                    throw new IOException("The headset did not connect within two minutes, so the test scene could not start (" + error.Message + ") Check that the Frame is on, awake and paired to this PC.");
+            }
+            catch { await scene.DisposeAsync(); throw; }
+            await Task.Delay(TimeSpan.FromSeconds(3), token);
+        }
+    }
+
     private async Task BenchmarkAsync(BenchmarkForm form, BenchmarkSettings settings)
     {
         var original = _controller.TargetMbps;
@@ -61,8 +107,6 @@ public sealed partial class TrayApp
         FrameActivity.Keeper? awake = null;
         try
         {
-            // The scene would start SteamVR itself (and fail while the headset is not connected), so SteamVR has to be running first.
-            if (!OpenVrSettings.IsRunning) throw new InvalidOperationException("SteamVR is not running. Start SteamVR, put the headset on and wait for the stream to connect, then start the benchmark.");
             try
             {
                 awake = new FrameActivity.Keeper(_preferences);
@@ -76,12 +120,11 @@ public sealed partial class TrayApp
                 await awake!.DisposeAsync(); awake = null;
                 form.ShowStatus("The Frame could not be asked to stay awake; keep the headset awake yourself.");
             }
+            await EnsureSteamVrAsync(form, cancel.Token);
             if (settings.UseScene)
             {
                 run.Setup.Add("test scene: built-in moving room");
-                scene = new BenchmarkScene();
-                form.ShowStatus("Starting the test scene on the headset...");
-                await scene.StartAsync(_paths.OpenVrApi, cancel.Token);
+                scene = await StartSceneWhenHeadsetConnectsAsync(form, cancel.Token);
                 TrayLog("Benchmark test scene running");
             }
             else run.Setup.Add("test scene: own VR app");
