@@ -84,7 +84,7 @@ public static class HudPanel
         TrackLeft + (TrackRight - TrackLeft) * (Math.Clamp(mbps, TrayController.MinimumMbps, TrayController.MaximumMbps) - TrayController.MinimumMbps)
         / (float)(TrayController.MaximumMbps - TrayController.MinimumMbps);
 
-    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", "mp" => "Multipass — takes effect when the stream restarts", _ => "" };
+    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", "mp" => "Multipass", _ => "" };
 
     public static IReadOnlyList<HudButton> Layout(HudView view)
     {

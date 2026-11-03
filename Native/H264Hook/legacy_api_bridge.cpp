@@ -105,8 +105,6 @@ struct State {
  // The host reconfigures before every frame; the codec preset is fixed per session.
  bool baseline_ready=false;
  NV_ENC_CONFIG baseline{};
- // Multipass cannot change in a running encoder, so the mode in force when the session opened is the one every configuration uses.
- uint32_t multipass=0;
 };
 std::unordered_map<void*,State> sessions;
 
@@ -133,7 +131,7 @@ NVENCSTATUS NVENCAPI open(NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS* source,void** ou
     query.capsToQuery=NV_ENC_CAPS_WIDTH_MAX;if(api.nvEncGetEncodeCaps(*output,NV_ENC_CODEC_H264_GUID,&query,&value)==NV_ENC_SUCCESS&&value>0)h264_hardware_width=uint32_t(value);
     query.capsToQuery=NV_ENC_CAPS_HEIGHT_MAX;if(api.nvEncGetEncodeCaps(*output,NV_ENC_CODEC_H264_GUID,&query,&value)==NV_ENC_SUCCESS&&value>0)h264_hardware_height=uint32_t(value);
    }
-   State state{};state.multipass=uint32_t(StockMultiPass());
+   State state{};
    if(StockReady()){const auto stock_status=StockOpen(source,&state.stock);if(stock_status){state.stock=nullptr;++switch_info.stock_errors;switch_info.last_stock_status=uint32_t(stock_status);}}
    sessions.emplace(*output,std::move(state));++stats.opens;
   }else ++stats.errors;}
@@ -171,9 +169,6 @@ NVENCSTATUS preset_common(void* encoder,GUID codec,GUID preset,NV_ENC_TUNING_INF
 NVENCSTATUS NVENCAPI preset_ex(void* e,GUID c,GUID p,NV_ENC_TUNING_INFO t,NV_ENC_PRESET_CONFIG* s){return preset_common(e,c,p,t,s,true);}
 NVENCSTATUS NVENCAPI preset(void* e,GUID c,GUID p,NV_ENC_PRESET_CONFIG* s){return preset_common(e,c,p,NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,s,false);}
 
-uint32_t session_multipass(void* encoder){
- std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);return found!=sessions.end()?found->second.multipass:0;
-}
 bool session_baseline(void* encoder,NV_ENC_CONFIG& output){
  {std::lock_guard<std::mutex> lock(mutex);auto found=sessions.find(encoder);
   if(found!=sessions.end()&&found->second.baseline_ready){output=found->second.baseline;return true;}}
@@ -217,7 +212,7 @@ bool configure(void* encoder,const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITI
  rc.vbvBufferSize=rc.averageBitRate/requested_fps*requested_vbv_frames;rc.vbvInitialDelay=0;
  rc.enableLookahead=0;rc.lookaheadDepth=0;rc.enableAQ=0;rc.enableTemporalAQ=0;
  rc.enableMinQP=0;rc.enableMaxQP=0;rc.enableInitialRCQP=0;
- rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(session_multipass(encoder));rc.zeroReorderDelay=1;rc.qpMapMode=NV_ENC_QP_MAP_DELTA;
+ rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(StockMultiPass());rc.zeroReorderDelay=1;rc.qpMapMode=NV_ENC_QP_MAP_DELTA;
  {
   auto& h264=config.encodeCodecConfig.h264Config;
   h264.level=requested_average>200000000?NV_ENC_LEVEL_AUTOSELECT:NV_ENC_LEVEL_H264_52;

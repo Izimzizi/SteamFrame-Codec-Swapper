@@ -33,15 +33,12 @@ int StockOpen(const void* open_params,void** encoder){
  return status(table.nvEncOpenEncodeSessionEx(&copy,encoder));
 }
 // Optional rate-control overrides for the driver's own (HEVC) encoder, read from hevc-options.txt in the tray's data folder:
-//   enabled=1  rate_control=vbr|cbr  preset=1..7  vbv=1..16  multipass=0|1|2 (off, quarter resolution first pass, full resolution first pass;
-//   read when the encoder is created, not changed afterwards)
+//   enabled=1  rate_control=vbr|cbr  preset=1..7  vbv=1..16  multipass=0|1|2 (off, quarter resolution first pass, full resolution first pass)
 // The file is checked about twice a second, so a change reaches the encoder SteamVR reconfigures before its next frame. Nothing is
 // touched unless enabled=1; the driver's own parameters are copied, never edited in place.
 namespace {
 struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int multipass=0;};
 HevcOptions options;ULONGLONG options_checked=0;
-// The multipass mode the encoder was created with: it cannot change in place (the encoder allocates for it when it is created), so reconfigures keep it.
-int initialized_multipass=0;
 int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
 int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
 // Diagnosis of the live HEVC route: what SteamVR's reconfigures carry and what was done with them (hevc-hook.log in the tray's data folder).
@@ -74,7 +71,7 @@ GUID preset_guid(int preset){
   case 5:return NV_ENC_PRESET_P5_GUID;case 6:return NV_ENC_PRESET_P6_GUID;case 7:return NV_ENC_PRESET_P7_GUID;default:return NV_ENC_PRESET_P2_GUID;}
 }
 // Applies the options to a copy of the driver's init parameters and its encode configuration; returns whether it changed anything.
-bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool initial){
+bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool){
  load_options();if(!options.enabled||!source.encodeConfig)return false;
  init=source;config=*source.encodeConfig;init.encodeConfig=&config;
  auto& rc=config.rcParams;
@@ -85,10 +82,9 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  // SteamVR reconfigures before every frame with its own preset, and the encoder follows the preset it is given each time, so the chosen
  // one is named on every call, not only when the encoder is created.
  init.presetGUID=preset_guid(options.preset);
- if(initial)initialized_multipass=options.multipass;
- rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(initialized_multipass);
+ rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(options.multipass);
  // A changed rate control, buffer or preset needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
- const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000;
+ const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+options.multipass*100000;
  applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
  return true;
@@ -111,10 +107,9 @@ int StockInitialize(void* encoder,void* init){
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){
-  trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d), multipass %d",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode),initialized_multipass);
+  trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d), multipass %d",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode),options.multipass);
   return status(table.nvEncInitializeEncoder(encoder,&patched));
  }
- initialized_multipass=original&&original->encodeConfig?static_cast<int>(original->encodeConfig->rcParams.multiPass):0;
  trace("initialize: left alone (options off or no encode configuration: config=%d)",original&&original->encodeConfig?1:0);
  return status(table.nvEncInitializeEncoder(encoder,original));
 }
