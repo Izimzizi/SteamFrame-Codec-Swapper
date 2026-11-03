@@ -138,9 +138,12 @@ public sealed class BenchmarkRunner
     }
 
     /// <summary>One settle and measuring window at the current settings (judged as a step of <paramref name="target"/> Mbps); an unclean window is measured once more.</summary>
-    public async Task<BenchmarkStep> MeasureStepAsync(int target, int index, int count, TimeSpan settle, TimeSpan window, bool recheck, IProgress<BenchmarkProgress>? progress, CancellationToken token)
+    public async Task<BenchmarkStep> MeasureStepAsync(int target, int index, int count, TimeSpan settle, TimeSpan window, bool recheck, IProgress<BenchmarkProgress>? progress, CancellationToken token, bool waitQuiet = false)
     {
         await Settle(target, index, count, settle, progress, token);
+        // A change of encoder options restarts the encoder's rate control and sends a large new picture, which on a link near its limit
+        // starts a short recovery storm; measuring that would measure the change, not the setting.
+        if (waitQuiet) await WaitQuietAsync(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(25), null, token);
         var result = await Measure(target, index, count, window, "measuring", progress, token);
         if (recheck && LinkCapacitySweep.NeedsRecheck(result.Result, 0))
             result = Combine(result, await Measure(target, index, count, window, "re-checking", progress, token));

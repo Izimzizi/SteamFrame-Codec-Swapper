@@ -78,7 +78,7 @@ public sealed class BenchmarkForm : Form
         var modeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4) };
         modeRow.Controls.AddRange([Caption("Run:"), _mode, Caption("Measure each for"), _measure, _scene]);
         _bitrateOptions.Controls.AddRange([Caption("From"), _start, Caption("to"), _ceiling, Caption("Mbps in steps of"), _step, Caption("Mbps"), _stopOnFailure]);
-        _sweepOptions.Controls.AddRange([Caption("Measure every candidate at"), _probe, Caption("Mbps. Pick a bitrate where your link is close to its limit but still works (a bitrate run's highest clean step); at an easy bitrate every setting looks the same.")]);
+        _sweepOptions.Controls.AddRange([Caption("Measure every candidate at"), _probe, Caption("Mbps. Pick a bitrate a little below where your link starts to fail (about 85% of a bitrate run's highest clean step, which is the default after a bitrate run): right at the limit every change tips the stream into recovery, and at an easy bitrate every setting looks the same.")]);
         var optionsHost = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0) };
         optionsHost.Controls.AddRange([_bitrateOptions, _sweepOptions]);
         var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
@@ -214,7 +214,8 @@ public sealed class BenchmarkForm : Form
         _history = history;
         if (!_probeTouched && history.FirstOrDefault(r => r.BestCleanMbps is not null) is { BestCleanMbps: int clean })
         {
-            _probe.Value = Math.Clamp(clean, (int)_probe.Minimum, (int)_probe.Maximum);
+            // Below the edge: right at the highest clean step every change of settings tips the stream into a recovery storm and the sweep measures that.
+            _probe.Value = Math.Clamp((int)Math.Round(clean * 0.85 / 5) * 5, (int)_probe.Minimum, (int)_probe.Maximum);
             _probeTouched = false;
         }
         RebuildCompareList();

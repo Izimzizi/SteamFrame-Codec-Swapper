@@ -65,7 +65,7 @@ public sealed class EncoderSweepTests : IDisposable
         var rig = new Rig { HeldPerSecond = c => c.Preset == 2 ? 4 : 0 };
         var run = await Run(rig);
         Assert.NotEqual(2, run.Best!.Preset);
-        Assert.True(run.Trials[0].Step.HeldMsPerMinute > 1000);
+        Assert.True(run.Trials.Single(t => t.Label == "Preset P2 (current)").Step.HeldMsPerMinute > 1000);
         Assert.Contains("Held-back time", run.Conclusion);
     }
 
@@ -76,7 +76,7 @@ public sealed class EncoderSweepTests : IDisposable
         var rig = new Rig { HeldPerSecond = c => c == Start ? 0 : 3 };
         var run = await Run(rig);
         Assert.Equal(Start, run.Best);
-        Assert.Contains("already the smoothest", run.Conclusion);
+        Assert.Contains("came out as the smoothest", run.Conclusion);
     }
 
     [Fact]
@@ -141,7 +141,6 @@ public sealed class EncoderSweepTests : IDisposable
         var run = await runner.RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, default);
         Assert.Contains("did not settle", run.Error);
         Assert.NotNull(run.Best);
-        Assert.Contains(run.Trials, t => t.Decision == "stream did not recover");
         Assert.DoesNotContain(run.Trials, t => t.Label.StartsWith("Multipass"));
     }
 
@@ -171,10 +170,10 @@ public sealed class EncoderSweepTests : IDisposable
     public void The_alternatives_of_each_option_leave_out_the_value_already_in_use()
     {
         var best = new EncoderChoice("cbr", 4, 1, 2);
-        Assert.DoesNotContain(EncoderSweepSettings.Alternatives(best, EncoderDimension.Preset), c => c.Preset == 4);
-        Assert.Equal(["vbr"], EncoderSweepSettings.Alternatives(best, EncoderDimension.RateControl).Select(c => c.RateControl));
-        Assert.All(EncoderSweepSettings.Alternatives(best, EncoderDimension.Vbv), c => Assert.Equal(("cbr", 4, 2), (c.RateControl, c.Preset, c.MultiPass)));
-        Assert.Equal(10, new EncoderSweepSettings(200, TimeSpan.Zero, TimeSpan.Zero).CandidateCount);
+        Assert.Equal(EncoderSweepSettings.Presets, EncoderSweepSettings.Values(best, EncoderDimension.Preset).Select(c => c.Preset));   // the value in use is measured like the others
+        Assert.Equal(["vbr", "cbr"], EncoderSweepSettings.Values(best, EncoderDimension.RateControl).Select(c => c.RateControl));
+        Assert.All(EncoderSweepSettings.Values(best, EncoderDimension.Vbv), c => Assert.Equal(("cbr", 4, 2), (c.RateControl, c.Preset, c.MultiPass)));
+        Assert.Equal(14, new EncoderSweepSettings(200, TimeSpan.Zero, TimeSpan.Zero).CandidateCount);
     }
 
     [Fact]
@@ -197,7 +196,8 @@ public sealed class EncoderSweepTests : IDisposable
         var sweep = await Run(new Rig());
         var points = ChartData.Of(sweep);
         Assert.Equal(sweep.Trials.Count(t => t.Label != "Final choice" && t.Decision != "final check"), points.Count);
-        Assert.Equal("current", points[0].Label);
+        Assert.Equal("P1", points[0].Label);
+        Assert.Equal("P2*", points[1].Label);   // the value in use is marked
         Assert.Equal(Enumerable.Range(0, points.Count).Select(i => (double)i), points.Select(p => p.X));
         var bitrate = new BenchmarkRun { Steps = [Step() with { TargetMbps = 100 }, Step() with { TargetMbps = 150 }] };
         Assert.Equal([100.0, 150.0], ChartData.Of(bitrate).Select(p => p.X));

@@ -20,7 +20,7 @@ public static class ChartData
     public static IReadOnlyList<ChartPoint> Of(EncoderSweepRun run) =>
         run.Trials.Where(t => t.Decision != "final check" && t.Label != "Final choice" && !t.Decision.StartsWith("not tried", StringComparison.Ordinal)).Select((t, i) => Point(i, ShortLabel(t), t.Step)).ToList();
 
-    public static string ShortLabel(EncoderTrial trial) => trial.Label == "Current settings" ? "current" : trial.Label.Replace("Preset ", "").Replace("Rate control ", "").Replace(" frame(s)", "").Replace("Multipass ", "MP ");
+    public static string ShortLabel(EncoderTrial trial) => trial.Label.Replace(" (current)", "*").Replace("Preset ", "").Replace("Rate control ", "").Replace(" frame(s)", "").Replace("Multipass ", "MP ");
 
     /// <summary>Okabe-Ito colours: distinguishable with the common kinds of colour blindness, and readable on light and dark backgrounds.</summary>
     public static readonly Color[] Palette =

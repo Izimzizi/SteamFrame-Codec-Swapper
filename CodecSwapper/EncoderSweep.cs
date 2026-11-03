@@ -21,13 +21,13 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
     public static readonly int[] Presets = [1, 2, 4, 6, 7], VbvFrames = [1, 2, 4, 8], MultiPasses = [0, 1, 2];
     public static readonly string[] RateControls = ["vbr", "cbr"];
 
-    /// <summary>Every value of one option, in the order they are tried.</summary>
-    public static IEnumerable<EncoderChoice> Alternatives(EncoderChoice best, EncoderDimension dimension) => dimension switch
+    /// <summary>Every value of one option, lightest first, built on <paramref name="best"/>: the value already in use is one of them and is measured like the others.</summary>
+    public static IEnumerable<EncoderChoice> Values(EncoderChoice best, EncoderDimension dimension) => dimension switch
     {
-        EncoderDimension.Preset => Presets.Where(v => v != best.Preset).Select(v => best with { Preset = v }),
-        EncoderDimension.RateControl => RateControls.Where(v => v != best.RateControl).Select(v => best with { RateControl = v }),
-        EncoderDimension.Vbv => VbvFrames.Where(v => v != best.VbvFrames).Select(v => best with { VbvFrames = v }),
-        _ => MultiPasses.Where(v => v != best.MultiPass).Select(v => best with { MultiPass = v }),
+        EncoderDimension.Preset => Presets.Select(v => best with { Preset = v }),
+        EncoderDimension.RateControl => RateControls.Select(v => best with { RateControl = v }),
+        EncoderDimension.Vbv => VbvFrames.Select(v => best with { VbvFrames = v }),
+        _ => MultiPasses.Select(v => best with { MultiPass = v }),
     };
 
     /// <summary>The value that makes a candidate heavier or riskier within its option (a bigger buffer, a higher preset or multipass); the rate control has no order.</summary>
@@ -39,10 +39,10 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
         _ => 0,
     };
 
-    public int CandidateCount => Enum.GetValues<EncoderDimension>().Sum(d => Alternatives(new EncoderChoice("vbr", 2, 2, 0), d).Count());
+    public int CandidateCount => Enum.GetValues<EncoderDimension>().Sum(d => Values(new EncoderChoice("vbr", 2, 2, 0), d).Count());
 
-    /// <summary>Each candidate is settled and measured, a better one is measured again before it is adopted, plus the baseline and the final check.</summary>
-    public TimeSpan Estimate => (Settle + Measure) * (CandidateCount + 1 + 3) + TimeSpan.FromSeconds(20);
+    /// <summary>Every value is settled and measured, a better one is measured again before it is kept, plus a few confirmations and the final check.</summary>
+    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 1) + TimeSpan.FromSeconds(20);
 }
 
 public sealed class EncoderTrial
@@ -131,99 +131,117 @@ public sealed class EncoderSweepRunner
     public async Task<EncoderSweepRun> RunAsync(EncoderSweepSettings settings, EncoderSweepRun run, EncoderChoice baseline, IProgress<EncoderSweepProgress>? progress, CancellationToken token)
     {
         run.ProbeMbps = settings.ProbeMbps; run.MeasureSeconds = (int)settings.Measure.TotalSeconds; run.Baseline = baseline;
-        var total = settings.CandidateCount + 4;
+        var total = settings.CandidateCount + 1;
         var done = 0;
-        var inner = new Progress<BenchmarkProgress>(p => { });
         EncoderChoice? bestSoFar = null;
         try
         {
-            run.Codec = await _measure.PrepareAsync([settings.ProbeMbps], inner, token);
+            run.Codec = await _measure.PrepareAsync([settings.ProbeMbps], new Progress<BenchmarkProgress>(p => { }), token);
 
             async Task<BenchmarkStep> Window(string label)
             {
                 var step = await _measure.MeasureStepAsync(settings.ProbeMbps, done, total, settings.Settle, settings.Measure, recheck: false,
-                    new Progress<BenchmarkProgress>(p => progress?.Report(new(p.Phase, label, done, total, p.PhaseSecondsLeft, null))), token);
+                    new Progress<BenchmarkProgress>(p => progress?.Report(new(p.Phase, label, done, total, p.PhaseSecondsLeft, null))), token, waitQuiet: true);
                 done++;
                 return step;
             }
 
-            await _apply(baseline, token);
-            var best = baseline;
-            bestSoFar = best;
-            var bestStep = await Window("current settings");
-            var trial = new EncoderTrial { Label = "Current settings", Choice = baseline, Step = bestStep, Decision = "starting point", Adopted = true };
-            run.Trials.Add(trial);
-            progress?.Report(new("done", trial.Label, done, total, 0, trial));
+            void Record(EncoderTrial trial)
+            {
+                run.Trials.Add(trial);
+                progress?.Report(new("done", trial.Label, done, total, 0, trial));
+            }
 
+            // The options are tested in order, one after the other, every value of each (the one in use included), lightest first. The first option is
+            // tried on the user's other options as they are; each later one on top of the best found so far.
+            var best = baseline;
             foreach (var dimension in Enum.GetValues<EncoderDimension>())
             {
+                EncoderChoice? leader = null;
+                BenchmarkStep? leaderStep = null;
                 var failedAt = int.MaxValue;
-                foreach (var candidate in EncoderSweepSettings.Alternatives(best, dimension).OrderBy(c => EncoderSweepSettings.Weight(c, dimension)).ToList())
+                foreach (var candidate in EncoderSweepSettings.Values(best, dimension).OrderBy(c => EncoderSweepSettings.Weight(c, dimension)).ToList())
                 {
                     token.ThrowIfCancellationRequested();
-                    // Heavier (a bigger buffer, a higher preset) than one that already failed is only going to be worse, and it would hammer the stream again.
-                    if (EncoderSweepSettings.Weight(candidate, dimension) > failedAt && dimension != EncoderDimension.RateControl)
+                    var label = Name(dimension, candidate) + (candidate == baseline || IsCurrentValue(dimension, candidate, baseline) ? " (current)" : "");
+                    // Heavier (a bigger buffer, a higher preset) than one that failed after a lighter one worked is only going to be worse, and would hammer the stream again.
+                    if (dimension != EncoderDimension.RateControl && EncoderSweepSettings.Weight(candidate, dimension) > failedAt)
                     {
-                        run.Trials.Add(new EncoderTrial { Label = Name(dimension, candidate), Choice = candidate, Step = bestStep with { Verdict = SweepVerdict.Failed, Reason = "not tried" }, Decision = "not tried: a lighter setting already failed" });
+                        Record(new EncoderTrial { Label = label, Choice = candidate, Step = (leaderStep ?? new BenchmarkStep(settings.ProbeMbps, 0, null, null, 0, 0, 0, 0, 0, null, null, null, 0, 0, SweepVerdict.Failed, "not tried", 1)) with { Verdict = SweepVerdict.Failed, Reason = "not tried" }, Decision = "not tried: a lighter setting already failed" });
                         continue;
                     }
                     await _apply(candidate, token);
-                    var step = await Window(candidate.Describe());
-                    var entry = new EncoderTrial { Label = Name(dimension, candidate), Choice = candidate, Step = step };
-                    if (step.Verdict == SweepVerdict.Failed || step.StreamResets > 0)
+                    var step = await Window(label);
+                    var entry = new EncoderTrial { Label = label, Choice = candidate, Step = step };
+                    if (step.MeanMbps is null)
                     {
-                        if (EncoderSweepSettings.Weight(candidate, dimension) > EncoderSweepSettings.Weight(best, dimension)) failedAt = Math.Min(failedAt, EncoderSweepSettings.Weight(candidate, dimension));
-                        // Back to the best settings, and wait for the stream to calm down: measuring the next candidate in the middle of a recovery storm measures the storm.
-                        await _apply(best, token);
-                        if (!await _measure.WaitQuietAsync(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(60), null, token))
-                        {
-                            entry.Decision = "stream did not recover";
-                            run.Trials.Add(entry);
-                            progress?.Report(new("done", entry.Label, done, total, 0, entry));
-                            throw new InvalidOperationException($"The stream did not settle after {candidate.Describe()} (it kept asking for recovery), so the sweep stopped to protect it. The best settings found so far are kept as the recommendation.");
-                        }
+                        // No video at all: the stream is gone (the headset disconnected or the encoder stalled). Nothing more can be measured, and the
+                        // best settings found before this candidate are still worth keeping.
+                        entry.Decision = "the stream was lost";
+                        Record(entry);
+                        throw new InvalidOperationException($"The stream was lost while trying {candidate.Describe()} (no video for the whole window), so the sweep stopped. The best settings found before that are kept as the recommendation; check the headset and SteamVR, and be careful with that option.");
                     }
-                    var order = EncoderRanking.Compare(step, bestStep);
-                    var better = order < 0 || order == 0 && EncoderRanking.Prefers(dimension, candidate, best) && !EncoderRanking.CostsMuchMore(step, bestStep);
-                    if (!better) entry.Decision = order > 0 ? "less smooth" : "no better";
+                    var rough = step.Verdict == SweepVerdict.Failed || step.StreamResets > 0;
+                    if (leader is null) { leader = candidate; leaderStep = step; entry.Decision = rough ? "first value tried (rough)" : "first value tried"; entry.Adopted = true; }
                     else
                     {
-                        // Looking better once may be noise on a link like Wi-Fi: it has to hold up in a second window to be kept.
-                        var again = await Window(candidate.Describe() + " (confirming)");
-                        var second = EncoderRanking.Compare(again, bestStep);
-                        var stays = second < 0 || second == 0 && EncoderRanking.Prefers(dimension, candidate, best) && !EncoderRanking.CostsMuchMore(again, bestStep);
-                        if (stays)
+                        var order = EncoderRanking.Compare(step, leaderStep!);
+                        var better = order < 0 || order == 0 && EncoderRanking.Prefers(dimension, candidate, leader) && !EncoderRanking.CostsMuchMore(step, leaderStep!);
+                        if (!better) entry.Decision = order > 0 ? "less smooth" : "no better";
+                        else
                         {
-                            entry.Decision = "kept as the new best"; entry.Adopted = true;
-                            best = candidate; bestStep = Worse(step, again); bestSoFar = best;
+                            // Looking better once may be noise on a link like Wi-Fi: it has to hold up in a second window to take the lead.
+                            var again = await Window(label + " (confirming)");
+                            var second = EncoderRanking.Compare(again, leaderStep!);
+                            if (second < 0 || second == 0 && EncoderRanking.Prefers(dimension, candidate, leader) && !EncoderRanking.CostsMuchMore(again, leaderStep!))
+                            {
+                                entry.Decision = "takes the lead"; entry.Adopted = true;
+                                leader = candidate; leaderStep = Worse(step, again);
+                            }
+                            else entry.Decision = "did not hold up when measured again";
                         }
-                        else entry.Decision = "did not hold up when measured again";
                     }
-                    run.Trials.Add(entry);
-                    progress?.Report(new("done", entry.Label, done, total, 0, entry));
+                    Record(entry);
+                    if (rough)
+                    {
+                        // A heavier value than a rough one is skipped only once a lighter value has worked.
+                        if (leader != candidate) failedAt = Math.Min(failedAt, EncoderSweepSettings.Weight(candidate, dimension));
+                        // Back to the best settings, and wait for the stream to calm down: measuring the next value in the middle of a recovery storm measures the storm.
+                        await _apply(leader ?? best, token);
+                        if (!await _measure.WaitQuietAsync(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(60), null, token))
+                            throw new InvalidOperationException($"The stream did not settle after {candidate.Describe()} (it kept asking for recovery), so the sweep stopped to protect it. The best settings found so far are kept as the recommendation.");
+                    }
+                    bestSoFar = leader;
                 }
+                best = leader ?? best;
+                bestSoFar = best;
                 // The next option is tried on top of the best so far, so the best has to be what is running.
                 await _apply(best, token);
             }
 
-            if (best != baseline)
-            {
-                await _apply(baseline, token);
-                var starting = await Window("current settings again");
-                await _apply(best, token);
-                var final = await Window("final choice");
-                var verdict = EncoderRanking.Compare(final, starting);
-                run.Trials.Add(new EncoderTrial { Label = "Current settings again", Choice = baseline, Step = starting, Decision = "final check" });
-                run.Trials.Add(new EncoderTrial { Label = "Final choice", Choice = best, Step = final, Decision = verdict <= 0 ? "at least as smooth as the current settings" : "worse than the current settings in the final check", Adopted = verdict <= 0 });
-                if (verdict > 0) best = baseline;
-            }
+            // One last window on the combination chosen, so the recommendation has been measured as a whole.
+            await _apply(best, token);
+            var final = await Window("final choice");
+            Record(new EncoderTrial { Label = "Final choice", Choice = best, Step = final, Decision = final.Verdict == SweepVerdict.Clean ? "the chosen combination, measured as a whole" : "the chosen combination was not clean as a whole: run again, or at a lower bitrate", Adopted = true });
             run.Best = best;
         }
         catch (OperationCanceledException) { run.Stopped = true; }
-        catch (InvalidOperationException error) { run.Error = error.Message; if (run.Error.StartsWith("The stream did not settle", StringComparison.Ordinal)) run.Best = bestSoFar; }
+        catch (InvalidOperationException error)
+        {
+            run.Error = error.Message;
+            if (run.Error.StartsWith("The stream did not settle", StringComparison.Ordinal) || run.Error.StartsWith("The stream was lost", StringComparison.Ordinal)) run.Best = bestSoFar;
+        }
         run.Conclusion = Conclude(run);
         return run;
     }
+
+    private static bool IsCurrentValue(EncoderDimension dimension, EncoderChoice candidate, EncoderChoice baseline) => dimension switch
+    {
+        EncoderDimension.Preset => candidate.Preset == baseline.Preset,
+        EncoderDimension.RateControl => candidate.RateControl == baseline.RateControl,
+        EncoderDimension.Vbv => candidate.VbvFrames == baseline.VbvFrames,
+        _ => candidate.MultiPass == baseline.MultiPass,
+    };
 
     private static string Name(EncoderDimension dimension, EncoderChoice choice) => dimension switch
     {
@@ -239,17 +257,25 @@ public sealed class EncoderSweepRunner
     {
         if (run.Trials.Count == 0) return run.Error ?? "Nothing was measured.";
         var text = new StringBuilder();
-        var baseline = run.Trials[0].Step;
+        var measured = run.Trials.Where(t => !t.Decision.StartsWith("not tried", StringComparison.Ordinal) && t.Label != "Final choice").ToList();
         if (run.Best is null) text.Append("The sweep ended before a recommendation could be made. ");
-        else if (run.Best == run.Baseline) text.Append($"Your current settings ({run.Baseline.Describe()}) were already the smoothest of those tried at {run.ProbeMbps} Mbps. ");
+        else if (run.Best == run.Baseline) text.Append($"Your current settings ({run.Baseline.Describe()}) came out as the smoothest of those tried at {run.ProbeMbps} Mbps. ");
         else
         {
-            var chosen = run.Trials.LastOrDefault(t => t.Adopted && t.Choice == run.Best)?.Step ?? baseline;
             text.Append($"Smoothest at {run.ProbeMbps} Mbps: {run.Best.Describe()} (now {run.Baseline.Describe()}). ");
-            text.Append($"Held-back time {baseline.HeldMsPerMinute:0} → {chosen.HeldMsPerMinute:0} ms/min, encode time {baseline.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} → {chosen.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} ms. ");
+            var final = run.Trials.LastOrDefault(t => t.Label == "Final choice")?.Step;
+            // The step measured with the user's own value of the first option, on their other options as they were, is the nearest thing to "before".
+            var before = measured.FirstOrDefault(t => t.Choice == run.Baseline)?.Step;
+            if (before is not null && final is not null)
+            {
+                text.Append($"Held-back time {before.HeldMsPerMinute:0} → {final.HeldMsPerMinute:0} ms/min, encode time {before.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} → {final.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} ms. ");
+                // Smoother can simply mean sending less (a one-frame buffer caps the bursts); say so, so the trade is a choice.
+                if (before.MeanMbps is double was && final.MeanMbps is double now && was > 0 && now < 0.9 * was)
+                    text.Append($"Note: it delivers {now:0} Mbps instead of {was:0} Mbps ({(1 - now / was) * 100:0}% less), so part of the smoothness comes from sending less. ");
+            }
         }
-        if (run.Trials.Where(t => !t.Decision.StartsWith("not tried", StringComparison.Ordinal)).All(t => t.Step.Verdict == SweepVerdict.Clean && t.Step.HeldFrames == 0))
-            text.Append($"Every setting streamed cleanly at {run.ProbeMbps} Mbps, so the differences are in picture quality and encode time, not smoothness. Run it at a higher bitrate (near where your link starts to fail) to tell them apart. ");
+        if (measured.Count > 0 && measured.All(t => t.Step.Verdict == SweepVerdict.Clean && t.Step.HeldFrames == 0))
+            text.Append($"Every setting streamed cleanly at {run.ProbeMbps} Mbps, so the differences are in picture quality and encode time, not smoothness. Run it at a higher bitrate (a little below where your link starts to fail) to tell them apart. ");
         if (run.Stopped) text.Append("The run was stopped early. ");
         if (run.Error is not null) text.Append(run.Error);
         return text.ToString().Trim();
