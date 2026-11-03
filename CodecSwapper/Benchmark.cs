@@ -74,13 +74,7 @@ public sealed class BenchmarkRunner
         var results = new List<SweepStepResult>();
         try
         {
-            var first = await _next(token);
-            if (!first.SteamVrRunning) throw new InvalidOperationException("SteamVR is not running. Start SteamVR and the stream, put a busy scene on the headset, then run the benchmark.");
-            run.Codec = first.Codec;
-            var quiet = await WaitUntilQuietAsync(first, progress, targets, token);
-            // The encoder reads as idle for a moment around a scene change or stream reset; give the video up to 30 s to show up before giving up.
-            for (var waited = 0; quiet.Mbps is null && waited < 30; waited++) quiet = await Next(token);
-            if (quiet.Mbps is null) throw new InvalidOperationException("No encoded video was seen for 30 s (" + (quiet.Note ?? (quiet.Fps is null ? "the encoder produced no frames" : "no bitrate was measured")) + "). Is the headset on and connected, and showing the scene?");
+            run.Codec = await PrepareAsync(targets, progress, token);
             var rechecks = 0;
             for (var index = 0; index < targets.Count; index++)
             {
@@ -106,6 +100,30 @@ public sealed class BenchmarkRunner
         run.BestCleanMbps = conclusion.BestCleanMbps;
         run.Conclusion = results.Count == 0 ? (run.Error ?? "Nothing was measured.") : conclusion.Summary + (run.Stopped ? " The run was stopped early." : "") + (run.Error is null ? "" : " " + run.Error);
         return run;
+    }
+
+    public Task ApplyTargetAsync(int mbps, CancellationToken token) => _apply(mbps, token);
+
+    /// <summary>Checks that a stream is running, waits for it to be quiet and for encoded video to appear; returns the codec name.</summary>
+    public async Task<string> PrepareAsync(IReadOnlyList<int> targets, IProgress<BenchmarkProgress>? progress, CancellationToken token)
+    {
+        var first = await _next(token);
+        if (!first.SteamVrRunning) throw new InvalidOperationException("SteamVR is not running. Start SteamVR and the stream, put a busy scene on the headset, then run the benchmark.");
+        var quiet = await WaitUntilQuietAsync(first, progress, targets, token);
+        // The encoder reads as idle for a moment around a scene change or stream reset; give the video up to 30 s to show up before giving up.
+        for (var waited = 0; quiet.Mbps is null && waited < 30; waited++) quiet = await Next(token);
+        if (quiet.Mbps is null) throw new InvalidOperationException("No encoded video was seen for 30 s (" + (quiet.Note ?? (quiet.Fps is null ? "the encoder produced no frames" : "no bitrate was measured")) + "). Is the headset on and connected, and showing the scene?");
+        return first.Codec;
+    }
+
+    /// <summary>One settle and measuring window at the current settings (judged as a step of <paramref name="target"/> Mbps); an unclean window is measured once more.</summary>
+    public async Task<BenchmarkStep> MeasureStepAsync(int target, int index, int count, TimeSpan settle, TimeSpan window, bool recheck, IProgress<BenchmarkProgress>? progress, CancellationToken token)
+    {
+        await Settle(target, index, count, settle, progress, token);
+        var result = await Measure(target, index, count, window, "measuring", progress, token);
+        if (recheck && LinkCapacitySweep.NeedsRecheck(result.Result, 0))
+            result = Combine(result, await Measure(target, index, count, window, "re-checking", progress, token));
+        return result.Step;
     }
 
     private async Task<StatsSample> Next(CancellationToken token)

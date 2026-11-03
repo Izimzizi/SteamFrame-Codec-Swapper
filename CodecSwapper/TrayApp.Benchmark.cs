@@ -17,8 +17,16 @@ public sealed partial class TrayApp
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException) { }
         var form = _benchmarkForm = new BenchmarkForm(patched);
         form.StartRequested += settings => _benchmarkTask = RunAsync(() => BenchmarkAsync(form, settings));
+        form.SweepRequested += (settings, useScene) => _benchmarkTask = RunAsync(() => EncoderSweepAsync(form, settings, useScene));
+        form.ApplyRequested += choice => _ = RunAsync(async () =>
+        {
+            try { await ApplyEncoderChoiceAsync(choice, CancellationToken.None); Balloon("Encoder settings", "Applied: " + choice.Describe(), ToolTipIcon.Info); }
+            catch (Exception error) when (error is IOException or InvalidOperationException) { Balloon("Encoder settings", "Not applied: " + error.Message, ToolTipIcon.Warning); }
+        });
         form.StopRequested += () => _benchmarkCancel?.Cancel();
         form.SetHistory(BenchmarkReport.LoadAll(AppData.BenchmarksDirectory));
+        form.SetSweepHistory(EncoderSweepReport.LoadAll(AppData.BenchmarksDirectory));
+        form.SetProbe(_controller.TargetMbps);
         form.Show();
     }
 
@@ -105,6 +113,53 @@ public sealed partial class TrayApp
         }
     }
 
+    /// <summary>What a run needs around it: the headset kept awake, SteamVR running and the test scene shown. Disposing releases them.</summary>
+    private sealed class BenchmarkEnvironment(BenchmarkScene? scene, FrameActivity.Keeper? awake) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            if (scene is not null) await scene.DisposeAsync();
+            if (awake is not null) await awake.DisposeAsync();
+        }
+    }
+
+    private async Task<BenchmarkEnvironment> StartEnvironmentAsync(BenchmarkForm form, bool useScene, List<string> setup, CancellationToken token)
+    {
+        FrameActivity.Keeper? awake = null;
+        BenchmarkScene? scene = null;
+        try
+        {
+            try
+            {
+                awake = new FrameActivity.Keeper(_preferences);
+                form.ShowStatus("Keeping the headset awake...");
+                await awake.StartAsync(token);
+                setup.Add("headset kept awake by the tray");
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException or System.Text.Json.JsonException or KeyNotFoundException)
+            {
+                TrayLog("Benchmark could not extend the headset activity: " + error.Message);
+                await awake!.DisposeAsync(); awake = null;
+                form.ShowStatus("The Frame could not be asked to stay awake; keep the headset awake yourself.");
+            }
+            await EnsureSteamVrAsync(form, token);
+            if (useScene)
+            {
+                setup.Add("test scene: built-in moving room");
+                scene = await StartSceneWhenHeadsetConnectsAsync(form, token);
+                TrayLog("Benchmark test scene running");
+            }
+            else setup.Add("test scene: own VR app");
+            return new BenchmarkEnvironment(scene, awake);
+        }
+        catch
+        {
+            if (scene is not null) await scene.DisposeAsync();
+            if (awake is not null) await awake.DisposeAsync();
+            throw;
+        }
+    }
+
     private async Task BenchmarkAsync(BenchmarkForm form, BenchmarkSettings settings)
     {
         var original = _controller.TargetMbps;
@@ -114,31 +169,10 @@ public sealed partial class TrayApp
         _statsService.BenchmarkActive = true;
         TrayLog($"Benchmark started: {settings.StartMbps}-{settings.CeilingMbps} Mbps in steps of {settings.StepMbps}, {settings.Measure.TotalSeconds:0} s each");
         string? saved = null;
-        BenchmarkScene? scene = null;
-        FrameActivity.Keeper? awake = null;
+        BenchmarkEnvironment? environment = null;
         try
         {
-            try
-            {
-                awake = new FrameActivity.Keeper(_preferences);
-                form.ShowStatus("Keeping the headset awake...");
-                await awake.StartAsync(cancel.Token);
-                run.Setup.Add("headset kept awake by the tray");
-            }
-            catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException or System.Text.Json.JsonException or KeyNotFoundException)
-            {
-                TrayLog("Benchmark could not extend the headset activity: " + error.Message);
-                await awake!.DisposeAsync(); awake = null;
-                form.ShowStatus("The Frame could not be asked to stay awake; keep the headset awake yourself.");
-            }
-            await EnsureSteamVrAsync(form, cancel.Token);
-            if (settings.UseScene)
-            {
-                run.Setup.Add("test scene: built-in moving room");
-                scene = await StartSceneWhenHeadsetConnectsAsync(form, cancel.Token);
-                TrayLog("Benchmark test scene running");
-            }
-            else run.Setup.Add("test scene: own VR app");
+            environment = await StartEnvironmentAsync(form, settings.UseScene, run.Setup, cancel.Token);
             var runner = new BenchmarkRunner(
                 // A session that cannot change the rate live would have to restart the stream; the benchmark never does that.
                 (mbps, token) => _controller.ChangeTargetAsync(mbps, () => throw new InvalidOperationException("This session cannot change the bitrate without restarting, so the benchmark cannot run. Restart SteamVR and try again."), _ => Task.FromResult(false), token),
@@ -152,8 +186,7 @@ public sealed partial class TrayApp
         }
         finally
         {
-            if (scene is not null) await scene.DisposeAsync();
-            if (awake is not null) await awake.DisposeAsync();
+            if (environment is not null) await environment.DisposeAsync();
             _statsService.BenchmarkActive = false;
             _benchmarkCancel = null;
             try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }
@@ -169,5 +202,65 @@ public sealed partial class TrayApp
         form.SetHistory(BenchmarkReport.LoadAll(AppData.BenchmarksDirectory).Where(r => r.At != run.At).ToList());
         form.ShowRun(run, saved);
         if (!_exiting) Balloon("Bitrate benchmark", run.Conclusion, run.Error is null ? ToolTipIcon.Info : ToolTipIcon.Warning);
+    }
+
+    /// <summary>Puts encoder options into force on the running stream, or says why that cannot be done live.</summary>
+    private async Task ApplyEncoderChoiceAsync(EncoderChoice choice, CancellationToken token)
+    {
+        _preferences.HookRateControl = choice.RateControl;
+        _preferences.HookPreset = choice.Preset;
+        _preferences.HookVbvFrames = choice.VbvFrames;
+        _preferences.HookMultiPass = choice.MultiPass;
+        await SaveEncoderOptionsAsync();
+        if (!await _controller.ApplyEncoderOptionsAsync(token))
+            throw new InvalidOperationException("The encoder options cannot be applied to the running stream (is SteamVR streaming?).");
+    }
+
+    private async Task EncoderSweepAsync(BenchmarkForm form, EncoderSweepSettings settings, bool useScene)
+    {
+        var original = _controller.TargetMbps;
+        var baseline = EncoderChoice.From(_preferences);
+        var run = new EncoderSweepRun { At = DateTimeOffset.Now, Setup = BenchmarkSetup() };
+        using var cancel = _benchmarkCancel = new CancellationTokenSource();
+        form.SetRunning(true);
+        _statsService.BenchmarkActive = true;
+        TrayLog($"Encoder sweep started at {settings.ProbeMbps} Mbps, {settings.Measure.TotalSeconds:0} s per window, from {baseline.Describe()}");
+        string? saved = null;
+        BenchmarkEnvironment? environment = null;
+        try
+        {
+            environment = await StartEnvironmentAsync(form, useScene, run.Setup, cancel.Token);
+            var measure = new BenchmarkRunner(
+                (mbps, token) => _controller.ChangeTargetAsync(mbps, () => throw new InvalidOperationException("This session cannot change the bitrate without restarting, so the sweep cannot run. Restart SteamVR and try again."), _ => Task.FromResult(false), token),
+                NextBenchmarkSampleAsync);
+            await measure.ApplyTargetAsync(settings.ProbeMbps, cancel.Token);
+            await new EncoderSweepRunner(measure, ApplyEncoderChoiceAsync).RunAsync(settings, run, baseline, new Progress<EncoderSweepProgress>(form.ShowSweepProgress), cancel.Token);
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException)
+        {
+            run.Error = error.Message;
+            run.Conclusion = EncoderSweepRunner.Conclude(run);
+        }
+        finally
+        {
+            if (environment is not null) await environment.DisposeAsync();
+            _statsService.BenchmarkActive = false;
+            _benchmarkCancel = null;
+            // The user's own encoder options and bitrate come back whatever happened; the recommendation is applied only on request.
+            try { await ApplyEncoderChoiceAsync(baseline, CancellationToken.None); }
+            catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder sweep", $"Your encoder options could not be put back ({baseline.Describe()}): {error.Message}", ToolTipIcon.Warning); }
+            try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }
+            catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder sweep", $"Your bitrate target could not be put back to {original} Mbps: {error.Message}", ToolTipIcon.Warning); }
+        }
+        if (run.Trials.Count > 0)
+        {
+            try { saved = EncoderSweepReport.Save(AppData.BenchmarksDirectory, run); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Balloon("Encoder sweep", "The results could not be saved: " + error.Message, ToolTipIcon.Warning); }
+        }
+        TrayLog("Encoder sweep ended: " + run.Conclusion);
+        form.SetRunning(false);
+        form.SetSweepHistory(EncoderSweepReport.LoadAll(AppData.BenchmarksDirectory).Where(r => r.At != run.At).ToList());
+        form.ShowSweep(run, saved);
+        if (!_exiting) Balloon("Encoder sweep", run.Conclusion, run.Error is null ? ToolTipIcon.Info : ToolTipIcon.Warning);
     }
 }
