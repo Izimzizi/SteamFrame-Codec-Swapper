@@ -14,6 +14,7 @@ public static class AppData
     public static string TrayKey => Path.Combine(Root, "frame_ed25519");
     public static string DiagnosticsDirectory => Path.Combine(Root, "Diagnostics");
     public static string LogsDirectory => Path.Combine(Root, "Logs");
+    public static string BenchmarksDirectory => Path.Combine(Root, "Benchmarks");
 
     public static bool IsInside(string path) =>
         Path.GetFullPath(path).StartsWith(Root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);

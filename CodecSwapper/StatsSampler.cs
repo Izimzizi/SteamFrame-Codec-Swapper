@@ -6,7 +6,12 @@ namespace CodecSwapper;
 public sealed record EncoderConfigSample(double AverageMbps, double MaxMbps, string RateControl, uint VbvSize, string Preset, double? Fps);
 
 /// <summary>Frames the link or the PC held back or dropped. Totals count from when sampling started.</summary>
-public sealed record HealthReading(long HeldTotal, long HeldLastMinute, long LinkStalls, bool CompositorAvailable, long CompositorDropped, long CompositorLate, long CompositorReprojected);
+public sealed record HealthReading(long HeldTotal, long HeldLastMinute, long LinkStalls, bool CompositorAvailable, long CompositorDropped, long CompositorLate, long CompositorReprojected)
+{
+    /// <summary>Total milliseconds the sender held frames back, and the stream-reset requests, as the logs count them (only their differences mean anything).</summary>
+    public double HeldMsTotal { get; init; }
+    public long StreamResets { get; init; }
+}
 
 /// <summary>One reading. A missing rate is a gap, never a zero or the requested target.</summary>
 public sealed record StatsSample(DateTimeOffset At, double? Mbps, double? Fps, string Codec, bool CodecVerified, string CodecDetail,

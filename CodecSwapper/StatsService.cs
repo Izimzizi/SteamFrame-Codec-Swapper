@@ -10,7 +10,7 @@ public sealed class StatsService : IDisposable
     private readonly Func<TraySnapshot> _tray;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 1000 };
     private RunLog? _log;
-    private bool _sampling, _viewing, _hud;
+    private bool _sampling, _viewing, _hud, _benchmark;
 
     public StatsService(StatsSampler sampler, Func<TraySnapshot> tray)
     {
@@ -36,6 +36,13 @@ public sealed class StatsService : IDisposable
         set { _hud = value; Update(); }
     }
 
+    /// <summary>A benchmark is running: keep sampling for it.</summary>
+    public bool BenchmarkActive
+    {
+        get => _benchmark;
+        set { _benchmark = value; Update(); }
+    }
+
     /// <summary>Starts a new CSV in the logs folder; the header lines describe the setup being measured.</summary>
     public string StartRecording(IEnumerable<string> header)
     {
@@ -55,7 +62,7 @@ public sealed class StatsService : IDisposable
 
     private void Update()
     {
-        var wanted = _viewing || _hud || _log is not null;
+        var wanted = _viewing || _hud || _benchmark || _log is not null;
         if (wanted == _timer.Enabled) return;
         _timer.Enabled = wanted;
         if (wanted) _ = TickAsync();
@@ -63,7 +70,7 @@ public sealed class StatsService : IDisposable
 
     private async Task TickAsync()
     {
-        if (_sampling || !(_viewing || _hud || _log is not null)) return;
+        if (_sampling || !(_viewing || _hud || _benchmark || _log is not null)) return;
         _sampling = true;
         try
         {

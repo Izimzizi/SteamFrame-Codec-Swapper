@@ -30,6 +30,7 @@ public sealed partial class TrayApp : ApplicationContext
     private readonly ToolStripLabel _bitrateLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
     private readonly ToolStripLabel _widthLabel = new() { AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 22), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0) };
     private readonly ToolStripMenuItem _statsItem = new("Stream monitor");
+    private readonly ToolStripMenuItem _benchmarkItem = new("Bitrate benchmark…");
     private readonly ToolStripMenuItem _startup = new("Start with Windows");
     private readonly ToolStripMenuItem _password = new("Frame password");
     private readonly ToolStripMenuItem _setPassword = new("Set or change…");
@@ -106,6 +107,7 @@ public sealed partial class TrayApp : ApplicationContext
         _useH264.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? Task.CompletedTask : ArmAsync());
         _useDefault.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : Task.CompletedTask);
         _statsItem.Click += (_, _) => ToggleStats();
+        _benchmarkItem.Click += (_, _) => ShowBenchmark();
         _record.Click += (_, _) => ToggleRecording();
         _resetCounters.Click += (_, _) => _healthReader?.ResetCounters();
         _startup.Click += (_, _) => { try { StartupRegistration.Set(!StartupRegistration.IsEnabled); } catch (Exception error) { Balloon("Start with Windows", error.Message, ToolTipIcon.Error); } };
@@ -131,7 +133,7 @@ public sealed partial class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _widthLabel, _widthSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _record, _resetCounters, hudMenu, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _widthLabel, _widthSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _benchmarkItem, _record, _resetCounters, hudMenu, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
@@ -452,6 +454,8 @@ public sealed partial class TrayApp : ApplicationContext
     {
         if (_exiting) return;
         _exiting = true;
+        _benchmarkCancel?.Cancel();
+        if (_benchmarkTask is { IsCompleted: false } running) await Task.WhenAny(running, Task.Delay(TimeSpan.FromSeconds(8)));   // the run puts the user's bitrate target back first
         if (_controller.Current.IsArmed)
         {
             // H.264 is kept only while the tray is running and armed. If the Frame cannot be reached right now the
@@ -471,6 +475,7 @@ public sealed partial class TrayApp : ApplicationContext
         _icon.Visible = false;
         _icon.Dispose();
         _stats.Dispose();
+        _benchmarkForm?.Dispose();
         _statsService.Dispose();
         SystemEvents.SessionEnding -= OnSessionEnding;
         ExitThread();

@@ -55,6 +55,9 @@ public sealed class HealthReader
         _rawHeld = health?.SenderThrottleEvents ?? 0;
         _rawDropped = composite?.DroppedFrames ?? 0; _rawLate = composite?.LateRenderFrames ?? 0; _rawReprojected = composite?.ReprojectedFrames ?? 0;
         return new(Since(_rawHeld, ref _baseHeld), health?.ThrottleEventsLastMinute ?? 0, health?.LinkStalls ?? 0,
-            composite is { Available: true }, Since(_rawDropped, ref _baseDropped), Since(_rawLate, ref _baseLate), Since(_rawReprojected, ref _baseReprojected));
+            composite is { Available: true }, Since(_rawDropped, ref _baseDropped), Since(_rawLate, ref _baseLate), Since(_rawReprojected, ref _baseReprojected))
+        {
+            HeldMsTotal = health?.SenderThrottleMs ?? 0, StreamResets = health?.StreamResetRequests ?? 0
+        };
     }
 }

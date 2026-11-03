@@ -58,6 +58,7 @@ Download `CodecSwapper.zip` from the [Releases page](https://github.com/Izimzizi
 | **Bitrate slider** | 25–500 Mbps, applied when you let go. SteamVR's own slider and the tray follow each other. |
 | **Encoder settings** | Rate control, preset and VBV, for both codecs. |
 | **Stream monitor** | The monitor. Double-clicking the tray icon opens/closes it. |
+| **Bitrate benchmark…** | Steps the bitrate target upward and judges each step (see below). |
 | **Record stream log** | One CSV row per second, setup in `#` header lines. |
 | **Reset dropped-frame counters** | Starts the held-back, dropped and late frame totals again from zero (the HUD has the same as *Reset frame counters*). The "last 60 s" figure is not affected. |
 | **VR HUD** | Show or hide the HUD (on by default), attach left/right, reset position. |
@@ -70,6 +71,12 @@ Download `CodecSwapper.zip` from the [Releases page](https://github.com/Izimzizi
 ### Stream monitor
 
 Codec (verified against the hook, `?` if it is not), encoded Mbps and its 60-second average, FPS (one decimal), target, "encoder asked for X avg / Y peak (rate control, preset, VBV, fps)", **encoded size** (the width and height the encoder was actually set up with, read from the encoder itself, shown before the encode time), **encode time** (average and worst milliseconds per frame over the last second, measured inside the hook from submitting a picture to its bitstream being ready; this is how to see the effect of the preset), frames the sender held back (total and last 60 s) plus PC dropped/late frames, encode errors, a status note and the 60-second graph. While the monitor or HUD is open on **stock HEVC** the tray injects a read-only probe into `vrserver` to read encoder statistics; it is not injected otherwise.
+
+### Bitrate benchmark
+
+Put a demanding scene on the headset, open **Bitrate benchmark…**, choose the range (default 100 Mbps up to 500, or up to 232 while the bitrate patch is not installed, in steps of 50) and press Start. The benchmark uses the codec and encoder settings that are selected at that moment. It raises the bitrate target live, one step at a time: it first waits for a quiet stream (no stream-reset requests for 10 s), then per step lets the stream settle for 6 s and measures for 15, 24 or 45 s. For each step the table shows the encoded rate and FPS actually delivered, frames the sender held back per minute, PC dropped and late frames, encode time (average and worst), average quantizer and a verdict (Clean, Marginal, Failed) with the reason. The verdicts use the same limits as the stream advisor: held frames per minute scaled to the refresh rate, stream-reset requests and encoder errors; a step that is not clean is measured once more before it counts. The run stops after a failed step (or two marginal ones in a row) unless you untick that option, and **Stop** ends it early with the steps measured so far. Your own bitrate target is put back afterwards, and the tray never restarts the stream for the benchmark: if the session cannot change the rate live, the run does not start.
+
+Each run is saved to `%LOCALAPPDATA%\CodecSwapper\Benchmarks` as `.json` and `.csv`. **Compare with an earlier run** shows the difference in setup, in the highest clean target and, target by target, in held frames, PC drops, encode time and verdict, so a change of rate control, preset, codec or width can be judged by running the benchmark again. The scene decides how much load there is: a quiet scene makes high targets look clean because the encoder produces less than the target (the conclusion says so).
 
 ### VR HUD
 
