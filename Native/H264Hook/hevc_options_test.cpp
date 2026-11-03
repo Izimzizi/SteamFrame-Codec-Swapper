@@ -88,6 +88,20 @@ int main(){
  CHECK(StockInitialize(nullptr,&init)==0);
  CHECK(seen_config.rcParams.rateControlMode==NV_ENC_PARAMS_RC_VBR&&seen_config.rcParams.maxBitRate==400000000&&seen_config.rcParams.vbvBufferSize==300000000/90);
 
+ // The driver's per-frame requests dip far below the target (some frames ask for 30 Mbps): the encoder is held to the recent highest, on a copy, and a lower target is followed.
+ write_options("enabled=1\nrate_control=vbr\npreset=2\nvbv=2\n");Sleep(600);
+ { NV_ENC_CONFIG low=config;low.rcParams.averageBitRate=30000000;low.rcParams.maxBitRate=80000000;
+   NV_ENC_RECONFIGURE_PARAMS dip{};dip.reInitEncodeParams=init;dip.reInitEncodeParams.encodeConfig=&low;
+   CHECK(StockReconfigure(nullptr,&dip)==0&&seen_config.rcParams.averageBitRate==300000000&&seen_config.rcParams.maxBitRate>=300000000);
+   CHECK(low.rcParams.averageBitRate==30000000);
+   { uint32_t average=0,peak=0;StockRequestedRate(&average,&peak);CHECK(average==300000000); }
+   Sleep(2300);
+   CHECK(StockReconfigure(nullptr,&dip)==0&&seen_config.rcParams.averageBitRate==30000000); }   // the old target has aged out
+ write_options("enabled=1\nrate_control=vbr\npreset=2\nvbv=2\nhold_target=0\n");Sleep(600);
+ { NV_ENC_CONFIG high=config;NV_ENC_CONFIG low=config;low.rcParams.averageBitRate=30000000;
+   NV_ENC_RECONFIGURE_PARAMS up{},down{};up.reInitEncodeParams=init;up.reInitEncodeParams.encodeConfig=&high;down.reInitEncodeParams=init;down.reInitEncodeParams.encodeConfig=&low;
+   CHECK(StockReconfigure(nullptr,&up)==0&&StockReconfigure(nullptr,&down)==0&&seen_config.rcParams.averageBitRate==30000000); }   // hold_target=0 passes the driver's request on
+
  // Switched off again: untouched.
  write_options("enabled=0\nrate_control=cbr\n");Sleep(600);
  CHECK(StockInitialize(nullptr,&init)==0);

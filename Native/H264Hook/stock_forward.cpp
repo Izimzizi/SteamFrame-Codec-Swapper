@@ -37,7 +37,7 @@ int StockOpen(const void* open_params,void** encoder){
 // The file is checked about twice a second, so a change reaches the encoder SteamVR reconfigures before its next frame. Nothing is
 // touched unless enabled=1; the driver's own parameters are copied, never edited in place.
 namespace {
-struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int multipass=0;};
+struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int multipass=0;bool hold=true;};
 HevcOptions options;ULONGLONG options_checked=0;
 int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
 int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
@@ -63,6 +63,7 @@ void load_options(){
   else if(sscanf_s(line,"preset=%d",&number)==1&&number>=1&&number<=7)options.preset=number;
   else if(sscanf_s(line,"vbv=%d",&number)==1&&number>=1&&number<=16)options.vbv=number;
   else if(sscanf_s(line,"multipass=%d",&number)==1&&number>=0&&number<=2)options.multipass=number;
+  else if(sscanf_s(line,"hold_target=%d",&number)==1)options.hold=number!=0;
  }
  fclose(file);
 }
@@ -70,11 +71,22 @@ GUID preset_guid(int preset){
  switch(preset){case 1:return NV_ENC_PRESET_P1_GUID;case 3:return NV_ENC_PRESET_P3_GUID;case 4:return NV_ENC_PRESET_P4_GUID;
   case 5:return NV_ENC_PRESET_P5_GUID;case 6:return NV_ENC_PRESET_P6_GUID;case 7:return NV_ENC_PRESET_P7_GUID;default:return NV_ENC_PRESET_P2_GUID;}
 }
+// SteamVR's driver asks for a different average bitrate on almost every frame (its own estimate of what each frame's link can carry, with some frames at 30 Mbps),
+// so the encoder averages far below the user's target on a busy scene. The highest average asked for in the last one to two seconds is the target the user set;
+// holding the encoder to it keeps the average at the target, and a lowered target is followed within two seconds.
+uint32_t held_average(uint32_t asked){
+ static ULONGLONG window_start=0;static uint32_t current=0,previous=0;
+ const ULONGLONG now=GetTickCount64();
+ if(!window_start||now-window_start>=1000){previous=(now-window_start<2000)?current:0;current=0;window_start=now;}
+ if(asked>current)current=asked;
+ return current>previous?current:previous;
+}
 // Applies the options to a copy of the driver's init parameters and its encode configuration; returns whether it changed anything.
 bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool){
  load_options();if(!options.enabled||!source.encodeConfig)return false;
  init=source;config=*source.encodeConfig;init.encodeConfig=&config;
  auto& rc=config.rcParams;
+ if(options.hold&&rc.averageBitRate){const uint32_t held=held_average(rc.averageBitRate);if(held>rc.averageBitRate){const double spread=rc.maxBitRate>rc.averageBitRate?(double)rc.maxBitRate/rc.averageBitRate:1.15;rc.averageBitRate=held;rc.maxBitRate=(uint32_t)(held*spread);}}
  rc.rateControlMode=options.cbr?NV_ENC_PARAMS_RC_CBR:NV_ENC_PARAMS_RC_VBR;
  if(options.cbr&&rc.averageBitRate)rc.maxBitRate=rc.averageBitRate;
  const uint32_t fps=init.frameRateDen?init.frameRateNum/init.frameRateDen:90;
@@ -124,6 +136,7 @@ int StockReconfigure(void* encoder,void* params){
  if(original)note_request(original->reInitEncodeParams.encodeConfig);
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
  if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
+  requested_average=config.rcParams.averageBitRate;requested_peak=config.rcParams.maxBitRate;   // the monitor shows what the encoder is really held to
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;
   if(signature_changed){copy.resetEncoder=1;copy.forceIDR=1;}
   const auto result=table.nvEncReconfigureEncoder(encoder,&copy);
