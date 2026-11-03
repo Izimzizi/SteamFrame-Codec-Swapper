@@ -18,7 +18,7 @@ public static class ChartData
 
     /// <summary>An encoder sweep as one point per candidate, in the order they were tried (the final checks are left out).</summary>
     public static IReadOnlyList<ChartPoint> Of(EncoderSweepRun run) =>
-        run.Trials.Where(t => t.Decision != "final check" && t.Label != "Final choice").Select((t, i) => Point(i, ShortLabel(t), t.Step)).ToList();
+        run.Trials.Where(t => t.Decision != "final check" && t.Label != "Final choice" && !t.Decision.StartsWith("not tried", StringComparison.Ordinal)).Select((t, i) => Point(i, ShortLabel(t), t.Step)).ToList();
 
     public static string ShortLabel(EncoderTrial trial) => trial.Label == "Current settings" ? "current" : trial.Label.Replace("Preset ", "").Replace("Rate control ", "").Replace(" frame(s)", "").Replace("Multipass ", "MP ");
 

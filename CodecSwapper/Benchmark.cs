@@ -102,6 +102,27 @@ public sealed class BenchmarkRunner
         return run;
     }
 
+    /// <summary>A window with at least this many stream recovery requests per second, after <see cref="StormSeconds"/> seconds, is cut short.</summary>
+    public const double StormResetsPerSecond = 3, StormSeconds = 3;
+
+    /// <summary>Waits until the stream has asked for no recovery for <paramref name="quiet"/>; false when it has not calmed down within <paramref name="limit"/>.</summary>
+    public async Task<bool> WaitQuietAsync(TimeSpan quiet, TimeSpan limit, Action<double>? secondsLeft, CancellationToken token)
+    {
+        var first = await Next(token);
+        var begun = first.At;
+        var lastResets = first.Health?.StreamResets ?? 0;
+        var quietSince = first.At;
+        while (true)
+        {
+            var sample = await Next(token);
+            var resets = sample.Health?.StreamResets ?? 0;
+            if (resets != lastResets) { lastResets = resets; quietSince = sample.At; }
+            secondsLeft?.Invoke(Math.Max(0, (quiet - (sample.At - quietSince)).TotalSeconds));
+            if (sample.At - quietSince >= quiet) return true;
+            if (sample.At - begun >= limit) return false;
+        }
+    }
+
     public Task ApplyTargetAsync(int mbps, CancellationToken token) => _apply(mbps, token);
 
     /// <summary>Checks that a stream is running, waits for it to be quiet and for encoded video to appear; returns the codec name.</summary>
@@ -174,6 +195,9 @@ public sealed class BenchmarkRunner
             var left = window - meter.Elapsed;
             progress?.Report(new(index, count, target, phase, Math.Max(0, left.TotalSeconds), null));
             if (left <= TimeSpan.Zero) break;
+            // A recovery storm (the receiver asking for a new picture several times a second) only gets worse the longer it is measured, and each new picture is
+            // a large frame that adds to the load: the window ends early and counts as failed.
+            if (meter.Elapsed.TotalSeconds >= StormSeconds && meter.ResetsSoFar >= StormResetsPerSecond * meter.Elapsed.TotalSeconds) break;
         }
         return meter.Finish(target);
     }
@@ -195,6 +219,9 @@ public sealed class BenchmarkRunner
         private bool _timed;
 
         public TimeSpan Elapsed => _first is null || _last is null ? TimeSpan.Zero : _last.At - _first.At;
+
+        /// <summary>Stream recovery requests since the window began.</summary>
+        public long ResetsSoFar => _first?.Health is { } from && _last?.Health is { } to ? Delta(from.StreamResets, to.StreamResets) : 0;
 
         public void Add(StatsSample sample)
         {

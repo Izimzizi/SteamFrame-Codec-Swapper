@@ -16,13 +16,16 @@ public sealed class EncoderSweepTests : IDisposable
     {
         public EncoderChoice Choice = Start;
         public int Second;
-        public long Held;
+        public long Held, Resets;
+        public Func<EncoderChoice, int> ResetsPerSecond = _ => 0;
+        public bool Stuck;
         public double HeldMs;
         public readonly List<EncoderChoice> Applied = [];
         public Func<EncoderChoice, int> HeldPerSecond = _ => 0;
         public Func<EncoderChoice, double> EncodeMs = c => 3 + c.Preset * 0.5;
 
         public Task Apply(EncoderChoice choice, CancellationToken token) { Choice = choice; Applied.Add(choice); return Task.CompletedTask; }
+        public bool StuckStorm;
 
         public Task<StatsSample> Next(CancellationToken token)
         {
@@ -30,7 +33,8 @@ public sealed class EncoderSweepTests : IDisposable
             Second++;
             var held = HeldPerSecond(Choice);
             Held += held; HeldMs += held * 12;
-            var health = new HealthReading(Held, 0, 0, true, 0, 0, 0) { HeldMsTotal = HeldMs, StreamResets = 0 };
+            Resets += StuckStorm ? 5 : ResetsPerSecond(Choice);
+            var health = new HealthReading(Held, 0, 0, true, 0, 0, 0) { HeldMsTotal = HeldMs, StreamResets = Resets };
             return Task.FromResult(new StatsSample(T0.AddSeconds(Second), 200, 72, "HEVC", true, "", true, 0, null)
             {
                 Health = health, Timing = new EncodeTiming("HEVC", 72, EncodeMs(Choice), EncodeMs(Choice) + 1)
@@ -114,6 +118,31 @@ public sealed class EncoderSweepTests : IDisposable
         var run = await runner.RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, default);
         Assert.Empty(rig.Applied);
         Assert.Contains("SteamVR is not running", run.Error);
+    }
+
+    [Fact]
+    public async Task A_recovery_storm_cuts_the_window_short_and_heavier_settings_than_the_one_that_failed_are_not_tried()
+    {
+        var rig = new Rig { ResetsPerSecond = c => c.VbvFrames == 4 ? 6 : 0 };
+        var run = await Run(rig);
+        var four = run.Trials.Single(t => t.Label == "VBV 4 frame(s)");
+        Assert.True(four.Step.Seconds < 8, "the storm window ended early");
+        Assert.Equal(SweepVerdict.Failed, four.Step.Verdict);
+        Assert.StartsWith("not tried", run.Trials.Single(t => t.Label == "VBV 8 frame(s)").Decision);
+        Assert.NotEqual(4, run.Best!.VbvFrames);
+        Assert.NotEqual(8, run.Best.VbvFrames);
+    }
+
+    [Fact]
+    public async Task A_stream_that_stays_in_recovery_stops_the_sweep_and_keeps_the_best_found_so_far()
+    {
+        var rig = new Rig();
+        var runner = new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next), async (choice, token) => { await rig.Apply(choice, token); if (choice.VbvFrames == 4) rig.StuckStorm = true; });
+        var run = await runner.RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, default);
+        Assert.Contains("did not settle", run.Error);
+        Assert.NotNull(run.Best);
+        Assert.Contains(run.Trials, t => t.Decision == "stream did not recover");
+        Assert.DoesNotContain(run.Trials, t => t.Label.StartsWith("Multipass"));
     }
 
     private static BenchmarkStep Step(SweepVerdict verdict = SweepVerdict.Clean, double heldMsPerMinute = 0, double seconds = 24, double? encodeMax = 6, double fps = 72, long resets = 0, long drops = 0) =>
