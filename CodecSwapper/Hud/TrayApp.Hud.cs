@@ -91,6 +91,7 @@ public sealed partial class TrayApp
                 _hudSettings.Watch = message.Settings.Watch;
                 _hudSettings.FadeAngle = message.Settings.FadeAngle;
                 _hudSettings.FadeDistanceCm = message.Settings.FadeDistanceCm;
+                _hudSettings.GuideDone = message.Settings.GuideDone;
                 SaveHud();
                 break;
             case "action":

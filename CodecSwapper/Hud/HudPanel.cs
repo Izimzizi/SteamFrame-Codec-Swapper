@@ -133,7 +133,7 @@ public static class HudPanel
         {
             buttons.Add(new("page:close", new(Width - margin - 120, 10, 120, 40), "Back", false, true));
             Row(84, 40, [("set:autoshow:on", "On", view.AutoShow, true), ("set:autoshow:off", "Off", !view.AutoShow, true)]);
-            Row(158, 40, [("set:style:watch", "Watch icon", view.Watch, true), ("set:style:panel", "Always visible", !view.Watch, true)]);
+            Row(158, 40, [("set:style:watch", "Watch & HUD", view.Watch, true), ("set:style:panel", "HUD only", !view.Watch, true)]);
             if (!view.Watch) Row(232, 40, [("set:expand:dashboard", "Dashboard opens", !view.ExpandOnHover, true), ("set:expand:hover", "Laser points at it", view.ExpandOnHover, true)]);
             buttons.Add(new("slide:angle", FadeAngleArea, "", false, true));
             buttons.Add(new("slide:dist", FadeDistanceArea, "", false, true));
@@ -207,8 +207,8 @@ public static class HudPanel
         else if (settingsPage)
         {
             g.DrawString("Show the HUD when SteamVR starts", normal, white, 22, 56);
-            g.DrawString("HUD style (Watch: a round icon on the controller opens it)", normal, white, 22, 130);
-            if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the Always visible style.", small, grey, 22, 204);
+            g.DrawString("HUD style (Watch & HUD: a round watch on the controller opens it)", normal, white, 22, 130);
+            if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the HUD only style.", small, grey, 22, 204);
             else g.DrawString("Show the controls when", normal, white, 22, 206);
             g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. Turn it back on in the\ntray menu: VR HUD > Show HUD on a controller.", small, grey, 22, 540);
         }
