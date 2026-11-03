@@ -45,7 +45,7 @@ int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=f
 void trace(const char* format,...){
  char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
  const std::string path=std::string(base)+"\\CodecSwapper\\hevc-hook.log";
- WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExA(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>100000)DeleteFileA(path.c_str());
+ WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExA(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>1000000)MoveFileExA(path.c_str(),(path+".1").c_str(),MOVEFILE_REPLACE_EXISTING);
  FILE* file=nullptr;if(fopen_s(&file,path.c_str(),"a")||!file)return;
  SYSTEMTIME now{};GetLocalTime(&now);fprintf(file,"%02d:%02d:%02d.%03d ",now.wHour,now.wMinute,now.wSecond,now.wMilliseconds);
  va_list args;va_start(args,format);vfprintf(file,format,args);va_end(args);fputc('\n',file);fclose(file);
@@ -123,7 +123,8 @@ static void note_rate_control(const NV_ENC_CONFIG* config,const char* where){
 static void note_request(const NV_ENC_CONFIG* config,const char* where){
  if(!config||!config->rcParams.averageBitRate)return;
  note_rate_control(config,where);
- if(config->rcParams.averageBitRate!=requested_average)trace("%s: the driver asks for avg=%u peak=%u (bits per second)",where,config->rcParams.averageBitRate,config->rcParams.maxBitRate);
+ // The driver changes its request about every frame, so only the output line (once a second) reports it; the log must not fill with it.
+ if(!requested_average)trace("%s: the driver first asks for avg=%u peak=%u (bits per second)",where,config->rcParams.averageBitRate,config->rcParams.maxBitRate);
  requested_average=config->rcParams.averageBitRate;requested_peak=config->rcParams.maxBitRate;
 }
 int StockInitialize(void* encoder,void* init){
