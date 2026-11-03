@@ -95,6 +95,13 @@ class RootSessionTests(unittest.TestCase):
                 self.assertEqual(session.opens(), [{'pid': 123, 'comm': 'hardware_decode', 'device': '/dev/video0'}])
 
 
+class ClientUsersTests(unittest.TestCase):
+    def test_only_the_steam_link_client_blocks_the_swap_not_a_screen_recorder(self):
+        users = [{'pid': 1, 'comm': 'vrlinkrunthread', 'device': '/dev/video22'}, {'pid': 2, 'comm': 'framecorder', 'device': '/dev/video23'}]
+        self.assertEqual(session.client_users(users), [users[0]])
+        self.assertEqual(session.client_users([users[1]]), [])
+
+
 class KeepModeTests(unittest.TestCase):
     def adoptable(self, staged):
         (staged / 'prepared.json').write_text(json.dumps({'client_stock_sha256': STOCK_SHA, 'client_h264_sha256': H264_SHA}))

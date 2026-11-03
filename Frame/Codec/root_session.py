@@ -39,6 +39,10 @@ def opens():
      names.append({'pid':int(p.name),'comm':(p/'comm').read_text().strip(),'device':target});break
   except (OSError,ProcessLookupError):pass
  return names
+def client_users(users):
+ """Only the Steam Link client itself (vrlink, vrlinkrunthread) has to be off the decoder before the client file is swapped or the stream is judged;
+ another program that happens to hold a decoder or encoder node (a screen recorder on the Frame) does not stop the swap."""
+ return [u for u in users if u['comm'].startswith('vrlink')]
 def code_segments(data):
  """The executable loadable segments of an AArch64 ELF64 file as (file offset, virtual address, size)."""
  if data[:6]!=b'\x7fELF\x02\x01' or struct.unpack_from('<H',data,18)[0]!=183:raise RuntimeError('Expected AArch64 ELF64 client')
@@ -78,7 +82,8 @@ def inventory():
  try:
   node=video_path();driver=(node/'driver').resolve().name if (node/'driver').exists() else None;nodes=decoder_nodes()
  except RuntimeError:driver,nodes=None,[]   # an unfamiliar kernel: decoder users cannot be listed, the client patch does not need them
- return {'uid':os.geteuid(),'release':os.uname().release,'open_decoder_users':opens() if nodes else [],'decoder_nodes':nodes,
+ users=opens() if nodes else []
+ return {'uid':os.geteuid(),'release':os.uname().release,'open_decoder_users':client_users(users),'other_decoder_users':[u for u in users if u not in client_users(users)],'decoder_nodes':nodes,
   'current_driver':driver,'client_trial_active':client_active,
   'client_sha256':hashlib.sha256(data).hexdigest(),'client_kind':client_kind(data),'client_codec':client_codec}
 
@@ -117,7 +122,7 @@ def rollback():
 
 def client_h264():
  global client_active,client_codec
- busy=opens()
+ busy=client_users(opens())
  if busy:raise RuntimeError('Stop stream before client trial (decoder held by '+', '.join(sorted({u['comm'] for u in busy}))+')')
  source=RUN/'client-h264.bin'
  if not stock_sha or digest(CLIENT)!=stock_sha or digest(source)!=h264_sha:raise RuntimeError('Client fingerprint changed')
@@ -161,7 +166,7 @@ def client_stock():
     stopped.append(int(process.name))
   except (OSError,ProcessLookupError):pass
  started=time.monotonic()
- while (opens() or any(pathlib.Path('/proc',str(pid)).exists() for pid in stopped)) and time.monotonic()-started<5:time.sleep(.1)
+ while (client_users(opens()) or any(pathlib.Path('/proc',str(pid)).exists() for pid in stopped)) and time.monotonic()-started<5:time.sleep(.1)
  result=run(['umount',str(CLIENT)])
  if result['code']:raise RuntimeError('Temporary client unmount failed')
  client_active=False
