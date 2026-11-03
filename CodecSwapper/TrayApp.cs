@@ -67,8 +67,8 @@ public sealed partial class TrayApp : ApplicationContext
         _setup = new SetupCheck(new ProcessRunner(), _preferences, () => _preferences.SaveAsync(AppData.SettingsPath), new CredentialVault(new FrameCredentialStore()), SetupEnvironment.ForThisPc(_paths, Path.Combine(AppContext.BaseDirectory, "CodecLab")), _patch);
         _statsService = new StatsService(new StatsSampler(() => _probe.GetSnapshotAsync(), () => _probe.StartAsync(), health: (_healthReader = new HealthReader(_paths, AppData.DiagnosticsDirectory)).ReadAsync, monitorAllowed: () => !_controller.Current.IsArmed, timing: now => EncodeTiming.Read(AppData.EncodeTimingPath, now)), () => _controller.Current);
         _stats = new StatsForm(_statsService);
-        _menuSlider = new MenuBitrateSlider(_bitrateLabel, mbps => RunAsync(() => ChangeTargetAsync(mbps)));
-        _widthSlider = new MenuWidthSlider(_widthLabel, width => RunAsync(() => ChangeWidthAsync(width)));
+        _menuSlider = new MenuBitrateSlider(_bitrateLabel, mbps => RunLatestAsync(() => ChangeTargetAsync(mbps)));
+        _widthSlider = new MenuWidthSlider(_widthLabel, width => RunLatestAsync(() => ChangeWidthAsync(width)));
         BuildMenu();
         SystemEvents.SessionEnding += OnSessionEnding;
         _controller.Changed += Render;
@@ -405,11 +405,34 @@ public sealed partial class TrayApp : ApplicationContext
     private async Task RunAsync(Func<Task> action)
     {
         if (_busy) { Balloon("SteamFrame Codec Swapper", "Another action is still running.", ToolTipIcon.Warning); return; }
+        await ExecuteAsync(action);
+    }
+
+    // A slider or setting changed while an action runs is not an error: the newest choice waits (a newer one replaces it) and is applied when the running action ends.
+    private Func<Task>? _latest;
+
+    private async Task RunLatestAsync(Func<Task> action)
+    {
+        if (_busy) { _latest = action; return; }
+        await ExecuteAsync(action);
+    }
+
+    private async Task ExecuteAsync(Func<Task> action)
+    {
         _busy = true;
         try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception error) { Balloon("SteamFrame Codec Swapper", error.Message, ToolTipIcon.Error); }
         finally { _busy = false; }
+        while (_latest is { } next && !_exiting)
+        {
+            _latest = null;
+            _busy = true;
+            try { await next(); }
+            catch (OperationCanceledException) { }
+            catch (Exception error) { Balloon("SteamFrame Codec Swapper", error.Message, ToolTipIcon.Error); }
+            finally { _busy = false; }
+        }
     }
 
     private async Task ExitAsync()

@@ -230,9 +230,9 @@ public sealed partial class TrayApp
             _ => Task.CompletedTask
         });
 
-        public Task SetBitrateAsync(int mbps) => app.RunAsync(() => app.ChangeTargetAsync(mbps));
+        public Task SetBitrateAsync(int mbps) => app.RunLatestAsync(() => app.ChangeTargetAsync(mbps));
 
-        public Task SetWidthAsync(int width) => app.RunAsync(async () => { await app.ChangeWidthAsync(StreamWidth.Snapped(width)); app._hudWidth = StreamWidth.Snapped(width); });
+        public Task SetWidthAsync(int width) => app.RunLatestAsync(async () => { await app.ChangeWidthAsync(StreamWidth.Snapped(width)); app._hudWidth = StreamWidth.Snapped(width); });
 
         public Task ResetCountersAsync() { app._healthReader?.ResetCounters(); return Task.CompletedTask; }
 
@@ -257,13 +257,17 @@ public sealed partial class TrayApp
             app._preferences.HookVbvFrames = vbvFrames;
         });
 
-        private Task ApplyEncoderAsync(Action change) => app.RunAsync(async () =>
+        // The choice is recorded at once, so quick changes to different options all count; one apply (the latest) follows the running action.
+        private Task ApplyEncoderAsync(Action change)
         {
-            if (app.WarnWithoutDriver()) return;
+            if (app.WarnWithoutDriver()) return Task.CompletedTask;
             change();
+            return app.RunLatestAsync(async () =>
+        {
             await app.SaveEncoderOptionsAsync();
             try { if (!await app._controller.ApplyEncoderOptionsAsync()) HudLog("Encoder options saved; there is no live session to apply them to."); }
             catch (Exception error) when (error is not OperationCanceledException) { HudLog("Encoder options not applied live: " + error.Message); }
-        });
+            });
+        }
     }
 }
