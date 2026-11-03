@@ -38,6 +38,8 @@ public static class HudPanel
     public static readonly Rectangle SliderArea = new(20, 400, Width - 40, 66);
     /// <summary>The stream width slider, under the bitrate one: 0 in the view means the width is not known yet and the slider is inactive.</summary>
     public static readonly Rectangle WidthArea = new(20, 470, Width - 40, 66);
+    /// <summary>The top of SteamLink's own width slider, marked on the HUD's slider.</summary>
+    public const int WidthMarker = 1344;
     public static readonly int[] WidthChoices = [..Enumerable.Range(0, (StreamWidth.Maximum - StreamWidth.Minimum) / StreamWidth.Step + 1).Select(i => StreamWidth.Minimum + i * StreamWidth.Step)];
     private const int TrackLeft = 44, TrackRight = Width - 44, TrackY = 446;
 
@@ -64,8 +66,8 @@ public static class HudPanel
          (8, "8 frames — smoother still, more latency"), (16, "16 frames — loosest buffer")];
 
     public static readonly (int Value, string Short, string Text)[] MultiPasses =
-        [(0, "Off", "Off — one pass, the least encode time (default)"), (1, "1/4 res", "Quarter resolution first pass — closer to the bitrate target, a little more encode time"),
-         (2, "Full res", "Full resolution first pass — the closest to the target, the most encode time")];
+        [(0, "Off", "Off — one pass, the least encode time (default)"), (1, "1/4 res", "Quarter resolution first pass — closer to the target, more encode time"),
+         (2, "Full res", "Full resolution first pass — closest to the target, the most encode time")];
 
     /// <summary>The bitrate a laser at panel x selects: whole steps of <see cref="BitrateStep"/> between the tray's limits, pulled onto every 50 Mbps when close to one (as the tray's slider does).</summary>
     public static int SliderValue(float x)
@@ -82,7 +84,7 @@ public static class HudPanel
         TrackLeft + (TrackRight - TrackLeft) * (Math.Clamp(mbps, TrayController.MinimumMbps, TrayController.MaximumMbps) - TrayController.MinimumMbps)
         / (float)(TrayController.MaximumMbps - TrayController.MinimumMbps);
 
-    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", "mp" => "Multipass", _ => "" };
+    public static string MenuTitle(string menu) => menu switch { "rc" => "Rate control", "preset" => "Encoder preset", "vbv" => "VBV buffer", "mp" => "Multipass — takes effect when the stream restarts", _ => "" };
 
     public static IReadOnlyList<HudButton> Layout(HudView view)
     {
@@ -209,7 +211,7 @@ public static class HudPanel
         foreach (var button in Layout(view))
         {
             if (button.Id == "slider") { DrawSlider(g, view, hover == "slider", normal, white, accent); continue; }
-            if (button.Id == "wslider") { DrawChoiceSlider(g, button.Bounds, "Stream width", view.WidthPx > 0 ? $"{view.WidthPx} px" : "—", WidthChoices, StreamWidth.Snapped(view.WidthPx), hover == button.Id, normal, white, accent); continue; }
+            if (button.Id == "wslider") { DrawChoiceSlider(g, button.Bounds, "Stream width", view.WidthPx > 0 ? $"{view.WidthPx} px" : "—", WidthChoices, StreamWidth.Snapped(view.WidthPx), hover == button.Id, normal, white, accent, WidthMarker); continue; }
             if (button.Id == "slide:angle") { DrawChoiceSlider(g, button.Bounds, "Fade out when facing more than this away from me", view.FadeAngle == 0 ? "Off" : $"{view.FadeAngle}°", FadeAngleChoices, view.FadeAngle, hover == button.Id, normal, white, accent); continue; }
             if (button.Id == "slide:dist") { DrawChoiceSlider(g, button.Bounds, "Fade out beyond this distance from the headset", view.FadeDistance == 0 ? "Off" : $"{view.FadeDistance / 100.0:0.00} m", FadeDistanceChoices, view.FadeDistance, hover == button.Id, normal, white, accent); continue; }
             var hot = hover == button.Id && button.Enabled;
@@ -281,7 +283,7 @@ public static class HudPanel
         g.DrawString(view.Notice, font, brush, new RectangleF(area.Left + 12, area.Top + 8, area.Width - 24, area.Height - 16), format);
     }
 
-    private static void DrawChoiceSlider(Graphics g, Rectangle area, string label, string shown, int[] choices, int value, bool hot, Font font, Brush text, Color accent)
+    private static void DrawChoiceSlider(Graphics g, Rectangle area, string label, string shown, int[] choices, int value, bool hot, Font font, Brush text, Color accent, int? marked = null)
     {
         g.DrawString(label, font, text, area.Left + 2, area.Top);
         using var right = new StringFormat { Alignment = StringAlignment.Far, FormatFlags = StringFormatFlags.NoWrap };
@@ -289,6 +291,16 @@ public static class HudPanel
         var y = area.Top + 46;
         using var rail = new Pen(Color.FromArgb(70, 76, 90), 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         g.DrawLine(rail, TrackLeft, y, TrackRight, y);
+        if (marked is { } mark && choices.Contains(mark))
+        {
+            // The top of SteamVR's own slider, marked like the 350 on the bitrate slider.
+            var at = ChoiceX(choices, mark);
+            using var markerPen = new Pen(Color.FromArgb(255, 200, 80), 3);
+            g.DrawLine(markerPen, at, y - 15, at, y + 15);
+            using var markerBrush = new SolidBrush(Color.FromArgb(255, 200, 80));
+            using var centred = new StringFormat { Alignment = StringAlignment.Center };
+            g.DrawString(mark.ToString(), font, markerBrush, at, y - 40, centred);
+        }
         var x = ChoiceX(choices, value);
         using var filled = new Pen(accent, 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         g.DrawLine(filled, TrackLeft, y, x, y);

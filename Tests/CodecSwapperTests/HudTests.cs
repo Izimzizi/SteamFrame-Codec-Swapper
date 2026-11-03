@@ -615,7 +615,7 @@ public sealed class HudControllerTests
         rig.Press("mp:2");
         Assert.Equal("", rig.Hud.OpenMenu);
         Assert.Equal(["multipass 2"], rig.Actions.Calls);
-        Assert.Equal("Multipass", HudPanel.MenuTitle("mp"));
+        Assert.StartsWith("Multipass", HudPanel.MenuTitle("mp"));
     }
 
     [Fact]
