@@ -108,8 +108,21 @@ static void note_output(uint32_t bytes){
  window_start=now;window_bytes=0;window_frames=0;window_largest=0;
 }
 // Notes the driver's request; every change of the average is written to the log, so a ceiling the driver puts on it can be seen.
+// The rest of the rate control the driver sets (quality limits, target quality, passes, adaptive quantization) is written when it changes,
+// since any of them can hold the encoder under the bitrate it was asked for.
+static void note_rate_control(const NV_ENC_CONFIG* config,const char* where){
+ const auto& rc=config->rcParams;
+ char text[400];
+ snprintf(text,sizeof text,"mode=%d minQP=%d/%u,%u,%u maxQP=%d/%u,%u,%u targetQuality=%u.%u multiPass=%d aq=%u(%u) temporalAq=%u lookahead=%u(%u) peak/avg=%.1f gop=%u",
+  static_cast<int>(rc.rateControlMode),rc.enableMinQP?1:0,rc.minQP.qpInterP,rc.minQP.qpInterB,rc.minQP.qpIntra,rc.enableMaxQP?1:0,rc.maxQP.qpInterP,rc.maxQP.qpInterB,rc.maxQP.qpIntra,
+  rc.targetQuality,rc.targetQualityLSB,static_cast<int>(rc.multiPass),rc.enableAQ?1:0,rc.aqStrength,rc.enableTemporalAQ?1:0,rc.enableLookahead?1:0,rc.lookaheadDepth,
+  rc.averageBitRate?static_cast<double>(rc.maxBitRate)/rc.averageBitRate:0.0,config->gopLength);
+ static char last[400]={};
+ if(strcmp(last,text)){trace("%s: the driver's rate control: %s",where,text);memcpy(last,text,sizeof last);}
+}
 static void note_request(const NV_ENC_CONFIG* config,const char* where){
  if(!config||!config->rcParams.averageBitRate)return;
+ note_rate_control(config,where);
  if(config->rcParams.averageBitRate!=requested_average)trace("%s: the driver asks for avg=%u peak=%u (bits per second)",where,config->rcParams.averageBitRate,config->rcParams.maxBitRate);
  requested_average=config->rcParams.averageBitRate;requested_peak=config->rcParams.maxBitRate;
 }
