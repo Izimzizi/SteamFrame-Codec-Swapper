@@ -74,19 +74,21 @@ GUID preset_guid(int preset){
 // SteamVR's driver asks for a different average bitrate on almost every frame (its own estimate of what each frame's link can carry, with some frames at 30 Mbps),
 // so the encoder averages far below the user's target on a busy scene. The highest average asked for in the last one to two seconds is the target the user set;
 // holding the encoder to it keeps the average at the target, and a lowered target is followed within two seconds.
-uint32_t held_average(uint32_t asked){
- static ULONGLONG window_start=0;static uint32_t current=0,previous=0;
+struct Asked{uint32_t average=0,peak=0;};
+Asked held_request(uint32_t average,uint32_t peak){
+ static ULONGLONG window_start=0;static Asked current,previous;
  const ULONGLONG now=GetTickCount64();
- if(!window_start||now-window_start>=1000){previous=(now-window_start<2000)?current:0;current=0;window_start=now;}
- if(asked>current)current=asked;
- return current>previous?current:previous;
+ if(!window_start||now-window_start>=1000){previous=(window_start&&now-window_start<2000)?current:Asked{};current=Asked{};window_start=now;}
+ if(average>current.average)current={average,peak};
+ // The peak that goes with the average is the one the driver itself asked for alongside it, so it is always a pair the encoder has accepted.
+ return current.average>=previous.average?current:previous;
 }
 // Applies the options to a copy of the driver's init parameters and its encode configuration; returns whether it changed anything.
 bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool){
  load_options();if(!options.enabled||!source.encodeConfig)return false;
  init=source;config=*source.encodeConfig;init.encodeConfig=&config;
  auto& rc=config.rcParams;
- if(options.hold&&rc.averageBitRate){const uint32_t held=held_average(rc.averageBitRate);if(held>rc.averageBitRate){const double spread=rc.maxBitRate>rc.averageBitRate?(double)rc.maxBitRate/rc.averageBitRate:1.15;rc.averageBitRate=held;rc.maxBitRate=(uint32_t)(held*spread);}}
+ if(options.hold&&rc.averageBitRate){const Asked held=held_request(rc.averageBitRate,rc.maxBitRate);if(held.average>rc.averageBitRate){rc.averageBitRate=held.average;rc.maxBitRate=held.peak;}}
  rc.rateControlMode=options.cbr?NV_ENC_PARAMS_RC_CBR:NV_ENC_PARAMS_RC_VBR;
  if(options.cbr&&rc.averageBitRate)rc.maxBitRate=rc.averageBitRate;
  const uint32_t fps=init.frameRateDen?init.frameRateNum/init.frameRateDen:90;
