@@ -40,7 +40,7 @@ namespace {
 struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;};
 HevcOptions options;ULONGLONG options_checked=0;
 int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
-int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
+int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;uint32_t applied_vbv_bits=0;
 // Diagnosis of the live HEVC route: what SteamVR's reconfigures carry and what was done with them (hevc-hook.log in the tray's data folder).
 void trace(const char* format,...){
  char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
@@ -82,6 +82,7 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  // one is named on every call, not only when the encoder is created.
  init.presetGUID=preset_guid(options.preset);
  // A changed rate control, buffer or preset needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
+ applied_vbv_bits=config.rcParams.vbvBufferSize;
  const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000;
  applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
@@ -93,6 +94,19 @@ void StockEncodeSize(uint32_t* width,uint32_t* height){*width=initialized_width;
 // What the driver's encoder was last asked for (average and peak bits per second): the driver's own request, as the monitor shows it.
 static uint32_t requested_average=0,requested_peak=0;
 void StockRequestedRate(uint32_t* average,uint32_t* peak){*average=requested_average;*peak=requested_peak;}
+// Once a second the log gets what the encoder really produced next to what it was asked for, so a shortfall can be told from the driver
+// lowering its request: frames, megabits per second, average and largest frame, and the buffer the options gave the encoder.
+static ULONGLONG window_start=0;static uint64_t window_bytes=0,window_frames=0;static uint32_t window_largest=0;
+static void note_output(uint32_t bytes){
+ const ULONGLONG now=GetTickCount64();if(!window_start)window_start=now;
+ window_bytes+=bytes;++window_frames;if(bytes>window_largest)window_largest=bytes;
+ if(now-window_start<1000)return;
+ const double seconds=(now-window_start)/1000.0;
+ trace("output: %llu frames, %.1f Mbps, frame avg %.0f KB / largest %.0f KB; asked avg=%.1f Mbps peak=%.1f Mbps, buffer %u bits (%.1f KB)",
+  static_cast<unsigned long long>(window_frames),window_bytes*8/seconds/1e6,window_bytes/1024.0/window_frames,window_largest/1024.0,
+  requested_average/1e6,requested_peak/1e6,applied_vbv_bits,applied_vbv_bits/8192.0);
+ window_start=now;window_bytes=0;window_frames=0;window_largest=0;
+}
 // Notes the driver's request; every change of the average is written to the log, so a ceiling the driver puts on it can be seen.
 static void note_request(const NV_ENC_CONFIG* config,const char* where){
  if(!config||!config->rcParams.averageBitRate)return;
@@ -173,7 +187,7 @@ int StockLock(void* encoder,void* params,void* output){
  auto* caller=static_cast<NV_ENC_LOCK_BITSTREAM*>(params);
  auto copy=*caller;copy.outputBitstream=output;
  const auto result=table.nvEncLockBitstream(encoder,&copy);
- if(result==NV_ENC_SUCCESS){const auto virtual_output=caller->outputBitstream;*caller=copy;caller->outputBitstream=virtual_output;}
+ if(result==NV_ENC_SUCCESS){const auto virtual_output=caller->outputBitstream;*caller=copy;caller->outputBitstream=virtual_output;note_output(copy.bitstreamSizeInBytes);}
  return status(result);
 }
 int StockUnlock(void* encoder,void* output){return ready?status(table.nvEncUnlockBitstream(encoder,output)):NV_ENC_ERR_INVALID_PTR;}
