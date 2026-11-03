@@ -310,7 +310,7 @@ public static class HudPanel
         using var head = new Font("Segoe UI Semibold", 24f, GraphicsUnit.Pixel);
         using var text = new Font("Segoe UI", 21f, GraphicsUnit.Pixel);
         using var goldBrush = new SolidBrush(gold);
-        g.DrawString("Welcome to SteamFrame", head, goldBrush, 24, 18);
+        g.DrawString("Welcome to CodecSwapper", head, goldBrush, 24, 18);
         g.DrawString("Point your laser at this watch and click it\nto open the panel.", text, Brushes.White, new RectangleF(24, 60, GuideBubbleWidth - 48, 80));
         return bitmap;
     }
