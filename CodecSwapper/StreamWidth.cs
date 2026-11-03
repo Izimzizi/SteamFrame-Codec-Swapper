@@ -11,10 +11,10 @@ namespace CodecSwapper;
 /// </summary>
 public static class StreamWidth
 {
-    public const int Minimum = 960, Maximum = 2048, Step = 32, H264Limit = 1024;
+    public const int Minimum = 960, Maximum = 2048, Step = 64, H264Limit = 1024;
     private const string Key = "streamFormatWidth", Automatic = "automaticStreamFormatWidth";
 
-    /// <summary>Rounds to the multiple of 32 the driver requires, inside the slider's range.</summary>
+    /// <summary>Rounds to the multiple of 64 (the driver needs 32; SteamLink steps by 64), inside the slider's range.</summary>
     public static int Snapped(int width) => Math.Clamp((int)Math.Round(width / (double)Step) * Step, Minimum, Maximum);
 
     /// <summary>Where the hook keeps the user's own width while H.264 has lowered it ("width automatic").</summary>

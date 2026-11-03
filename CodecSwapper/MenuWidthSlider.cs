@@ -2,7 +2,7 @@ namespace CodecSwapper;
 
 /// <summary>
 /// A stream-width slider that sits inside the tray menu, under the bitrate one. It runs from 1344 (the most SteamLink's own slider
-/// reaches) up to <see cref="StreamWidth.Maximum"/> in steps of 32 pixels, shows the value being dragged and applies it on release.
+/// reaches) up to <see cref="StreamWidth.Maximum"/> in steps of 64 pixels, shows the value being dragged and applies it on release.
 /// </summary>
 public sealed class MenuWidthSlider : ToolStripControlHost
 {

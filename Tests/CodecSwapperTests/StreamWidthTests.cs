@@ -12,14 +12,14 @@ public sealed class StreamWidthTests : IDisposable
     [Theory]
     [InlineData(960, 960)]
     [InlineData(500, 960)]
-    [InlineData(1000, 992)]
+    [InlineData(1000, 1024)]
     [InlineData(1344, 1344)]
     [InlineData(1360, 1344)]
-    [InlineData(1361, 1376)]
+    [InlineData(1376, 1408)]
     [InlineData(1920, 1920)]
     [InlineData(2040, 2048)]
     [InlineData(5000, 2048)]
-    public void Widths_are_multiples_of_32_inside_the_slider_range(int input, int expected) =>
+    public void Widths_are_multiples_of_64_inside_the_slider_range(int input, int expected) =>
         Assert.Equal(expected, StreamWidth.Snapped(input));
 
     [Fact]
@@ -28,7 +28,7 @@ public sealed class StreamWidthTests : IDisposable
         Assert.Equal(960, StreamWidth.Minimum);
         Assert.Equal(2048, StreamWidth.Maximum);            // 4 x 2048 = 8192 rows, the most NVENC HEVC takes
         Assert.Equal(1024, StreamWidth.H264Limit);
-        Assert.Equal(0, StreamWidth.Minimum % 32); Assert.Equal(0, StreamWidth.Maximum % 32);
+        Assert.Equal(0, StreamWidth.Minimum % 64); Assert.Equal(0, StreamWidth.Maximum % 64); Assert.Equal(64, StreamWidth.Step);
     }
 
     [Fact]
