@@ -75,7 +75,9 @@ public sealed class BenchmarkRunner
             if (!first.SteamVrRunning) throw new InvalidOperationException("SteamVR is not running. Start SteamVR and the stream, put a busy scene on the headset, then run the benchmark.");
             run.Codec = first.Codec;
             var quiet = await WaitUntilQuietAsync(first, progress, targets, token);
-            if (quiet.Mbps is null) throw new InvalidOperationException("No video stream is running. Put the headset on, start a busy scene, then run the benchmark.");
+            // The encoder reads as idle for a moment around a scene change or stream reset; give the video up to 30 s to show up before giving up.
+            for (var waited = 0; quiet.Mbps is null && waited < 30; waited++) quiet = await Next(token);
+            if (quiet.Mbps is null) throw new InvalidOperationException("No encoded video was seen for 30 s (" + (quiet.Note ?? (quiet.Fps is null ? "the encoder produced no frames" : "no bitrate was measured")) + "). Is the headset on and connected, and showing the scene?");
             var rechecks = 0;
             for (var index = 0; index < targets.Count; index++)
             {

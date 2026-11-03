@@ -98,7 +98,7 @@ public sealed class BenchmarkTests : IDisposable
         var rig = new Rig { Mbps = target => null };
         var run = await Run(rig, Quick(100, 100));
         Assert.Empty(rig.Applied);
-        Assert.Contains("No video stream", run.Error);
+        Assert.Contains("No encoded video", run.Error);
     }
 
     [Fact]
