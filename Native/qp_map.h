@@ -46,8 +46,8 @@ inline bool ApplyQualityMap(const int8_t* source, int8_t* destination, uint32_t 
         } else if (peripheralTile) {
             if (!observed.peripheralTiles) observed.peripheralMinDelta = observed.peripheralMaxDelta = value;
             else {
-                observed.peripheralMinDelta = (std::min)(observed.peripheralMinDelta, value);
-                observed.peripheralMaxDelta = (std::max)(observed.peripheralMaxDelta, value);
+                observed.peripheralMinDelta = std::min(observed.peripheralMinDelta, value);
+                observed.peripheralMaxDelta = std::max(observed.peripheralMaxDelta, value);
             }
             ++observed.peripheralTiles;
             observed.peripheralChangedTiles += value != original;
@@ -56,8 +56,8 @@ inline bool ApplyQualityMap(const int8_t* source, int8_t* destination, uint32_t 
         } else {
             if (!observed.centerTiles) observed.centerMinDelta = observed.centerMaxDelta = value;
             else {
-                observed.centerMinDelta = (std::min)(observed.centerMinDelta, value);
-                observed.centerMaxDelta = (std::max)(observed.centerMaxDelta, value);
+                observed.centerMinDelta = std::min(observed.centerMinDelta, value);
+                observed.centerMaxDelta = std::max(observed.centerMaxDelta, value);
             }
             ++observed.centerTiles;
             observed.centerChangedTiles += value != original;

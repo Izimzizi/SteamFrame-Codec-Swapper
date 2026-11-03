@@ -23,9 +23,6 @@ public sealed class HudSettings
     public int FadeAngle { get; set; }
     /// <summary>They also fade out beyond this distance (centimetres) from the headset; 0 means any distance.</summary>
     public int FadeDistanceCm { get; set; }
-    /// <summary>The foveation quality bias, added to SteamVR's own quality map for both codecs (lower is sharper): the gaze region (-20..12) and the periphery (-12..31). 0 and 0 leave the map as SteamVR made it.</summary>
-    public int FoveationGaze { get; set; }
-    public int FoveationPeriphery { get; set; }
     /// <summary>"left" or "right".</summary>
     public string Hand { get; set; } = "left";
     /// <summary>The HUD's pose in its controller's space as a row-major 3x4; null means the default placement.</summary>
@@ -84,8 +81,6 @@ public sealed class HudSettings
             if (loaded is null) return new();
             loaded.Enabled = loaded.AutoShow;
             loaded.PanelOpen = false;
-            loaded.FoveationGaze = Math.Clamp(loaded.FoveationGaze, -20, 12);
-            loaded.FoveationPeriphery = Math.Clamp(loaded.FoveationPeriphery, -12, 31);
             loaded.FadeAngle = Math.Clamp(loaded.FadeAngle, 0, 180);
             loaded.FadeDistanceCm = loaded.FadeDistanceCm <= 0 ? 0 : Math.Clamp(loaded.FadeDistanceCm, 35, 100);
             loaded.Hand = loaded.IsLeft ? "left" : "right";

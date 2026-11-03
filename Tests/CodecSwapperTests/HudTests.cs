@@ -334,38 +334,6 @@ public sealed class HudControllerTests
     }
 
     [Fact]
-    public void The_foveation_page_sliders_set_the_gaze_and_periphery_bias_and_reset_clears_them()
-    {
-        var rig = new Rig();
-        rig.Tick(); rig.Press("page:quality");
-        Assert.Equal("quality", rig.Hud.Page);
-        float Y(System.Drawing.Rectangle area) => HudPanel.Height - (area.Top + 46);
-        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseDown, 4, HudPanel.ChoiceX(HudPanel.GazeBiasChoices, -4), Y(HudPanel.GazeBiasArea)));
-        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseUp, 4, 0, 0)); rig.Tick();
-        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseDown, 4, HudPanel.ChoiceX(HudPanel.PeripheralBiasChoices, 8), Y(HudPanel.PeripheralBiasArea)));
-        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseUp, 4, 0, 0)); rig.Tick();
-        Assert.Equal(-4, rig.Settings.FoveationGaze);
-        Assert.Equal(8, rig.Settings.FoveationPeriphery);
-        rig.Press("fov:reset");
-        Assert.Equal(0, rig.Settings.FoveationGaze);
-        Assert.Equal(0, rig.Settings.FoveationPeriphery);
-    }
-
-    [Fact]
-    public void The_bias_file_holds_the_offsets_and_disappears_when_both_are_zero()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "foveation-" + Guid.NewGuid().ToString("N") + ".txt");
-        try
-        {
-            FoveationBias.Write(path, -4, 8);
-            Assert.Equal("gaze=-4\nperiphery=8\n", File.ReadAllText(path));
-            FoveationBias.Write(path, 0, 0);
-            Assert.False(File.Exists(path));
-        }
-        finally { File.Delete(path); }
-    }
-
-    [Fact]
     public void The_HUD_also_fades_out_beyond_the_chosen_distance_and_stays_when_fading_is_off()
     {
         var rig = new Rig();

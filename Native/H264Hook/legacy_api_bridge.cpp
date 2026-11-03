@@ -13,7 +13,6 @@
 #include "legacy_api_bridge.h"
 #include "legacy_picture.h"
 #include "stock_forward.h"
-#include "foveation_bias.h"
 
 #ifndef ENCODE_TIMING_WINDOW_MS
 #define ENCODE_TIMING_WINDOW_MS 1000
@@ -450,10 +449,8 @@ NVENCSTATUS NVENCAPI encode(void* encoder,NV_ENC_PIC_PARAMS* source){
   const unsigned block=16;
   const unsigned columns=(view.width+block-1)/block,rows=(view.height+block-1)/block;
   auto& map=session->maps[output];map.resize(columns*rows);
-  // The foveation bias (foveation.txt) is applied to Valve's map before it is stretched to H.264 macroblocks.
-  std::vector<int8_t> biased;const int8_t* source_map=FoveationApplyMap(view.hevc_delta_map,view.hevc_map_entries,view.width,biased);
   for(unsigned y=0;y<rows;++y)for(unsigned x=0;x<columns;++x)
-   map[y*columns+x]=static_cast<int8_t>(std::clamp(int(source_map[(y/2)*width+x/2]),-51,51));
+   map[y*columns+x]=static_cast<int8_t>(std::clamp(int(view.hevc_delta_map[(y/2)*width+x/2]),-51,51));
   // Retain the HEVC 32x32 timing tile at high quality: every H.264 macroblock it covers.
   for(unsigned y=2*(height-1);y<rows;++y)for(unsigned x=0;x<std::min(2u,columns);++x)map[y*columns+x]=-51;
   copy.qpDeltaMap=map.data();copy.qpDeltaMapSize=static_cast<uint32_t>(map.size());

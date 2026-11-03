@@ -45,7 +45,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private string _menu = "";
     private string _page = "";
     private bool _dashboard = true;
-    private string? _slidingSetting;       // "slide:angle", "slide:dist", "slide:gaze" or "slide:periph" while a fade-out slider is held
+    private string? _slidingSetting;       // "slide:angle" or "slide:dist" while a fade-out slider is held
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
     private DateTime _committedAt, _lastSlideEvent, _clock;
@@ -272,7 +272,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm, GazeBias = settings.FoveationGaze, PeripheralBias = settings.FoveationPeriphery };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm };
         if (_sliding is { } held) return view with { TargetMbps = held };
         if (_committed is { } chosen && view.TargetMbps != chosen && _clock - _committedAt < CommitHold) return view with { TargetMbps = chosen };
         return view;
@@ -297,7 +297,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.GazeBias != now.GazeBias || was.PeripheralBias != now.PeripheralBias || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames;
 
     private void Handle(OverlayEvent e)
@@ -323,7 +323,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case OverlayEventKind.MouseMove:
                 _hover = hit;
                 break;
-            case OverlayEventKind.MouseDown when hit is "slide:angle" or "slide:dist" or "slide:gaze" or "slide:periph":
+            case OverlayEventKind.MouseDown when hit is "slide:angle" or "slide:dist":
                 _slidingSetting = hit; _lastSlideEvent = _clock; MoveSettingSlide(e.X);
                 break;
             case OverlayEventKind.MouseDown when hit == "slider":
@@ -355,7 +355,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "reposition": StartRepositioning(); break;
             case "hide": Fire(actions.HideAsync); break;
             case "counters": Fire(actions.ResetCountersAsync); break;
-            case "fov": settings.FoveationGaze = 0; settings.FoveationPeriphery = 0; Persist(); _drawn = null; break;
             case "page": _page = parts[1] == "close" ? "" : parts[1]; _menu = ""; _drawn = null; break;
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
@@ -380,13 +379,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
 
     private void MoveSettingSlide(float x)
     {
-        switch (_slidingSetting)
-        {
-            case "slide:angle": settings.FadeAngle = HudPanel.ChoiceAt(HudPanel.FadeAngleChoices, x); break;
-            case "slide:dist": settings.FadeDistanceCm = HudPanel.ChoiceAt(HudPanel.FadeDistanceChoices, x); break;
-            case "slide:gaze": settings.FoveationGaze = HudPanel.ChoiceAt(HudPanel.GazeBiasChoices, x); break;
-            case "slide:periph": settings.FoveationPeriphery = HudPanel.ChoiceAt(HudPanel.PeripheralBiasChoices, x); break;
-        }
+        if (_slidingSetting == "slide:angle") settings.FadeAngle = HudPanel.ChoiceAt(HudPanel.FadeAngleChoices, x);
+        else settings.FadeDistanceCm = HudPanel.ChoiceAt(HudPanel.FadeDistanceChoices, x);
     }
 
     private void EndSettingSlide()
