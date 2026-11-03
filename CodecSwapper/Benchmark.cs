@@ -21,6 +21,9 @@ public sealed record BenchmarkStep(
     int TargetMbps, double Seconds, double? MeanMbps, double? MeanFps, long HeldFrames, double HeldMs, long PcDropped, long PcLate, long PcReprojected,
     double? EncodeAverageMs, double? EncodeMaxMs, double? AverageQp, long StreamResets, long EncodeErrors, SweepVerdict Verdict, string Reason, int Passes)
 {
+    /// <summary>What the encoder was actually asked for (average and peak) during the step, as seen by the encoder monitor; null when it was not observed.</summary>
+    public double? AskedMbps { get; init; }
+    public double? AskedMaxMbps { get; init; }
     public double HeldPerMinute => Seconds > 0 ? HeldFrames * 60.0 / Seconds : 0;
     public double HeldMsPerMinute => Seconds > 0 ? HeldMs * 60.0 / Seconds : 0;
 }
@@ -169,7 +172,7 @@ public sealed class BenchmarkRunner
     private sealed class StepMeter
     {
         private StatsSample? _first, _last;
-        private readonly List<double> _mbps = [], _fps = [], _qp = [], _encodeAverage = [];
+        private readonly List<double> _mbps = [], _fps = [], _qp = [], _encodeAverage = [], _asked = [], _askedMax = [];
         private double _encodeMax;
         private bool _timed;
 
@@ -181,6 +184,7 @@ public sealed class BenchmarkRunner
             if (sample.Mbps is double m) _mbps.Add(m);
             if (sample.Fps is double f) _fps.Add(f);
             if (sample.AverageQp is double q) _qp.Add(q);
+            if (sample.Config is { } config) { _asked.Add(config.AverageMbps); _askedMax.Add(config.MaxMbps); }
             if (sample.Timing is { } t) { _encodeAverage.Add(t.AverageMs); _encodeMax = Math.Max(_encodeMax, t.MaxMs); _timed = true; }
         }
 
@@ -203,7 +207,7 @@ public sealed class BenchmarkRunner
             if (_mbps.Count == 0) result = result with { Verdict = SweepVerdict.Failed, Reason = "No encoded video was seen during the step." };
             if (errors > 0 && result.Verdict != SweepVerdict.Failed) result = result with { Verdict = SweepVerdict.Failed, Reason = $"{errors} encoder error{(errors == 1 ? "" : "s")}. " + result.Reason };
             var step = new BenchmarkStep(target, seconds, sample.MeanVideoMbps, sample.MeanFps, sample.ThrottleEvents, sample.ThrottleMs, sample.PcDroppedFrames, Late(), Reprojected(),
-                _timed ? _encodeAverage.Average() : null, _timed ? _encodeMax : null, mean(_qp), sample.StreamResets, errors, result.Verdict, result.Reason, 1);
+                _timed ? _encodeAverage.Average() : null, _timed ? _encodeMax : null, mean(_qp), sample.StreamResets, errors, result.Verdict, result.Reason, 1) { AskedMbps = mean(_asked), AskedMaxMbps = mean(_askedMax) };
             return new(result, step);
         }
     }
@@ -242,14 +246,14 @@ public static class BenchmarkReport
         foreach (var line in new[] { "SteamFrame Codec Swapper benchmark", "started " + run.At.ToString("O", CultureInfo.InvariantCulture), "codec " + run.Codec }.Concat(run.Setup))
             text.Append("# ").AppendLine(line.Replace('\r', ' ').Replace('\n', ' '));
         text.Append("# ").AppendLine(run.Conclusion);
-        text.AppendLine("target_mbps,seconds,mean_mbps,mean_fps,held_frames,held_per_minute,held_ms_per_minute,pc_dropped,pc_late,pc_reprojected,encode_avg_ms,encode_max_ms,avg_qp,stream_resets,encode_errors,verdict,passes,reason");
+        text.AppendLine("target_mbps,seconds,mean_mbps,mean_fps,held_frames,held_per_minute,held_ms_per_minute,pc_dropped,pc_late,pc_reprojected,encode_avg_ms,encode_max_ms,avg_qp,stream_resets,encode_errors,verdict,passes,reason,asked_avg_mbps,asked_max_mbps");
         string N(double? v, string f = "0.0") => v is double d && double.IsFinite(d) ? d.ToString(f, CultureInfo.InvariantCulture) : "";
         foreach (var s in run.Steps)
             text.AppendLine(string.Join(',', new[]
             {
                 s.TargetMbps.ToString(CultureInfo.InvariantCulture), N(s.Seconds), N(s.MeanMbps), N(s.MeanFps, "0.00"), s.HeldFrames.ToString(CultureInfo.InvariantCulture), N(s.HeldPerMinute), N(s.HeldMsPerMinute, "0"),
                 s.PcDropped.ToString(CultureInfo.InvariantCulture), s.PcLate.ToString(CultureInfo.InvariantCulture), s.PcReprojected.ToString(CultureInfo.InvariantCulture), N(s.EncodeAverageMs, "0.00"), N(s.EncodeMaxMs, "0.00"), N(s.AverageQp, "0.00"),
-                s.StreamResets.ToString(CultureInfo.InvariantCulture), s.EncodeErrors.ToString(CultureInfo.InvariantCulture), s.Verdict.ToString(), s.Passes.ToString(CultureInfo.InvariantCulture), "\"" + s.Reason.Replace("\"", "\"\"") + "\""
+                s.StreamResets.ToString(CultureInfo.InvariantCulture), s.EncodeErrors.ToString(CultureInfo.InvariantCulture), s.Verdict.ToString(), s.Passes.ToString(CultureInfo.InvariantCulture), "\"" + s.Reason.Replace("\"", "\"\"") + "\"", N(s.AskedMbps, "0"), N(s.AskedMaxMbps, "0")
             }));
         return text.ToString();
     }

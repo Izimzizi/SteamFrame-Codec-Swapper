@@ -11,7 +11,7 @@ public sealed class BenchmarkForm : Form
 {
     private static readonly (string Text, int Width)[] Columns =
     [
-        ("Target", 62), ("Encoded", 78), ("FPS", 50), ("Held /min", 72), ("PC drops", 66), ("PC late", 62), ("Encode ms (avg / max)", 150), ("QP", 48), ("Result", 78), ("Notes", 320)
+        ("Target", 62), ("Asked of encoder", 100), ("Encoded", 78), ("FPS", 50), ("Held /min", 72), ("PC drops", 66), ("PC late", 62), ("Encode ms (avg / max)", 150), ("QP", 48), ("Result", 78), ("Notes", 320)
     ];
 
     private readonly NumericUpDown _start = Number(25, 500, 100), _ceiling = Number(25, 500, 500), _step = Number(10, 200, 50);
@@ -155,7 +155,7 @@ public sealed class BenchmarkForm : Form
         var item = new ListViewItem(step.TargetMbps + " Mbps");
         item.SubItems.AddRange(
         [
-            step.MeanMbps is double mbps ? $"{mbps:0} Mbps" : "—", step.MeanFps is double fps ? fps.ToString("0.0", CultureInfo.InvariantCulture) : "—",
+            step.AskedMbps is double asked ? $"{asked:0} Mbps" : "—", step.MeanMbps is double mbps ? $"{mbps:0} Mbps" : "—", step.MeanFps is double fps ? fps.ToString("0.0", CultureInfo.InvariantCulture) : "—",
             step.HeldPerMinute.ToString("0", CultureInfo.InvariantCulture), step.PcDropped.ToString(CultureInfo.InvariantCulture), step.PcLate.ToString(CultureInfo.InvariantCulture),
             step.EncodeAverageMs is double avg ? $"{avg:0.0} / {step.EncodeMaxMs:0.0}" : "—", step.AverageQp is double qp ? qp.ToString("0.0", CultureInfo.InvariantCulture) : "—",
             step.Verdict.ToString(), step.Reason
