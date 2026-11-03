@@ -6,7 +6,7 @@ using SteamFrame.Core;
 namespace CodecSwapper;
 
 /// <summary>What a benchmark steps through. The codec and encoder settings are whatever is selected when it starts.</summary>
-public sealed record BenchmarkSettings(int StartMbps, int CeilingMbps, int StepMbps, TimeSpan Settle, TimeSpan Measure, bool StopAfterFailure = true)
+public sealed record BenchmarkSettings(int StartMbps, int CeilingMbps, int StepMbps, TimeSpan Settle, TimeSpan Measure, bool StopAfterFailure = true, bool UseScene = false)
 {
     public static BenchmarkSettings Default(bool driverPatched) => new(100, driverPatched ? WirelessAdvisor.PatchedCeilingMbps : WirelessAdvisor.StockCeilingMbps, 50, LinkCapacitySweep.SettleTime, LinkCapacitySweep.MeasureTime);
 

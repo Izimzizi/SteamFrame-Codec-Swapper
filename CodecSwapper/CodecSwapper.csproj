@@ -28,6 +28,7 @@
     <EmbeddedResource Include="../Core/Assets/bitrate-patch.json" LogicalName="SteamFrame.Assets.bitrate-patch.json" />
     <EmbeddedResource Include="../Core/Assets/bitrate-patch-stable.json" LogicalName="SteamFrame.Assets.bitrate-patch-stable.json" />
     <Content Include="$(ProbeDll)" Link="Native/SteamFrameEncoderProbe.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(ProbeDll)')" />
+    <Content Include="$(MSBuildThisFileDirectory)../Native/build/SteamFrameBenchmark.exe" Link="Native/SteamFrameBenchmark.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(MSBuildThisFileDirectory)../Native/build/SteamFrameBenchmark.exe')" />
     <Content Include="$(CodecLabSource)/**" Link="CodecLab/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CodecLabSource)')" />
   </ItemGroup>
   <Target Name="WarnMissingCodecLab" BeforeTargets="Build" Condition="!Exists('$(CodecLabSource)')">

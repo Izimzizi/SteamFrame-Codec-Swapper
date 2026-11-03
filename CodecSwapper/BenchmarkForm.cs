@@ -17,6 +17,7 @@ public sealed class BenchmarkForm : Form
     private readonly NumericUpDown _start = Number(25, 500, 100), _ceiling = Number(25, 500, 500), _step = Number(10, 200, 50);
     private readonly ComboBox _measure = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 70 };
     private readonly CheckBox _stopOnFailure = new() { Text = "Stop after the first failed step", Checked = true, AutoSize = true };
+    private readonly CheckBox _scene = new() { Text = "Show the built-in moving test scene on the headset (no game needed)", Checked = true, AutoSize = true };
     private readonly Button _go = new() { Text = "Start", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Button _openFolder = new() { Text = "Open results folder", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Label _estimate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
@@ -43,6 +44,8 @@ public sealed class BenchmarkForm : Form
         ClientSize = new Size(1000, 640);
         MinimumSize = new Size(820, 520);
         ShowIcon = false;
+        _scene.Enabled = BenchmarkScene.Available;
+        if (!BenchmarkScene.Available) _scene.Checked = false;
         _ceiling.Value = driverPatched ? WirelessAdvisor.PatchedCeilingMbps : WirelessAdvisor.StockCeilingMbps;
         _measure.Items.AddRange(["15 s", "24 s", "45 s"]);
         _measure.SelectedIndex = 1;
@@ -50,11 +53,11 @@ public sealed class BenchmarkForm : Form
         var intro = new Label
         {
             AutoSize = true, MaximumSize = new Size(960, 0), Margin = new Padding(0, 0, 0, 8),
-            Text = "Put a demanding scene on the headset first (a busy game, in motion) and stay in it until the run ends. The benchmark raises the bitrate target step by step with the codec and encoder settings " +
+            Text = "Keep the headset awake. With the built-in test scene ticked, a moving high-detail room is shown for you (it replaces whatever VR app is on screen); untick it to test with your own busy game instead, and stay in it until the run ends. The benchmark raises the bitrate target step by step with the codec and encoder settings " +
                    "that are selected now, measures held-back frames, PC drops, encode time and the rate actually delivered at each step, and judges each one. Your own bitrate target is put back afterwards."
         };
         var options = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4) };
-        options.Controls.AddRange([Caption("From"), _start, Caption("to"), _ceiling, Caption("Mbps in steps of"), _step, Caption("Mbps, measure each for"), _measure, _stopOnFailure]);
+        options.Controls.AddRange([Caption("From"), _start, Caption("to"), _ceiling, Caption("Mbps in steps of"), _step, Caption("Mbps, measure each for"), _measure, _stopOnFailure, _scene]);
         var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
         actions.Controls.AddRange([_go, _openFolder, _estimate]);
         _estimate.Margin = new Padding(12, 8, 0, 0);
@@ -95,7 +98,7 @@ public sealed class BenchmarkForm : Form
     private BenchmarkSettings? Current()
     {
         if (_ceiling.Value < _start.Value) return null;
-        return new((int)_start.Value, (int)_ceiling.Value, (int)_step.Value, LinkCapacitySweep.SettleTime, Measure, _stopOnFailure.Checked);
+        return new((int)_start.Value, (int)_ceiling.Value, (int)_step.Value, LinkCapacitySweep.SettleTime, Measure, _stopOnFailure.Checked, _scene.Checked && BenchmarkScene.Available);
     }
 
     private void UpdateEstimate()
@@ -117,8 +120,14 @@ public sealed class BenchmarkForm : Form
         if (InvokeRequired) { BeginInvoke(() => SetRunning(running)); return; }
         _running = running;
         _go.Text = running ? "Stop" : "Start";
-        foreach (var control in new Control[] { _start, _ceiling, _step, _measure, _stopOnFailure, _earlier }) control.Enabled = !running;
+        foreach (var control in new Control[] { _start, _ceiling, _step, _measure, _stopOnFailure, _scene, _earlier }) control.Enabled = !running;
         if (running) { _table.Items.Clear(); _conclusion.Text = ""; _shown = null; _bar.Value = 0; }
+    }
+
+    public void ShowStatus(string text)
+    {
+        if (InvokeRequired) { BeginInvoke(() => ShowStatus(text)); return; }
+        _phase.Text = text;
     }
 
     public void SetHistory(List<BenchmarkRun> history)

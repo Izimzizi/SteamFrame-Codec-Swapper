@@ -169,3 +169,16 @@ public sealed class BenchmarkTests : IDisposable
         Assert.Equal(1 + 3, lines.Count(l => !l.StartsWith('#')));
     }
 }
+
+public sealed class BenchmarkSceneTests
+{
+    [Fact]
+    public async Task A_scene_that_cannot_start_reports_an_error_instead_of_hanging()
+    {
+        await using var scene = new BenchmarkScene();
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // The test host has no Native\SteamFrameBenchmark.exe beside it, or no SteamVR for it to attach to: either way the start fails with an IOException.
+        await Assert.ThrowsAsync<IOException>(() => scene.StartAsync(Path.Combine(Path.GetTempPath(), "missing", "openvr_api.dll"), cancel.Token));
+        Assert.False(scene.Running);
+    }
+}

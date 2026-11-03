@@ -21,7 +21,7 @@ try {
     if ($running) { throw 'Exit CodecSwapper (right-click the icon, Exit) before packaging over it.' }
 
     $probe = Join-Path $PSScriptRoot 'Native\build\SteamFrameEncoderProbe.dll'
-    if (-not (Test-Path -LiteralPath $probe)) { & (Join-Path $PSScriptRoot 'Native\build.ps1') -SkipTests }
+    if (-not ((Test-Path -LiteralPath $probe) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Native\build\SteamFrameBenchmark.exe')))) { & (Join-Path $PSScriptRoot 'Native\build.ps1') -SkipTests }
 
     # Start clean so files from an earlier layout (loose runtime DLLs, language folders) cannot linger.
     if (Test-Path -LiteralPath $out) { Get-ChildItem -LiteralPath $out -Force | Remove-Item -Recurse -Force }
@@ -35,6 +35,7 @@ try {
     $native = Join-Path $out 'Native'
     New-Item -ItemType Directory -Path $native -Force | Out-Null
     Copy-Item -LiteralPath $probe -Destination $native -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Native\build\SteamFrameBenchmark.exe') -Destination $native -Force
 
     $lab = Join-Path $out 'CodecLab'
     if (Test-Path -LiteralPath $lab) { Remove-Item -LiteralPath $lab -Recurse -Force }
@@ -62,7 +63,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $driverPackage 'bin\win64') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $lab 'Backend\SteamFrameH264Hook.dll') -Destination (Join-Path $driverPackage 'bin\win64\driver_steamframe.dll')
     Set-Content -LiteralPath (Join-Path $driverPackage 'driver.vrdrivermanifest') -Encoding ASCII -Value '{"alwaysActivate": true, "name": "steamframe", "directory": "", "resourceOnly": false, "hmd_presence": []}'
-    foreach ($file in @('CodecSwapper.exe', 'CodecLab\session_supervisor.py', 'CodecLab\runtime\python.exe', 'CodecLab\Backend\hook_control.exe', 'CodecLab\Backend\SteamFrameH264Hook.dll', 'Native\SteamFrameEncoderProbe.dll')) {
+    foreach ($file in @('CodecSwapper.exe', 'CodecLab\session_supervisor.py', 'CodecLab\runtime\python.exe', 'CodecLab\Backend\hook_control.exe', 'CodecLab\Backend\SteamFrameH264Hook.dll', 'Native\SteamFrameEncoderProbe.dll', 'Native\SteamFrameBenchmark.exe')) {
         if (-not (Test-Path -LiteralPath (Join-Path $out $file))) { throw "Package is incomplete: $file is missing." }
     }
     if ($Zip) {

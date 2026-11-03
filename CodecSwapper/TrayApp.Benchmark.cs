@@ -57,8 +57,18 @@ public sealed partial class TrayApp
         _statsService.BenchmarkActive = true;
         TrayLog($"Benchmark started: {settings.StartMbps}-{settings.CeilingMbps} Mbps in steps of {settings.StepMbps}, {settings.Measure.TotalSeconds:0} s each");
         string? saved = null;
+        BenchmarkScene? scene = null;
         try
         {
+            if (settings.UseScene)
+            {
+                run.Setup.Add("test scene: built-in moving room");
+                scene = new BenchmarkScene();
+                form.ShowStatus("Starting the test scene on the headset...");
+                await scene.StartAsync(_paths.OpenVrApi, cancel.Token);
+                TrayLog("Benchmark test scene running");
+            }
+            else run.Setup.Add("test scene: own VR app");
             var runner = new BenchmarkRunner(
                 // A session that cannot change the rate live would have to restart the stream; the benchmark never does that.
                 (mbps, token) => _controller.ChangeTargetAsync(mbps, () => throw new InvalidOperationException("This session cannot change the bitrate without restarting, so the benchmark cannot run. Restart SteamVR and try again."), _ => Task.FromResult(false), token),
@@ -72,6 +82,7 @@ public sealed partial class TrayApp
         }
         finally
         {
+            if (scene is not null) await scene.DisposeAsync();
             _statsService.BenchmarkActive = false;
             _benchmarkCancel = null;
             try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }
