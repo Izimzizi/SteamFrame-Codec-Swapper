@@ -6,7 +6,7 @@ namespace SteamFrame.Core;
 // the driver's bytes, never from a manifest's version number or selected branch.
 internal static class DriverCompatibility
 {
-    public const string VerifiedVersions = "Verified bitrate-patch builds: public 25330290 and beta 25839986, plus the earlier beta driver. Other builds must pass the same driver checks. Codec and custom quality support are checked separately.";
+    public const string VerifiedVersions = "Verified bitrate-patch builds: public 25330290 and beta 25839986 and 26389675, plus the earlier beta driver. Other builds must pass the same driver checks. Codec and custom quality support are checked separately.";
 
     public static string ReferenceDriver(string? hash) => hash switch
     {

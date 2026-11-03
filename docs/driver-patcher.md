@@ -66,9 +66,15 @@ Reference builds:
 | --- | --- | --- |
 | First analyzed driver | `5f6f063f1ece088491f572db8feb2f2433a5621d0adf7013de77b91604d146b5` | `82fd637f1d4b844ca349d2a98867cd0ba8f969a14de47c2a3192b875fb62425d` |
 | Beta build 25839986 | `d415ba30fab129b4737ae19a3c71d7628c27e450dd8bf0002a1d4dd98ed58a05` | `34265101d56235e2f87e5b0e2f3fc2340ed1513a9b6d26f03c4fe12bafcbbc03` |
+| Beta build 26389675 (3 Nov 2026) | `f3d287efe205f8e42ed79e90957a19729adab0cdf7233e07bfa86f66a03fc0b7` | not pinned; discovered on first use |
 | Public stable build 25330290 | `1e846be041039798580a91452371f6288c614fb4c152126b137e2c693fb77eef` | `d0aeec1b80d31da146365b4b65fa4adadd7230d288ebf0d65e040b3991f28c5e` |
 
 The stable and beta drivers use different private member offsets and register selections.
+Build 26389675 keeps the beta's cap constants but was recompiled around them: the NVENC preset configuration
+now lives inside the encoder object, so the preset query writes into a stack structure addressed from `rbp`
+and the HEVC level is stored straight into the embedded configuration. The scanner has a second beta-layout
+signature family for it (preset copy, level selection and structure-version checks); the older beta layout is
+still recognised, and a file that matches both or neither is refused as before.
 The scanner recognizes each complete instruction family separately, retaining the same
 NVENC version, function-boundary, import, cap-constant and executable-padding checks.
 Patch compatibility does not establish support for every private encoder or codec hook.

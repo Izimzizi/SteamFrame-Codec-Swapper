@@ -5,6 +5,32 @@ namespace SteamFrame.Tests;
 
 public sealed class BranchCompatibilityTests
 {
+    // Set SLVR_PATCHER_EMBEDDED_FIXTURE to an unpatched driver_vrlink.dll of build 26389675 (SHA-256 f3d287ef...).
+    [Fact]
+    public async Task The_recompiled_beta_layout_is_discovered_and_round_trips()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var fixture = Environment.GetEnvironmentVariable("SLVR_PATCHER_EMBEDDED_FIXTURE");
+        if (string.IsNullOrWhiteSpace(fixture) || !File.Exists(fixture)) Assert.Skip("Set SLVR_PATCHER_EMBEDDED_FIXTURE to test the recompiled beta driver.");
+        var original = await File.ReadAllBytesAsync(fixture, token);
+        var plan = AdaptivePatchScanner.Discover(original);
+        Assert.Equal(6, plan.Changes.Count);
+        Assert.Contains(plan.Changes, change => change.Reason.StartsWith("HEVC reconfiguration default level") && change.OriginalHex == "b7000000" && change.PatchedHex == "ba000000");
+        var root = Path.Combine(Path.GetTempPath(), "SteamLinkVRSettings-embedded-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "driver_vrlink.dll");
+            await File.WriteAllBytesAsync(path, original, token);
+            var patcher = new BitratePatcher(PatchManifest.LoadSupported(), () => false);
+            var status = await patcher.ApplyAsync(path, token);
+            Assert.Equal(plan.PatchedSha256, status.Sha256);
+            await patcher.RestoreAsync(path, token);
+            Assert.Equal(original, await File.ReadAllBytesAsync(path, token));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Theory]
     [InlineData("SLVR_PATCHER_STABLE_FIXTURE", PatchManifest.SupportedStableOriginalSha256, PatchManifest.SupportedStablePatchedSha256)]
     [InlineData("SLVR_PATCHER_CURRENT_FIXTURE", BitratePatcher.SupportedCurrentOriginalSha256, BitratePatcher.SupportedCurrentPatchedSha256)]
