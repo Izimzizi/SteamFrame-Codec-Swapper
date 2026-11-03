@@ -261,7 +261,7 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
-    public async Task Above_350_Mbps_the_bitrate_patch_is_required_first()
+    public async Task Above_350_Mbps_the_bitrate_patch_is_offered_but_never_stops_the_switch_to_H264()
     {
         var rig = new Rig();
         rig.Vault.Stored = "pw"; rig.Prefs.CodecTargetMbps = 450; rig.Patch.State = BitratePatchState.Original; rig.Codec.AfterSwitch = Live(target: 450);
@@ -270,13 +270,15 @@ public sealed class TrayControllerTests
 
         var declined = new Rig();
         declined.Vault.Stored = "pw"; declined.Prefs.CodecTargetMbps = 450; declined.Patch.State = BitratePatchState.Original;
-        await Assert.ThrowsAsync<InvalidOperationException>(() => declined.Arm(allowPatch: false));
-        Assert.Empty(declined.Codec.Switches);
+        declined.Codec.AfterSwitch = Live(target: 450);
+        Assert.True(await declined.Arm(allowPatch: false));
+        Assert.Equal(["inspect"], declined.Patch.Calls); Assert.NotEmpty(declined.Codec.Switches);
 
         var running = new Rig();
         running.Vault.Stored = "pw"; running.Prefs.CodecTargetMbps = 450; running.Patch.State = BitratePatchState.Original; running.Patch.SteamVrRunning = true;
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => running.Arm());
-        Assert.Contains("Close SteamVR", error.Message); Assert.DoesNotContain("apply", running.Patch.Calls); Assert.Empty(running.Codec.Switches);
+        running.Codec.AfterSwitch = Live(target: 450);
+        Assert.True(await running.Arm());
+        Assert.DoesNotContain("apply", running.Patch.Calls); Assert.NotEmpty(running.Codec.Switches);
     }
 
     [Fact]

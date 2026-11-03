@@ -312,7 +312,7 @@ public sealed class TrayController
             var steamVrRunning = _live?.SteamVrRunning ?? false;
             var alreadyApplied = status.Live && status.Keep && status.ActiveCodec == "H.264" && status.TargetMbps == request.TargetMbps && status.State is "ready" or "waiting";
             Publish(new(TrayState.Arming, "Switching to H.264…", TargetMbps));
-            await EnsureBitratePatchAsync(request.TargetMbps, confirmPatch);
+            await EnsureBitratePatchAsync(request.TargetMbps, confirmPatch, required: false);
             var progress = new Progress<CodecServiceStatus>(s => Publish(Map(s)));
             CodecServiceStatus result;
             if (alreadyApplied) result = status;
@@ -418,12 +418,27 @@ public sealed class TrayController
     /// <summary>Windows is ending the session: ask a live supervisor to restore now (it also notices the tray disappearing).</summary>
     public void RequestCloseNoWait() => _codec.RequestCloseNoWait();
 
-    private async Task EnsureBitratePatchAsync(int mbps, Func<BitratePatchStatus, Task<bool>> confirmPatch)
+    /// <summary>
+    /// Offers the bitrate patch for a bitrate above what SteamVR's driver takes. <paramref name="required"/> false (switching to H.264) never
+    /// blocks: the switch goes ahead without the patch, and the tray warns afterwards that the unpatched driver streams less.
+    /// </summary>
+    private async Task EnsureBitratePatchAsync(int mbps, Func<BitratePatchStatus, Task<bool>> confirmPatch, bool required = true)
     {
         if (mbps <= PatchFreeMaxMbps) return;
         var state = await _patch.InspectAsync();
         // An unrecognised driver cannot be patched; the request goes ahead and SteamVR applies its own ceiling.
         if (state.IsPatched || !state.IsSupported) return;
+        if (!required)
+        {
+            try
+            {
+                // With SteamVR running (the user is in the headset) nothing is asked: the dialog would sit unseen on the desktop.
+                if (!state.CanApply || !await confirmPatch(state)) return;
+                await _patch.ApplyAsync();
+            }
+            catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException) { /* H.264 still switches on */ }
+            return;
+        }
         if (!await confirmPatch(state)) throw new InvalidOperationException($"Bitrates above {PatchFreeMaxMbps} Mbps need the bitrate patch. Choose {PatchFreeMaxMbps} or lower, or allow the patch.");
         if (!state.CanApply) throw new InvalidOperationException(state.VrServerRunning
             ? "Close SteamVR, then choose H.264 again so the bitrate patch can be installed."
