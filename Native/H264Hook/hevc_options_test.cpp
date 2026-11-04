@@ -72,15 +72,19 @@ int main(){
  // The monitor reports what the encoder was given: CBR and 4 frames now, the preset now in force (P7).
  { uint32_t cbr=9,preset=9,vbv=9;CHECK(StockAppliedOptions(&cbr,&preset,&vbv)==1&&cbr==1&&preset==7&&vbv==4); }
 
- // Multipass: named in the file, applied to the driver's encoder, and one rate-control restart when it changes. The H.264 bridge reads it with StockMultiPass.
+ // Multipass: named in the file and read by the H.264 bridge with StockMultiPass. The driver's encoder takes it when it is created (initialize) and keeps it:
+ // a changed file value must not reach a running encoder, because NVENC cannot change it live and the GPU faulted when it was tried.
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\nmultipass=2\n");Sleep(600);
  CHECK(StockMultiPass()==2);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_FULL_RESOLUTION);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_MULTI_PASS_DISABLED);
+ CHECK(StockInitialize(nullptr,&init)==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_FULL_RESOLUTION);
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\nmultipass=1\n");Sleep(600);
  CHECK(StockMultiPass()==1);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_QUARTER_RESOLUTION);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_FULL_RESOLUTION);
+ CHECK(StockInitialize(nullptr,&init)==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_QUARTER_RESOLUTION);
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\n");Sleep(600);
  CHECK(StockMultiPass()==0);
+ CHECK(StockInitialize(nullptr,&init)==0&&seen_config.rcParams.multiPass==NV_ENC_MULTI_PASS_DISABLED);
  CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_MULTI_PASS_DISABLED);
 
  // VBR keeps the driver's own peak.
