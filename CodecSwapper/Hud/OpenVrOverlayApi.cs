@@ -17,7 +17,7 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     private const int CreateOverlaySlot = 1, DestroyOverlaySlot = 3, ErrorNameSlot = 8, SetAlphaSlot = 16, SetWidthSlot = 22, SetTrackedDeviceRelativeSlot = 35,
         SetTextureSlot = 60, ShowSlot = 43, HideSlot = 44, PollOverlayEventSlot = 48, SetInputMethodSlot = 50, SetMouseScaleSlot = 52, SetRawSlot = 62, IsDashboardVisibleSlot = 68;
     private const int GetPosesSlot = 12, ControllerIndexSlot = 18;
-    private const int SetTransformAbsoluteSlot = 33, IsActiveDashboardOverlaySlot = 69, ShowDashboardSlot = 72;
+    private const int SetTransformAbsoluteSlot = 33;
     // IVRInput_010, in declaration order.
     private const string InputVersion = "IVRInput_010";
     private const int InputManifestSlot = 0, InputActionSetSlot = 1, InputActionSlot = 2, InputSourceSlot = 3, InputUpdateSlot = 4, InputDigitalSlot = 5, InputPoseSlot = 7;
@@ -361,39 +361,6 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
             var result = ((delegate* unmanaged<nint, ulong, byte*, uint, uint, uint, int>)Slot(_overlay, SetRawSlot))(_overlay, overlay, pixels, (uint)width, (uint)height, 4);
             if (result != 0) log?.Invoke($"SetOverlayRaw failed ({Name(_overlay, result)})");
         }
-    }
-
-    /// <summary>
-    /// Asks the dashboard to show the dashboard overlay that is already showing. That sends a dashboard request to the headset (the same kind adding a window to the
-    /// dashboard sends), which makes the Frame read the dashboard's overlay list again after a codec switch; nothing visibly changes.
-    /// </summary>
-    public string RefreshDashboard()
-    {
-        if (!Connected) return "SteamVR not joined";
-        var seen = new List<string>();
-        foreach (var key in new[] { "system.desktop.1", "valve.steam.gamepadui.main" })
-        {
-            ulong handle = 0;
-            var bytes = Encoding.UTF8.GetBytes(key + "\0");
-            fixed (byte* k = bytes)
-            {
-                if (((delegate* unmanaged<nint, byte*, ulong*, int>)Slot(_overlay, 0))(_overlay, k, &handle) != 0 || handle == 0) { seen.Add(key + " missing"); continue; }
-                var active = ((delegate* unmanaged<nint, ulong, byte>)Slot(_overlay, IsActiveDashboardOverlaySlot))(_overlay, handle) != 0;
-                seen.Add(key + (active ? " active" : " not active"));
-                if (!active) continue;
-                ((delegate* unmanaged<nint, byte*, void>)Slot(_overlay, ShowDashboardSlot))(_overlay, k);
-                return $"asked the dashboard to show {key} again ({string.Join(", ", seen)})";
-            }
-        }
-        // Nothing known is the active tab: show the desktop one. Only while a dashboard is up, so this never opens one.
-        if (DashboardVisible())
-        {
-            const string desktop = "system.desktop.1";
-            var bytes = Encoding.UTF8.GetBytes(desktop + "\0");
-            fixed (byte* k = bytes) ((delegate* unmanaged<nint, byte*, void>)Slot(_overlay, ShowDashboardSlot))(_overlay, k);
-            return $"no known tab is active, asked the dashboard to show {desktop} ({string.Join(", ", seen)})";
-        }
-        return "no dashboard is up, nothing sent (" + string.Join(", ", seen) + ")";
     }
 
     public void Dispose() => Disconnect();

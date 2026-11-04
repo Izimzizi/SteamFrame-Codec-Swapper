@@ -43,6 +43,4 @@ public interface IOverlayApi : IDisposable
     /// <summary>Draws the laser: a line pose (Y along it, <paramref name="length"/> long) and a dot on the surface it hits.</summary>
     void ShowLaser(Pose line, float length, Pose dot) { }
     void HideLaser() { }
-    /// <summary>Asks SteamVR's dashboard to send its overlay list to the headset again. Returns what was done, for the log.</summary>
-    string RefreshDashboard() => "";
 }

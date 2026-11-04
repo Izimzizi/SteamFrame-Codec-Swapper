@@ -63,9 +63,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private readonly List<OverlayEvent> _ownIcon = [], _ownPanel = [];
     private Over _over = Over.None;
     private bool _ownDown;
-    private DateTime _nativeAt = DateTime.MinValue, _refreshRequestedAt = DateTime.MinValue;
-    private bool _refreshPending;
-    private static readonly TimeSpan NativeLaserHold = TimeSpan.FromMilliseconds(1500), RefreshExpiry = TimeSpan.FromSeconds(30);
+    private DateTime _nativeAt = DateTime.MinValue;
+    private static readonly TimeSpan NativeLaserHold = TimeSpan.FromMilliseconds(1500);
 
     private sealed record Grab(uint Device, Pose DeviceAtGrab, Pose PanelAtGrab, bool Icon);
 
@@ -90,11 +89,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         if (!api.StillRunning()) { Teardown(); _nextConnect = at + ConnectRetry; return; }
         if (_overlay == 0 && !Create()) { _nextConnect = at + ConnectRetry; return; }
-        if (_refreshPending)
-        {
-            _refreshPending = false;
-            if (at - _refreshRequestedAt < RefreshExpiry) { var done = api.RefreshDashboard(); log?.Invoke("HUD: dashboard refresh after a codec switch: " + done); }
-        }
 
         var device = api.ControllerIndex(settings.IsLeft);
         if (device == IOverlayApi.NoDevice)
@@ -136,9 +130,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (device != _attachedTo || pose != _attachedPose || width != _attachedWidth) Attach(device, pose, width);
         Draw(at);
     }
-
-    /// <summary>After a codec switch the Frame can come back without the dashboard's desktop and Steam windows; this asks SteamVR to send the dashboard's overlay list again.</summary>
-    public void RequestDashboardRefresh() { _refreshPending = true; _refreshRequestedAt = _clock == default ? DateTime.UtcNow : _clock; }
 
     private readonly record struct AimHit(Over Target, float X, float Y, float Distance, bool Inside, Vector3 Point, Pose Overlay);
 

@@ -46,7 +46,6 @@ public static class HudHost
                         // The helper owns the placement while the user is moving the HUD.
                         if (!hud.Repositioning) { settings.Placement = message.Settings.Placement; settings.WidthMeters = message.Settings.WidthMeters; settings.IconPlacement = message.Settings.IconPlacement; settings.IconWidthMeters = message.Settings.IconWidthMeters; }
                     }
-                    else if (message.Type == "dashboard") hud.RequestDashboardRefresh();
                     else if (message.Type == "quit") quit = true;
                 }
             }

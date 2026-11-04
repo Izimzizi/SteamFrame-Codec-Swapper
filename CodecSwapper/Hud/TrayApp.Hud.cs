@@ -25,7 +25,6 @@ public sealed partial class TrayApp
         WriteHevcOptions();
         _statsService.Sampled += (sample, _) => _lastSample = sample;
         _steamVrSeen = OpenVrOverlayApi.IsVrServerRunning();
-        _controller.Changed += NoteCodecSwitch;
         _hudTimer.Tick += (_, _) => { FollowSteamVrStart(); RefreshHudWidth(); PushHudView(); };
         _hudTimer.Start();
         ApplyHudEnabled();
@@ -42,29 +41,6 @@ public sealed partial class TrayApp
         if (!started || _hudSettings.Enabled == _hudSettings.AutoShow) return;
         _hudSettings.Enabled = _hudSettings.AutoShow;
         ApplyHudEnabled();
-    }
-
-    private TrayState _hudLastState = TrayState.Disarmed;
-
-    /// <summary>
-    /// After a codec switch finishes the Frame can come back without the dashboard's desktop and Steam windows (adding any window brings them back).
-    /// The HUD helper is asked, twice, to make SteamVR send the dashboard's overlay list to the headset again once the new stream is up.
-    /// </summary>
-    private void NoteCodecSwitch(TraySnapshot snapshot)
-    {
-        var was = _hudLastState;
-        _hudLastState = snapshot.State;
-        var finished = (was == TrayState.Arming && snapshot.State == TrayState.Armed) || (was == TrayState.Disarming && snapshot.State == TrayState.Disarmed);
-        if (finished && _hud is { Running: true }) _ = RefreshDashboardLaterAsync();
-    }
-
-    private async Task RefreshDashboardLaterAsync()
-    {
-        foreach (var seconds in new[] { 3, 5 })
-        {
-            await Task.Delay(TimeSpan.FromSeconds(seconds));
-            _hud?.Send(new() { Type = "dashboard" });
-        }
     }
 
     private void StopHud()

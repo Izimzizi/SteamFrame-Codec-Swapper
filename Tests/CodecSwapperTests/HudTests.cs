@@ -267,12 +267,10 @@ public sealed class HudControllerTests
         public bool InputOn, AimOk = true, Trigger, LastClaim;
         public Pose Tip = Pose.Identity;
         public readonly List<string> Laser = [];
-        public int Refreshes;
         public bool InputAvailable => InputOn;
         public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { tip = Tip; LastClaim = claimClick; pressed = claimClick && Trigger; return AimOk; }
         public void ShowLaser(Pose line, float length, Pose dot) => Laser.Add("show");
         public void HideLaser() => Laser.Add("hide");
-        public string RefreshDashboard() { Refreshes++; return "refreshed"; }
         public void Dispose() { }
     }
 
@@ -372,16 +370,6 @@ public sealed class HudControllerTests
         Assert.DoesNotContain("show", rig.Api.Laser);
         rig.Settings.OwnLaser = true; rig.Api.InputOn = false; rig.Tick();
         Assert.DoesNotContain("show", rig.Api.Laser);
-    }
-
-    [Fact]
-    public void A_dashboard_refresh_request_is_sent_to_steamvr_once_the_hud_has_joined()
-    {
-        var rig = OwnLaserRig();
-        rig.Hud.RequestDashboardRefresh(); rig.Tick();
-        Assert.Equal(1, rig.Api.Refreshes);
-        rig.Tick();
-        Assert.Equal(1, rig.Api.Refreshes);
     }
 
     [Fact]
