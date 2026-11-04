@@ -42,6 +42,8 @@ struct HevcOptions{bool enabled=false;bool cbr=false;int preset=2;int vbv=2;int 
 HevcOptions options;ULONGLONG options_checked=0;
 int applied_signature=-1;bool signature_changed=false;int reconfigure_calls=0;
 int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=false;
+// Which option a live change moved, for the flight recorder: "preset 2->4, multipass 1->2 (change 12 since the encoder was created, 3 since multipass was last 2)".
+int applied_multipass=0,live_changes=0,changes_since_multipass2=0;char change_text[200]{};
 // Diagnosis of the live HEVC route: what SteamVR's reconfigures carry and what was done with them (hevc-hook.log in the tray's data folder).
 void trace(const char* format,...){
  char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
@@ -76,16 +78,16 @@ void flight_write(const char* heading,const Flight* entries,int count){
 }
 // kind: R reconfigure (v: driver avg, max, vbv, rc|multipass<<4|lookahead<<8|aq<<12|preset<<16 | applied avg, max, vbv, rc|multipass<<4|preset<<16|driver reset<<20|driver IDR<<21|changed<<22),
 // r reconfigure left alone, E encode (v: flags, picture type), L lock (v: bytes, picture type), I initialize, D destroy.
-void flight_note(char kind,int result,const unsigned (&v)[8],const char* why){
+void flight_note(char kind,int result,const unsigned (&v)[8],const char* why,bool change=false){
  std::lock_guard<std::mutex> guard(flight_lock);
  if(!flight_zero)flight_zero=flight_clock();
  Flight entry{flight_clock()-flight_zero,GetCurrentThreadId(),kind,result,{}};memcpy(entry.v,v,sizeof(entry.v));
  flight_ring[flight_head]=entry;flight_head=(flight_head+1)%FlightSize;if(flight_count<FlightSize)++flight_count;
- if(why&&!(flight_after>0&&strcmp(why,"options changed")==0)){
+ if(why&&!(change&&flight_after>0)){
   Flight ordered[FlightSize];const int first=(flight_head-flight_count+FlightSize)%FlightSize;
   for(int i=0;i<flight_count;i++)ordered[i]=flight_ring[(first+i)%FlightSize];
   flight_write(why,ordered,flight_count);flight_after=FlightAfter;
- }else if(flight_after>0){flight_write(why?"options changed again":nullptr,&entry,1);--flight_after;}
+ }else if(flight_after>0){flight_write(why,&entry,1);--flight_after;}
 }
 unsigned preset_number(const GUID& guid){
  const GUID* all[]={&NV_ENC_PRESET_P1_GUID,&NV_ENC_PRESET_P2_GUID,&NV_ENC_PRESET_P3_GUID,&NV_ENC_PRESET_P4_GUID,&NV_ENC_PRESET_P5_GUID,&NV_ENC_PRESET_P6_GUID,&NV_ENC_PRESET_P7_GUID};
@@ -147,8 +149,18 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(options.multipass);
  // A changed rate control, buffer or preset is followed by a plain reconfigure; the encoder is not reset (a reset with multipass 2 faulted the GPU).
  const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+options.multipass*100000;
- applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
- signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
+ signature_changed=applied_signature!=-1&&applied_signature!=signature;
+ if(signature_changed){
+  ++live_changes;if(options.multipass==2||applied_multipass==2)changes_since_multipass2=0;else ++changes_since_multipass2;
+  int used=0;change_text[0]=0;
+  if(applied_cbr!=options.cbr)used+=snprintf(change_text+used,sizeof(change_text)-used,"%srate control %s->%s",used?", ":"",applied_cbr?"cbr":"vbr",options.cbr?"cbr":"vbr");
+  if(applied_preset!=options.preset)used+=snprintf(change_text+used,sizeof(change_text)-used,"%spreset P%d->P%d",used?", ":"",applied_preset,options.preset);
+  if(applied_vbv!=options.vbv)used+=snprintf(change_text+used,sizeof(change_text)-used,"%svbv %d->%d",used?", ":"",applied_vbv,options.vbv);
+  if(applied_multipass!=options.multipass)used+=snprintf(change_text+used,sizeof(change_text)-used,"%smultipass %d->%d",used?", ":"",applied_multipass,options.multipass);
+  snprintf(change_text+used,sizeof(change_text)-used," (change %d since the encoder was created, %d since multipass was last 2)",live_changes,changes_since_multipass2);
+  trace("options changed: %s",change_text);
+ }
+ applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;applied_multipass=options.multipass;applied_signature=signature;
  return true;
 }
 }
@@ -167,7 +179,7 @@ int StockInitialize(void* encoder,void* init){
  auto* original=static_cast<NV_ENC_INITIALIZE_PARAMS*>(init);
  if(original){initialized_width=original->encodeWidth;initialized_height=original->encodeHeight;note_request(original->encodeConfig);trace("initialize: picture %ux%u (max %ux%u)",initialized_width,initialized_height,original->maxEncodeWidth,original->maxEncodeHeight);}
  NV_ENC_INITIALIZE_PARAMS patched{};NV_ENC_CONFIG config{};
- reconfigure_calls=0;
+ reconfigure_calls=0;live_changes=0;changes_since_multipass2=0;applied_signature=-1;
  if(original&&apply_options(*original,patched,config,true)){
   trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d), multipass %d",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode),options.multipass);
   { const unsigned v[8]{original->encodeWidth,original->encodeHeight,static_cast<unsigned>(options.multipass),static_cast<unsigned>(applied_preset),0,0,0,0};flight_note('I',0,v,"initialize"); }
@@ -197,7 +209,7 @@ int StockReconfigure(void* encoder,void* params){
     drv?static_cast<unsigned>(drv->rcParams.rateControlMode)|static_cast<unsigned>(drv->rcParams.multiPass)<<4|(drv->rcParams.enableLookahead?1u:0u)<<8|(drv->rcParams.enableAQ?1u:0u)<<12|preset_number(original->reInitEncodeParams.presetGUID)<<16:0,
     config.rcParams.averageBitRate,config.rcParams.maxBitRate,config.rcParams.vbvBufferSize,
     static_cast<unsigned>(config.rcParams.rateControlMode)|static_cast<unsigned>(config.rcParams.multiPass)<<4|static_cast<unsigned>(applied_preset)<<16|(original->resetEncoder?1u:0u)<<20|(original->forceIDR?1u:0u)<<21|(signature_changed?1u:0u)<<22};
-   flight_note('R',status(result),v,result!=NV_ENC_SUCCESS?"reconfigure failed":(signature_changed?"options changed":nullptr));
+   flight_note('R',status(result),v,result!=NV_ENC_SUCCESS?"reconfigure failed":(signature_changed?change_text:nullptr),result==NV_ENC_SUCCESS&&signature_changed);
   }
   if(signature_changed||reconfigure_calls<5){
    trace("reconfigure: preset P%d, driver rc=%d vbv=%u avg=%u -> rc=%d vbv=%u, reset=%d, result=%d",applied_preset,static_cast<int>(original->reInitEncodeParams.encodeConfig->rcParams.rateControlMode),

@@ -39,6 +39,10 @@ try {
   & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\stock_only_gpu_test.obj" "/Fe:$labOutput\stock_only_gpu_test.exe" "$PSScriptRoot\stock_only_gpu_test.cpp" "$labOutput\SteamFrameH264Hook.lib" d3d11.lib
   if($LASTEXITCODE){throw 'Stock-only GPU test compilation failed'}
  }
+ if(Test-Path -LiteralPath "$PSScriptRoot\encoder_stress_gpu_test.cpp") {
+  & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\encoder_stress_gpu_test.obj" "/Fe:$labOutput\encoder_stress_gpu_test.exe" "$PSScriptRoot\encoder_stress_gpu_test.cpp" "$labOutput\SteamFrameH264Hook.lib" d3d11.lib
+  if($LASTEXITCODE){throw 'Encoder stress test compilation failed'}
+ }
  if(Test-Path -LiteralPath "$PSScriptRoot\hevc_options_test.cpp") {
   & (Join-Path $labCompiler 'cl.exe') /nologo /std:c++17 /O2 /EHsc /MT /W4 "/I$PSScriptRoot\..\vendor" "/Fo:$labOutput\\" "/Fe:$labOutput\hevc_options_test.exe" "$PSScriptRoot\hevc_options_test.cpp" "$PSScriptRoot\stock_forward.cpp"
   if($LASTEXITCODE){throw 'HEVC options test compilation failed'}
