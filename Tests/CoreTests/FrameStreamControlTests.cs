@@ -65,6 +65,14 @@ public sealed class FrameStreamControlTests : IDisposable
     }
 
     [Fact]
+    public async Task An_expression_is_evaluated_on_the_Frame_and_its_value_returned()
+    {
+        var value = await Control().EvaluateAsync("1 + 1");
+        Assert.Equal(["1 + 1"], _calls);
+        Assert.Contains("requested", value);
+    }
+
+    [Fact]
     public async Task An_unreachable_Frame_means_a_live_change_as_before()
     {
         var control = new FrameStreamControl((_, _) => throw new IOException("no Frame"), _dir);

@@ -52,6 +52,14 @@ public sealed class FrameStreamControl
         catch (JsonException error) { throw new IOException("The Frame's reply about its video encoder could not be read.", error); }
     }
 
+    /// <summary>Evaluates a read-only JavaScript expression in the Frame's Steam UI and returns the JSON text of its value (a string value comes back quoted).</summary>
+    public async Task<string> EvaluateAsync(string expression, CancellationToken token = default)
+    {
+        var template = await File.ReadAllTextAsync(Path.Combine(_runtimeDirectory, "frame_cef_stdio.py"), token).ConfigureAwait(false);
+        var script = template.Replace("__EXPRESSION_BASE64__", Convert.ToBase64String(Encoding.UTF8.GetBytes(expression)));
+        return (await _run(script, token).ConfigureAwait(false)).Trim();
+    }
+
     /// <summary>Stops the VR stream on the Frame; false when there was none to stop.</summary>
     public async Task<bool> StopAsync(CancellationToken token = default) => (await CefAsync("stop", token).ConfigureAwait(false)).Contains("\"requested\"", StringComparison.Ordinal);
 

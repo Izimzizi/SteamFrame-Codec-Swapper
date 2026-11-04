@@ -22,6 +22,8 @@ internal sealed class DashboardWatch
     private readonly string _steamVrRoot;
     private readonly string _steamLogs;
     private readonly Func<string> _tray;
+    private readonly Func<string, Task<string>>? _frame;
+    private int _frameBusy;
     private readonly object _gate = new();
     private string _lastKey = "";
     private DateTime _changed = DateTime.MinValue;
@@ -29,9 +31,9 @@ internal sealed class DashboardWatch
     private bool _wasRunning;
     private long _vrserverSeen = -1;
 
-    public DashboardWatch(string path, string steamVrRoot, string steamRoot, Func<string> tray)
+    public DashboardWatch(string path, string steamVrRoot, string steamRoot, Func<string> tray, Func<string, Task<string>>? frame = null)
     {
-        _path = path; _steamVrRoot = steamVrRoot; _steamLogs = Path.Combine(steamRoot, "logs"); _tray = tray;
+        _path = path; _steamVrRoot = steamVrRoot; _steamLogs = Path.Combine(steamRoot, "logs"); _tray = tray; _frame = frame;
     }
 
     /// <summary>Called every few seconds by the tray's poll. Cheap when nothing changed and no snapshot is due.</summary>
@@ -67,6 +69,38 @@ internal sealed class DashboardWatch
         var text = new StringBuilder($"SNAPSHOT {when}: ");
         text.Append(Processes()).Append(" || ").Append(Connected()).Append(" || ").Append(Dashboard());
         Write(text.ToString());
+        if (_frame is not null && Interlocked.CompareExchange(ref _frameBusy, 1, 0) == 0) _ = FrameSnapshotAsync(when);
+    }
+
+    // What the Frame's own dashboard holds. The desktop and Steam windows reach it as frames that come from the PC over the stream (isVRLinkRemote):
+    // after a switch with windows missing, these are the ones absent here. Reading it takes an SSH round trip, so it runs beside the other snapshot.
+    private const string FrameExpression = """
+        (() => { try {
+          const s = window.vrFrameStore, r = window.RemotePlayStore_SteamUI;
+          const frames = s ? Array.from(s.m_mapFrames.values()).map(f => ({
+            id: f.m_unFrameID, state: f.m_eState, visible: f.m_bVisible ? 1 : 0, remote: f.m_bIsVRLinkRemote ? 1 : 0, client: f.m_bIsStreamingClient ? 1 : 0,
+            names: ((f.m_info && f.m_info.action_definitions) || []).map(a => a.display_name).join("|") })) : null;
+          return JSON.stringify({ frames: frames, active: s && s.activeFrame ? s.activeFrame.m_unFrameID : null,
+            streams: r ? r.remoteClientStreams.map(x => [String(x.m_gameid), x.m_unGroupID]) : null,
+            overlays: window.overlayStore ? window.overlayStore.m_mapBrowserInfo.size : null });
+        } catch (e) { return "error " + e; } })()
+        """;
+
+    private async Task FrameSnapshotAsync(string when)
+    {
+        string line;
+        try
+        {
+            var reply = await _frame!(FrameExpression).ConfigureAwait(false);
+            var value = System.Text.Json.JsonSerializer.Deserialize<string>(reply) ?? reply;
+            line = $"FRAME {when}: {value}";
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or System.Text.Json.JsonException or InvalidOperationException or FileNotFoundException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            line = $"FRAME {when}: unreachable ({error.Message})";
+        }
+        finally { Interlocked.Exchange(ref _frameBusy, 0); }
+        try { lock (_gate) Write(line); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* diagnostics only */ }
     }
 
     private string Processes()

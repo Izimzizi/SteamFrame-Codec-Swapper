@@ -76,7 +76,7 @@ public sealed partial class TrayApp : ApplicationContext
         _controller.Changed += Render;
         Render(_controller.Current);
         _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleStats(); };
-        _dashboardWatch = new DashboardWatch(Path.Combine(AppData.Root, "dashboard-watch.log"), _paths.SteamVrRoot, _paths.SteamRoot, () => _controller.Current.State.ToString());
+        _dashboardWatch = new DashboardWatch(Path.Combine(AppData.Root, "dashboard-watch.log"), _paths.SteamVrRoot, _paths.SteamRoot, () => _controller.Current.State.ToString(), expression => new FrameStreamControl(_preferences).EvaluateAsync(expression));
         _poll.Tick += async (_, _) => { _dashboardWatch.Tick(); try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
         StartHud();
