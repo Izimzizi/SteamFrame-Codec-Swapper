@@ -58,7 +58,15 @@ In `apply_options` (`Native/H264Hook/stock_forward.cpp`): when the options ask f
 
 Verified natively: the sequences that hung (0 -> 1 -> 2, 2 -> 0 -> 1 -> 2, created at 1 then 2) survive, and a 120 s random run with the multipass walk (79 changes, 3,882 frames, GPU load 70%) finished without a fault.
 
-## Still open
+## Still open: live multipass is only partly safe
+
+The 1 -> 2 fix removes the GPU hang, not every problem with live multipass changes:
+
+- A benchmark sweep that applied multipass live (0 -> 1) failed the multipass 1 step with 71 stream-reset requests (0 per second at first, then 6 and 65 about 12 seconds after the change). The same step was fine when the sweep restarted the stream for each multipass change, so the sweep restarts the stream again (`SweepApply` in `TrayApp.Benchmark.cs`). The tray's own option changes (menu, HUD) still apply multipass live.
+- Idea not yet tested: a 1 entered from 0 may be what leaves the encoder in a bad state (every observed hang and storm had a 1 that was entered from 0 or created at 1; 2 -> 1 -> 2 was fine), so 0 -> 1 could go through 2 like 1 -> 2 goes through 0. A first try of that was dropped because the native test could not show reset storms.
+- The native stress test with no option changes at all (`STRESS_MP_START=2 STRESS_MP_SEQ=2`, a change every 6 s that rewrites the same values) sometimes stalls for 8 seconds at multipass 1 or 2 and sometimes runs a full minute, with no GPU error in the Windows log. Not understood; the test's stall is not necessarily the same fault.
+
+## Other open points
 
 
 - Whether newer drivers or GPUs behave differently. The rule above was found on the development PC's driver; if the flight log of a future fault shows another multipass step, extend the rule and add the sequence to the table.

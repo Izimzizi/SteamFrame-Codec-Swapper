@@ -264,6 +264,45 @@ public sealed partial class TrayApp
             throw new InvalidOperationException("The encoder options cannot be applied to the running stream (is SteamVR streaming?).");
     }
 
+    /// <summary>
+    /// How the sweep puts encoder options in force. A change of multipass is not made on the live encoder: the hook's fix for the 1 -> 2 hang does not cover the
+    /// rest. A live 0 -> 1 left the stream asking for resets by the dozen a few seconds later (a sweep step failed with 71), and a live change into multipass 2 once
+    /// hung the GPU. So the stream is stopped on the Frame, the options are saved while no encoder exists, and the stream is started again: SteamVR builds a new
+    /// encoder with the new multipass from the start. See docs/research/nvenc-multipass-hang.md.
+    /// </summary>
+    private Func<EncoderChoice, CancellationToken, Task> SweepApply(BenchmarkForm form, int startMultiPass)
+    {
+        var sessionMultiPass = startMultiPass;
+        return async (choice, token) =>
+        {
+            TrayLog("Sweep applies " + choice.Describe());
+            if (choice.MultiPass == sessionMultiPass) { await ApplyEncoderChoiceAsync(choice, token); return; }
+            form.ShowStatus($"Restarting the stream for multipass {choice.MultiPass}...");
+            TrayLog($"Sweep restarts the stream for multipass {sessionMultiPass} -> {choice.MultiPass}");
+            var frame = new FrameStreamControl(_preferences);
+            var stopped = await frame.StopAsync(token);
+            try
+            {
+                if (stopped) await Task.Delay(TimeSpan.FromSeconds(3), token);
+                _preferences.HookRateControl = choice.RateControl;
+                _preferences.HookPreset = choice.Preset;
+                _preferences.HookVbvFrames = choice.VbvFrames;
+                _preferences.HookMultiPass = choice.MultiPass;
+                await SaveEncoderOptionsAsync();
+            }
+            finally { await frame.StartAsync(CancellationToken.None); }
+            sessionMultiPass = choice.MultiPass;
+            // The new encoder asks for fresh pictures while it starts; the sweep only goes on once video is flowing again.
+            var flowing = 0;
+            for (var seconds = 0; seconds < 90 && flowing < 3; seconds++)
+            {
+                var sample = await NextBenchmarkSampleAsync(token);
+                flowing = sample.SteamVrRunning && sample.Mbps is not null ? flowing + 1 : 0;
+            }
+            if (flowing < 3) throw new InvalidOperationException($"The stream did not settle after restarting for multipass {choice.MultiPass} (no video for 90 seconds), so the sweep stopped. The best settings found so far are kept as the recommendation.");
+        };
+    }
+
     private async Task EncoderSweepAsync(BenchmarkForm form, EncoderSweepSettings settings, bool useScene)
     {
         var original = _controller.TargetMbps;
@@ -278,7 +317,7 @@ public sealed partial class TrayApp
         TrayLog($"Encoder sweep started at {settings.ProbeMbps} Mbps, {settings.Measure.TotalSeconds:0} s per window, from {baseline.Describe()}");
         string? saved = null;
         BenchmarkEnvironment? environment = null;
-        Func<EncoderChoice, CancellationToken, Task> apply = async (choice, token) => { TrayLog("Sweep applies " + choice.Describe()); await ApplyEncoderChoiceAsync(choice, token); };
+        var apply = SweepApply(form, baseline.MultiPass);
         try
         {
             environment = await StartEnvironmentAsync(form, useScene, run.Setup, cancel.Token);
