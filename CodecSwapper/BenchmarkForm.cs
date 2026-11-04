@@ -33,7 +33,6 @@ public sealed class BenchmarkForm : Form
     private readonly Label _best = new() { AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(10, 8, 0, 0), Font = new Font(SystemFonts.MessageBoxFont!, FontStyle.Bold), Visible = false };
     private readonly Label _detail = new() { AutoSize = true, MaximumSize = new Size(420, 0), Margin = new Padding(4, 6, 4, 4) };
     private readonly Button _openFolder = new() { Text = "Open results folder", AutoSize = true, MinimumSize = new Size(90, 30) };
-    private readonly Button _stress = new() { Text = "Debug: stress test (temporary)", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Label _estimate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
     private readonly Label _phase = new() { AutoSize = true, Text = "Ready." };
     private readonly ProgressBar _bar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 1000, Height = 14 };
@@ -53,7 +52,6 @@ public sealed class BenchmarkForm : Form
 
     public event Action<BenchmarkSettings>? StartRequested;
     public event Action<EncoderSweepSettings, bool>? SweepRequested;
-    public event Action<bool>? StressRequested;
     public event Action<EncoderChoice>? ApplyRequested;
     public event Action? StopRequested;
     public event Action<object>? DeleteRequested;
@@ -92,9 +90,7 @@ public sealed class BenchmarkForm : Form
         var optionsHost = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0) };
         optionsHost.Controls.AddRange([_bitrateOptions, _sweepOptions]);
         var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
-        actions.Controls.AddRange([_go, _openFolder, _stress, _estimate]);
-        new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 }.SetToolTip(_stress, "Temporary debug run for the GPU error after live encoder changes. For 10 minutes it changes rate control, preset and VBV at random on the live stream every 2 seconds, and every 3rd change steps multipass 0 -> 1 -> 2 -> 0 (sometimes jumps). It stops at the first sign of trouble (lost video, encoder errors, a GPU error or a fatal driver error) and writes encoder-stress-*.log, with the flight recorder of the hook, to the results folder.");
-        _stress.Click += (_, _) => { if (!_running) StressRequested?.Invoke(_scene.Checked && BenchmarkScene.Available); };
+        actions.Controls.AddRange([_go, _openFolder, _estimate]);
         var bottom = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0, 6, 0, 0) };
         bottom.Controls.AddRange([_apply, _best]);
         _estimate.Margin = new Padding(12, 8, 0, 0);
@@ -248,7 +244,6 @@ public sealed class BenchmarkForm : Form
         if (InvokeRequired) { BeginInvoke(() => SetRunning(running)); return; }
         _running = running;
         _go.Text = running ? "Stop" : "Start";
-        _stress.Enabled = !running;
         foreach (var control in new Control[] { _mode, _start, _ceiling, _step, _probe, _measure, _stopOnFailure, _scene }) control.Enabled = !running && (control != _scene || BenchmarkScene.Available);
         _compare.Invalidate();
         _phase.ForeColor = SystemColors.ControlText;

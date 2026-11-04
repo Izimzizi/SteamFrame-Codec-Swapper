@@ -50,7 +50,7 @@ Rule that fits all runs: a reconfigure from multipass 1 (quarter-resolution firs
 
 - **Flight recorder** in `stock_forward.cpp`: ring of 300 calls (init, reconfigure with what the driver asked and what was applied, encode, lock, destroy), headings name the option that moved ("multipass 1->2 (change 9 since the encoder was created, ...)").
 - **Native stress test** `encoder_stress_gpu_test.exe` with separate encode and lock threads, frames in flight, other GPU load, new content per frame and SteamVR-like request dips. Exit code 2 (call failed) or 3 (hang).
-- **Tray stress test** (temporary debug button): 10 minutes, a change every 2 s, every 3rd change steps multipass 0 -> 1 -> 2 -> 0; stops on lost video, encoder errors, GPU error 153 or a driver `[Fatal]`; saves its log and the flight log in the Benchmarks folder.
+- **Tray stress test** (a temporary debug button, removed again after the fix; restore it from commits eb227ea and 7a2e8fe): 10 minutes, a change every 2 s, every 3rd change steps multipass 0 -> 1 -> 2 -> 0; stops on lost video, encoder errors, GPU error 153 or a driver `[Fatal]`; saves its log and the flight log in the Benchmarks folder.
 
 ## Fix
 
