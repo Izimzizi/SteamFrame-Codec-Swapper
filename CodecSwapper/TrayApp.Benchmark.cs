@@ -68,6 +68,28 @@ public sealed partial class TrayApp
         return lines;
     }
 
+    /// <summary>Whether this benchmark started SteamVR itself (then it also closes it when the run ends).</summary>
+    private bool _steamVrLaunchedByBenchmark;
+
+    /// <summary>
+    /// After a run the headset's stream and SteamVR are closed, so the next run starts from a clean session and not from whatever state the last one left:
+    /// when the benchmark started SteamVR, or showed its own test scene (so nobody was playing). With the user's own VR app left running it stays open.
+    /// </summary>
+    private async Task CloseSteamVrAfterRunAsync(BenchmarkForm form, bool useScene)
+    {
+        if (!_steamVrLaunchedByBenchmark && !useScene) return;
+        _steamVrLaunchedByBenchmark = false;
+        if (!OpenVrSettings.IsRunning) return;
+        form.ShowStatus("Closing SteamVR so the next run starts clean...");
+        TrayLog("Benchmark closes SteamVR");
+        try
+        {
+            if (!await SteamVrProcess.StopAsync(_paths.SteamVrRoot, TimeSpan.FromSeconds(30), CancellationToken.None))
+                Balloon("Benchmark", "SteamVR did not close; close it before the next run.", ToolTipIcon.Warning);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { TrayLog("Closing SteamVR failed: " + error.Message); }
+    }
+
     /// <summary>Starts SteamVR when it is not running (the headset on the desk then connects by itself) and waits until it is up.</summary>
     private async Task EnsureSteamVrAsync(BenchmarkForm form, CancellationToken token)
     {
@@ -82,6 +104,7 @@ public sealed partial class TrayApp
             TrayLog("Benchmark updates the SteamVR driver before starting SteamVR");
             try { _driver.Install(); } catch (UnauthorizedAccessException error) { throw new IOException("The SteamVR driver could not be updated: " + error.Message); }
         }
+        _steamVrLaunchedByBenchmark = false;
         if (OpenVrSettings.IsRunning) return;
         var startup = Path.Combine(_paths.SteamVrRoot, "bin", "win64", "vrstartup.exe");
         form.ShowStatus("Starting SteamVR...");
@@ -93,6 +116,7 @@ public sealed partial class TrayApp
                 : new System.Diagnostics.ProcessStartInfo("steam://rungameid/250820") { UseShellExecute = true });
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException) { throw new IOException("SteamVR could not be started: " + error.Message); }
+        _steamVrLaunchedByBenchmark = true;
         for (var seconds = 0; seconds < 90; seconds++)
         {
             if (OpenVrSettings.IsRunning) { await Task.Delay(TimeSpan.FromSeconds(3), token); return; }
@@ -167,6 +191,7 @@ public sealed partial class TrayApp
         {
             if (scene is not null) await scene.DisposeAsync();
             if (awake is not null) await awake.DisposeAsync();
+            await CloseSteamVrAfterRunAsync(form, useScene);
             throw;
         }
     }
@@ -202,6 +227,7 @@ public sealed partial class TrayApp
             _benchmarkCancel = null;
             try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }
             catch (Exception error) when (error is not OperationCanceledException) { Balloon("Benchmark", $"Your bitrate target could not be put back to {original} Mbps: {error.Message}", ToolTipIcon.Warning); }
+            await CloseSteamVrAfterRunAsync(form, settings.UseScene);
         }
         if (run.Steps.Count > 0)
         {
@@ -269,6 +295,7 @@ public sealed partial class TrayApp
             try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }
             catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder sweep", $"Your bitrate target could not be put back to {original} Mbps: {error.Message}", ToolTipIcon.Warning); }
             }
+            await CloseSteamVrAfterRunAsync(form, useScene);
         }
         if (run.Trials.Count > 0)
         {
