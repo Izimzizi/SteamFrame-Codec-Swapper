@@ -114,6 +114,13 @@ public sealed class BenchmarkForm : Form
         root.Controls.Add(_phase, 0, 4); root.Controls.Add(_bar, 0, 5); root.Controls.Add(_tabs, 0, 6); root.Controls.Add(_conclusion, 0, 7); root.Controls.Add(bottom, 0, 8);
         Controls.Add(root);
 
+        // The status line wraps over as many lines as the text needs, and the full text is also a tooltip.
+        var phaseTip = new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 };
+        void FitPhase() => _phase.MaximumSize = new Size(Math.Max(200, ClientSize.Width - 30), 0);
+        _phase.TextChanged += (_, _) => phaseTip.SetToolTip(_phase, _phase.Text);
+        Resize += (_, _) => FitPhase();
+        FitPhase();
+
         UseColumns(BitrateColumns);
         _go.Click += (_, _) => { if (_running) StopRequested?.Invoke(); else Start(); };
         _apply.Click += (_, _) =>
