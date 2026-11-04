@@ -2,10 +2,16 @@
 
 ## 1.0.0 — SteamFrame Codec Swapper
 
-First release of the fork: a tray app that streams H.264 up to 500 Mbps to the Steam Frame, switches live between H.264 and the stock HEVC stream, sets rate control, NVENC preset and VBV buffer for both codecs, shows the stream in a monitor window (including encode time) and on an in-VR HUD with a settings page. The Frame's client patch is found automatically, so Frame updates that keep the client layout need no new release. The entries below this one are the upstream project's history.
+First release of the fork: a tray app that streams H.264 up to 500 Mbps to the Steam Frame, switches live between H.264 and the stock HEVC stream, sets rate control, NVENC preset, VBV buffer and multipass for both codecs, shows the stream in a monitor window (including encode time) and on an in-VR HUD with a settings page. The Frame's client patch is found automatically, so Frame updates that keep the client layout need no new release. The entries below this one are the upstream project's history.
 
 - The app is now **CodecSwapper.exe** (project folder `CodecSwapper/`, data in `%LOCALAPPDATA%\CodecSwapper`, supervisor `session_supervisor.py`, package script `Package-CodecSwapper.ps1`). Older entries below use the old names.
 - Menu wording: SteamVR driver (was Permanent PC driver), Encoder settings, Stream monitor, Record stream log, Frame connection…, Bitrate limit patch, VR HUD.
+- Encoder tools: a bitrate benchmark with its own moving test scene, a **Best encoder settings** sweep that recommends the smoothest or the best-looking combination, and a comparison of saved runs.
+- Switching H.264 / HEVC restarts only the Frame's stream, not SteamVR. After a switch the tray brings back the Frame dashboard's desktop and Steam windows when they go missing (it does what the dashboard's + does, about two seconds after the switch).
+- Fixed: a live multipass step from 1 to 2 hung the NVENC encoder (Windows event 153, then SteamVR crashed). The hook now goes through multipass 0 for that step; see [docs/research/nvenc-multipass-hang.md](docs/research/nvenc-multipass-hang.md). The sweep still restarts the stream for a multipass change.
+- Exit closes after at most 15 seconds even when the switch back to Default (HEVC) cannot finish, and no stream is started when SteamVR was closed during a switch.
+- The in-VR HUD no longer shows its first-run guide again when the tray is restarted with the headset already on.
+- The README is now a short guide; the full reference is in [docs/technical-guide.md](docs/technical-guide.md).
 
 
 ## 1.8.2 — Driver compatibility and a lower-latency HEVC option

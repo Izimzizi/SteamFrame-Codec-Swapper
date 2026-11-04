@@ -49,3 +49,6 @@ artifacts/
 Native/build/
 __pycache__/
 *.py[cod]
+
+## Output of the native hook tests when run from the repository root
+/legacy-bridge.h264
