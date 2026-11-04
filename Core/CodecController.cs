@@ -154,6 +154,7 @@ public sealed class CodecController
             if (status.Busy) throw new InvalidOperationException("A codec operation is already running. Wait for it to finish.");
             if (status.Live) throw new InvalidOperationException("A codec session is already running. Close it first.");
             if (!status.CanStart) throw new InvalidOperationException(status.Message);
+            ClearStaleRequests();
             var process = await LaunchAsync(new { protocol_version = 1, steam_root = _steamPaths.SteamRoot, steamvr_root = _steamPaths.SteamVrRoot,
                 ssh_host = preferences.SshHost, ssh_key = Path.GetFullPath(preferences.SshKey), ssh_known_hosts = Path.GetFullPath(preferences.SshKnownHosts),
                 target_mbps = request.TargetMbps, rate_control = request.RateControl, preset = request.Preset, vbv_frames = request.VbvFrames, driver = request.Driver, resume, tray_pid = Environment.ProcessId },
@@ -162,6 +163,21 @@ public sealed class CodecController
             return await WaitAsync(null, process.Id, progress, cancellationToken).ConfigureAwait(false);
         }
         finally { _operations.Release(); }
+    }
+
+    /// <summary>
+    /// With no session running, any request file is left over from an earlier one (typically the close the tray wrote while exiting, after the supervisor
+    /// had already stopped). A new session would act on it at once and close itself a second after starting.
+    /// </summary>
+    private void ClearStaleRequests()
+    {
+        try
+        {
+            var directory = Path.Combine(_sessionDirectory, "requests");
+            if (!Directory.Exists(directory)) return;
+            foreach (var file in Directory.EnumerateFiles(directory, "request-*.json")) File.Delete(file);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>

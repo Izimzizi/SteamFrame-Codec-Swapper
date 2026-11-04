@@ -124,6 +124,9 @@ class Supervisor:
   self.login='steamos@'+config['ssh_host']
   self.directory=directory.resolve();self.directory.mkdir(parents=True,exist_ok=True)
   self.requests=self.directory/'requests';self.requests.mkdir(exist_ok=True)
+  # Requests left by an earlier owner (a close the tray wrote as it exited, after that supervisor had already gone) are not for this session:
+  # acting on one would close the session a moment after it started, so the first H.264 click appeared to do nothing.
+  for stale in self.requests.glob('request-*.json'):stale.unlink(missing_ok=True)
   self.package=pathlib.Path(__file__).resolve().parent
   if self.package.name!='CodecLab':self.package=self.package.parents[1]/'artifacts/CodecLab'
   self.backend=self.package/'Backend';self.config=config

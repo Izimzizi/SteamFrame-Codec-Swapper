@@ -160,6 +160,15 @@ class KeepModeTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as directory:
    for config in (dict(base,target_mbps=501),dict(base,rate_control='abr'),dict(base,preset=9)):
     with self.assertRaises(ValueError):service.Supervisor(pathlib.Path(directory),config)
+ def test_a_new_session_ignores_request_files_left_by_an_earlier_one(self):
+  with tempfile.TemporaryDirectory() as directory:
+   key=pathlib.Path(directory)/'key';hosts=pathlib.Path(directory)/'hosts';key.write_text('k');hosts.write_text('h')
+   base={'protocol_version':1,'ssh_host':'10.35.78.1','target_mbps':100,'ssh_key':str(key),'ssh_known_hosts':str(hosts)}
+   requests=pathlib.Path(directory)/'requests';requests.mkdir()
+   stale=requests/'request-11111111-1111-1111-1111-111111111111.json'
+   stale.write_text('{"protocol_version":1,"id":"11111111-1111-1111-1111-111111111111","action":"close"}')
+   service.Supervisor(pathlib.Path(directory),base)
+   self.assertFalse(stale.exists())
  def test_authenticate_adopts_a_leftover_h264_mount_and_prepares_a_stock_client(self):
   for client,expected in (('h264','adopt'),('stock','prepare')):
    instance=self.make()
