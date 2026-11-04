@@ -102,7 +102,7 @@ public sealed class CodecControllerTests
         Assert.True((await controller.ReadStatusAsync()).RateLive);
         var changing = controller.SetRateAsync(400);
         var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        using var request = JsonDocument.Parse(ReadWhenFree(path));
         var json = request.RootElement;
         Assert.Equal("rate", json.GetProperty("action").GetString());
         Assert.Equal(400, json.GetProperty("target_mbps").GetInt32());
@@ -123,7 +123,7 @@ public sealed class CodecControllerTests
         lab.Status(codec: "H.264", rateLive: true);
         var changing = controller.SetEncoderAsync("cbr", 4, 8);
         var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        using var request = JsonDocument.Parse(ReadWhenFree(path));
         var json = request.RootElement;
         Assert.Equal("encoder", json.GetProperty("action").GetString());
         Assert.Equal("cbr", json.GetProperty("rate_control").GetString());
@@ -145,7 +145,7 @@ public sealed class CodecControllerTests
         lab.Status(codec: "H.264", rateLive: true, modeLive: true);
         var switching = controller.SetModeAsync("stock");
         var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        using var request = JsonDocument.Parse(ReadWhenFree(path));
         Assert.Equal("mode", request.RootElement.GetProperty("action").GetString());
         Assert.Equal("stock", request.RootElement.GetProperty("mode").GetString());
         lab.Status(codec: "HEVC", rateLive: true, modeLive: true, operation: request.RootElement.GetProperty("id").GetString(), ok: true);
@@ -159,7 +159,7 @@ public sealed class CodecControllerTests
         var controller = new CodecController(lab.Root, lab.Root, _ => 100, () => 1000);
         var changing = controller.SetRateAsync(400);
         var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        using var request = JsonDocument.Parse(ReadWhenFree(path));
         lab.Status(codec: "H.264", rateLive: true, operation: request.RootElement.GetProperty("id").GetString(), ok: false, error: "Live bitrate change unavailable: not available");
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => changing);
         Assert.Contains("unavailable", error.Message);
@@ -184,7 +184,7 @@ public sealed class CodecControllerTests
         var controller = new CodecController(lab.Root, lab.Root, _ => alive ? 100 : null, () => 1000);
         var closing = controller.CloseAsync();
         var path = await lab.WaitForRequest();
-        using var request = JsonDocument.Parse(File.ReadAllText(path));
+        using var request = JsonDocument.Parse(ReadWhenFree(path));
         Assert.Equal("close", request.RootElement.GetProperty("action").GetString());
         lab.Status(state: "closed", codec: "HEVC", operation: request.RootElement.GetProperty("id").GetString(), ok: true);
         alive = false;
@@ -286,7 +286,7 @@ public sealed class CodecControllerTests
         using var lab = new CodecTestDirectory();
         lab.Status(state: "waiting", codec: "Unknown");
         var path = Path.Combine(lab.Root, "status.json");
-        var node = JsonSerializer.Deserialize<System.Text.Json.Nodes.JsonObject>(File.ReadAllText(path))!;
+        var node = JsonSerializer.Deserialize<System.Text.Json.Nodes.JsonObject>(ReadWhenFree(path))!;
         node["keep"] = true; node["automatic_bandwidth"] = true;
         File.WriteAllText(path, node.ToJsonString());
         var status = await new CodecController(lab.Root, lab.Root, _ => 100, () => 1000).ReadStatusAsync();
@@ -316,6 +316,16 @@ public sealed class CodecControllerTests
     public void Credential_store_rejects_unusable_passwords(string password)
     {
         Assert.Throws<ArgumentException>(() => new FrameCredentialStore("SteamFrameAdvancedOptions/Test-" + Guid.NewGuid().ToString("N")).Save(password));
+    }
+
+    /// <summary>Reads a request file the moment it appears. A virus scanner or indexer can still hold a freshly renamed file for a moment, so a sharing violation is retried briefly.</summary>
+    private static string ReadWhenFree(string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try { return File.ReadAllText(path); }
+            catch (IOException) when (attempt < 50) { Thread.Sleep(20); }
+        }
     }
 
     private sealed class CodecTestDirectory : IDisposable
