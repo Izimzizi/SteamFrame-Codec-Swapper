@@ -59,27 +59,33 @@ public static class TrayIcons
     public static Icon For(TrayState state)
     {
         if (Cache.TryGetValue(state, out var cached)) return cached;
+        // Blue is the stock stream (Default HEVC), green is H.264; amber while switching, red for a problem. H.264 chosen but not running yet (waiting for
+        // SteamVR or the Frame) is a green ring with an empty middle, solid once it runs.
         var color = state switch
         {
             TrayState.Armed => Color.FromArgb(46, 160, 67),
-            TrayState.Waiting => Color.FromArgb(47, 129, 247),
+            TrayState.Waiting => Color.FromArgb(46, 160, 67),
             TrayState.Arming or TrayState.Disarming => Color.FromArgb(210, 153, 34),
             TrayState.Error => Color.FromArgb(218, 54, 51),
-            _ => Color.FromArgb(110, 118, 129)
+            _ => Color.FromArgb(47, 129, 247)
         };
+        var ring = state == TrayState.Waiting;
         using var bitmap = new Bitmap(32, 32);
         using (var graphics = Graphics.FromImage(bitmap))
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
             using var fill = new SolidBrush(color);
-            graphics.FillEllipse(fill, 1, 1, 30, 30);
+            var gauge = ring ? Color.FromArgb(120, 225, 145) : Color.White;
+            if (ring) { using var outline = new Pen(gauge, 3f); graphics.DrawEllipse(outline, 2.5f, 2.5f, 27, 27); }
+            else graphics.FillEllipse(fill, 1, 1, 30, 30);
             // The watch's gauge, frozen at about two thirds: a 270 degree track with a lit part and a dot in the middle.
-            using var track = new Pen(Color.FromArgb(90, 255, 255, 255), 3.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
-            using var lit = new Pen(Color.White, 3.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            using var track = new Pen(Color.FromArgb(ring ? 120 : 90, gauge), 3.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            using var lit = new Pen(gauge, 3.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
             graphics.DrawArc(track, 7, 7, 18, 18, 135, 270);
             graphics.DrawArc(lit, 7, 7, 18, 18, 135, 175);
-            graphics.FillEllipse(Brushes.White, 14, 14, 4, 4);
+            using var dot = new SolidBrush(gauge);
+            graphics.FillEllipse(dot, 14, 14, 4, 4);
         }
         var handle = bitmap.GetHicon();
         try { return Cache[state] = (Icon)Icon.FromHandle(handle).Clone(); }
