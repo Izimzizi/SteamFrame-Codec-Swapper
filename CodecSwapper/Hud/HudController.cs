@@ -58,6 +58,15 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
     private DateTime _committedAt, _lastSlideEvent, _clock;
 
+    // The HUD's own laser: used while the dashboard is closed, when SteamVR draws none.
+    private enum Over { None, Icon, Panel }
+    private readonly List<OverlayEvent> _ownIcon = [], _ownPanel = [];
+    private Over _over = Over.None;
+    private bool _ownDown;
+    private DateTime _nativeAt = DateTime.MinValue, _refreshRequestedAt = DateTime.MinValue;
+    private bool _refreshPending;
+    private static readonly TimeSpan NativeLaserHold = TimeSpan.FromMilliseconds(1500), RefreshExpiry = TimeSpan.FromSeconds(30);
+
     private sealed record Grab(uint Device, Pose DeviceAtGrab, Pose PanelAtGrab, bool Icon);
 
     public bool Repositioning => _repositioning;
@@ -81,6 +90,11 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         }
         if (!api.StillRunning()) { Teardown(); _nextConnect = at + ConnectRetry; return; }
         if (_overlay == 0 && !Create()) { _nextConnect = at + ConnectRetry; return; }
+        if (_refreshPending)
+        {
+            _refreshPending = false;
+            if (at - _refreshRequestedAt < RefreshExpiry) { var done = api.RefreshDashboard(); log?.Invoke("HUD: dashboard refresh after a codec switch: " + done); }
+        }
 
         var device = api.ControllerIndex(settings.IsLeft);
         if (device == IOverlayApi.NoDevice)
@@ -95,12 +109,15 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_grab is not null) FollowGrab();   // the icon below is placed from the latest hand position
         if (_guideStep == -2) _guideStep = settings.GuideDone ? -1 : settings.Watch ? 0 : 1;
         TickFade(device, at);
+        TickOwnLaser(device, at);
         TickIcon(device, at);
         ApplyPanelVisibility();
         if (!_panelVisible) return;
         // The laser only reaches the HUD while the dashboard is open; anything else is ignored so a stray event can never press a button.
         // SteamVR does not always report a dashboard that was already open when the HUD joined, so the laser moving over the panel counts as proof it is open (a click alone never does).
         var events = api.PollEvents(_overlay);
+        if (events.Count > 0) _nativeAt = at;
+        if (_ownPanel.Count > 0) events = [.. events, .. _ownPanel];
         // The laser leaving the panel is reported, so in hover mode the panel shrinks at once; the hold only covers a missed report.
         foreach (var e in events)
         {
@@ -118,6 +135,70 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var width = _repositioning ? _draftWidth : settings.WidthMeters;
         if (device != _attachedTo || pose != _attachedPose || width != _attachedWidth) Attach(device, pose, width);
         Draw(at);
+    }
+
+    /// <summary>After a codec switch the Frame can come back without the dashboard's desktop and Steam windows; this asks SteamVR to send the dashboard's overlay list again.</summary>
+    public void RequestDashboardRefresh() { _refreshPending = true; _refreshRequestedAt = _clock == default ? DateTime.UtcNow : _clock; }
+
+    private readonly record struct AimHit(Over Target, float X, float Y, float Distance, bool Inside, Vector3 Point, Pose Overlay);
+
+    // With the dashboard closed SteamVR gives the overlays no laser. The pointing hand's aim is read through the input system instead: a line and a dot
+    // are drawn where it meets the HUD or the watch, and the trigger becomes the click, handed to the same code as SteamVR's own laser events.
+    private void TickOwnLaser(uint carrier, DateTime at)
+    {
+        _ownIcon.Clear(); _ownPanel.Clear();
+        if (!settings.OwnLaser || !api.InputAvailable || api.DashboardVisible() || at - _nativeAt < NativeLaserHold || !api.TryDevicePose(carrier, out var carrierPose)) { EndOwnLaser(); return; }
+        var left = !settings.IsLeft;
+        var pointer = api.ControllerIndex(left);
+        if (pointer == IOverlayApi.NoDevice || !api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { EndOwnLaser(); return; }
+
+        AimHit? best = null;
+        void Consider(Over target, Pose local, float width, int pixelsWide, int pixelsHigh)
+        {
+            var world = carrierPose.Then(local);
+            // A held press keeps following its target even when the laser slips off the edge, so a slider can be dragged.
+            var margin = _ownDown && _over == target ? 2f : HudAim.NearMargin;
+            if (_ownDown && _over != target) return;
+            if (!HudAim.TryHit(tip, world, width, pixelsWide, pixelsHigh, margin, out var x, out var y, out var distance, out var inside, out var point)) return;
+            var hit = new AimHit(target, x, y, distance, inside || (_ownDown && _over == target), point, world);
+            if (best is not { } current || (hit.Inside && !current.Inside) || (hit.Inside == current.Inside && hit.Distance < current.Distance)) best = hit;
+        }
+        if (settings.Watch && _icon != 0 && _iconDevice == carrier)
+            Consider(Over.Icon, _repositioning ? _draftIconPose : settings.IconPose, _repositioning ? _draftIconWidth : settings.IconWidthMeters, HudPanel.IconSize, HudPanel.IconSize);
+        if (_panelVisible)
+            Consider(Over.Panel, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters, HudPanel.Width, HudPanel.Height);
+
+        var target = best is { Inside: true } inside ? inside.Target : Over.None;
+        void Emit(Over over, OverlayEventKind kind, float x, float y) => (over == Over.Icon ? _ownIcon : _ownPanel).Add(new(kind, pointer, x, y));
+        if (target != _over)
+        {
+            if (_over != Over.None) { if (_ownDown) Emit(_over, OverlayEventKind.MouseUp, 0, 0); Emit(_over, OverlayEventKind.FocusLeave, 0, 0); _ownDown = false; }
+            if (best is { } entered && target != Over.None) Emit(target, OverlayEventKind.FocusEnter, entered.X, entered.Y);
+            _over = target;
+        }
+        if (_over != Over.None && best is { } now)
+        {
+            Emit(_over, OverlayEventKind.MouseMove, now.X, now.Y);
+            if (pressed && !_ownDown) { Emit(_over, OverlayEventKind.MouseDown, now.X, now.Y); _ownDown = true; }
+            else if (!pressed && _ownDown) { Emit(_over, OverlayEventKind.MouseUp, now.X, now.Y); _ownDown = false; }
+        }
+
+        if (best is not { } seen || !api.TryDevicePose(0, out var head)) { api.HideLaser(); return; }
+        var line = HudAim.Line(tip.T, seen.Point, head.T, out var length);
+        var facing = Vector3.Dot(head.T - seen.Point, seen.Overlay.Z) >= 0 ? 1f : -1f;
+        api.ShowLaser(line, length, seen.Overlay with { T = seen.Point + seen.Overlay.Z * (.002f * facing) });
+    }
+
+    private void EndOwnLaser()
+    {
+        if (_over != Over.None)
+        {
+            var list = _over == Over.Icon ? _ownIcon : _ownPanel;
+            if (_ownDown) list.Add(new(OverlayEventKind.MouseUp, IOverlayApi.NoDevice, 0, 0));
+            list.Add(new(OverlayEventKind.FocusLeave, IOverlayApi.NoDevice, 0, 0));
+            _over = Over.None; _ownDown = false;
+        }
+        api.HideLaser();
     }
 
     private void UpdateDashboard(DateTime at)
@@ -206,7 +287,9 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             if (_iconDevice != device) api.SetVisible(_icon, true);
             _iconDevice = device; _iconPose = pose; _iconWidth = width;
         }
-        foreach (var e in api.PollEvents(_icon))
+        var iconEvents = api.PollEvents(_icon);
+        if (iconEvents.Count > 0) _nativeAt = at;
+        foreach (var e in iconEvents.Concat(_ownIcon))
         {
             if (e.Kind is OverlayEventKind.MouseMove or OverlayEventKind.FocusEnter) _iconHover = true;
             else if (e.Kind == OverlayEventKind.FocusLeave) _iconHover = false;
@@ -292,6 +375,8 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     public void Teardown()
     {
         _grab = null;
+        _over = Over.None; _ownDown = false;
+        if (api.Connected) api.HideLaser();
         DestroyIcon();
         if (_overlay != 0 && api.Connected) { try { api.DestroyOverlay(_overlay); } catch (Exception) { /* SteamVR went first */ } }
         _overlay = 0; _attachedTo = IOverlayApi.NoDevice; _drawn = null; _panelVisible = false;

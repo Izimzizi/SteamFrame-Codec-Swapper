@@ -47,6 +47,63 @@ public sealed class HudMathTests
         Assert.False(Pose.TryFromMatrix34([..Enumerable.Repeat(float.NaN, 12)], out _));
         Assert.False(Pose.TryFromMatrix34(new float[5], out _));
     }
+
+    [Fact]
+    public void A_ray_meets_a_flat_overlay_at_the_pixel_it_points_at()
+    {
+        // A 0.2 m wide, 100 x 50 pixel overlay at the origin facing +Z; the ray starts 1 m in front of it and looks down -Z.
+        var overlay = Pose.Identity;
+        Assert.True(HudAim.TryHit(new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(0, 0, 1)), overlay, .2f, 100, 50, 0, out var x, out var y, out var distance, out var inside, out _));
+        Assert.True(inside); Assert.Equal(50f, x, 2); Assert.Equal(25f, y, 2); Assert.Equal(1f, distance, 3);
+        // 5 cm to the right and 2.5 cm up: three quarters across, three quarters up (origin bottom-left).
+        Assert.True(HudAim.TryHit(new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(.05f, .025f, 1)), overlay, .2f, 100, 50, 0, out x, out y, out _, out inside, out _));
+        Assert.Equal(75f, x, 2); Assert.Equal(37.5f, y, 2);
+    }
+
+    [Fact]
+    public void A_ray_outside_the_edge_only_counts_inside_the_margin_and_never_from_behind()
+    {
+        var facing = new Pose(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(.11f, 0, 1));
+        Assert.False(HudAim.TryHit(facing, Pose.Identity, .2f, 100, 50, 0, out _, out _, out _, out _, out _));
+        Assert.True(HudAim.TryHit(facing, Pose.Identity, .2f, 100, 50, HudAim.NearMargin, out var x, out _, out _, out var inside, out _));
+        Assert.False(inside); Assert.Equal(100f, x, 2);   // clamped to the picture
+        var behind = new Pose(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(0, 0, -1));   // looks away from the overlay
+        Assert.False(HudAim.TryHit(behind, Pose.Identity, .2f, 100, 50, HudAim.NearMargin, out _, out _, out _, out _, out _));
+    }
+
+    [Fact]
+    public void The_laser_strip_runs_along_the_ray_and_turns_toward_the_viewer()
+    {
+        var line = HudAim.Line(Vector3.Zero, new(1, 0, 0), new(.5f, 1, 0), out var length);
+        Assert.Equal(1f, length, 3);
+        Near(line.X, Vector3.UnitX); Near(line.Z, Vector3.UnitY); Near(line.T, new(.5f, 0, 0));
+        Near(Vector3.Cross(line.X, line.Y), line.Z);   // a proper rotation
+    }
+}
+
+public sealed class HudInputManifestTests : IDisposable
+{
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "hud-input-" + Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public void The_manifest_names_the_aim_and_click_actions_and_binds_them_for_the_frames_controller_and_the_common_ones()
+    {
+        var path = HudInputManifest.Write(_directory, "system.generated.codecswapper.exe");
+        using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+        var actions = manifest.RootElement.GetProperty("actions").EnumerateArray().Select(a => a.GetProperty("name").GetString()).ToArray();
+        Assert.Equal([HudInputManifest.TipAction, HudInputManifest.ClickAction], actions);
+        var bindings = manifest.RootElement.GetProperty("default_bindings").EnumerateArray().ToArray();
+        Assert.Contains(bindings, b => b.GetProperty("controller_type").GetString() == "frame_controller");
+        foreach (var binding in bindings)
+        {
+            using var file = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(_directory, binding.GetProperty("binding_url").GetString()!)));
+            var root = file.RootElement.GetProperty("bindings");
+            Assert.Equal(2, root.GetProperty(HudInputManifest.AimSet).GetProperty("poses").GetArrayLength());
+            Assert.Equal(2, root.GetProperty(HudInputManifest.ClickSet).GetProperty("sources").GetArrayLength());
+        }
+    }
+
+    public void Dispose() { try { Directory.Delete(_directory, true); } catch (IOException) { } }
 }
 
 public sealed class HudSettingsTests : IDisposable
@@ -207,6 +264,15 @@ public sealed class HudControllerTests
         public bool TryDevicePose(uint device, out Pose pose) => Poses.TryGetValue(device, out pose);
         public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay) { var queue = overlay == 7 ? Events : IconEvents; var list = queue.ToList(); queue.Clear(); return list; }
         public bool DashboardVisible() => Dashboard;
+        public bool InputOn, AimOk = true, Trigger, LastClaim;
+        public Pose Tip = Pose.Identity;
+        public readonly List<string> Laser = [];
+        public int Refreshes;
+        public bool InputAvailable => InputOn;
+        public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { tip = Tip; LastClaim = claimClick; pressed = claimClick && Trigger; return AimOk; }
+        public void ShowLaser(Pose line, float length, Pose dot) => Laser.Add("show");
+        public void HideLaser() => Laser.Add("hide");
+        public string RefreshDashboard() { Refreshes++; return "refreshed"; }
         public void Dispose() { }
     }
 
@@ -242,6 +308,75 @@ public sealed class HudControllerTests
         public void Press(string id) { Api.Events.Enqueue(Click(id)); Tick(); }
         // Laser at panel x on the slider's line (GL space).
         public OverlayEvent Slide(OverlayEventKind kind, float x, uint device = 4) => new(kind, device, x, HudPanel.Height - (HudPanel.SliderArea.Top + 40));
+    }
+
+    // Aim the pointing hand at a button of the panel, from 30 cm in front of it.
+    private static Pose AimAt(Rig rig, string id)
+    {
+        var b = HudPanel.Layout(rig.View with { Repositioning = rig.Hud.Repositioning, OpenMenu = rig.Hud.OpenMenu, Page = rig.Hud.Page, Interactive = true }).Single(x => x.Id == id).Bounds;
+        var across = ((b.X + b.Width / 2f) / HudPanel.Width - .5f) * rig.Settings.WidthMeters;
+        var up = ((HudPanel.Height - (b.Y + b.Height / 2f)) / HudPanel.Height - .5f) * rig.Settings.WidthMeters * HudPanel.Height / HudPanel.Width;
+        var world = Pose.Identity.Then(rig.Settings.Pose);
+        var point = world.T + world.X * across + world.Y * up;
+        return new(world.X, world.Y, world.Z, point + world.Z * .3f);
+    }
+
+    private static Rig OwnLaserRig()
+    {
+        var rig = new Rig();
+        rig.Api.Dashboard = false; rig.Api.InputOn = true;
+        rig.Api.Poses[3] = Pose.Identity; rig.Api.Poses[0] = new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(0, 0, .6f));
+        rig.Tick();
+        return rig;
+    }
+
+    [Fact]
+    public void With_the_dashboard_closed_the_own_laser_hovers_and_the_trigger_presses_a_button()
+    {
+        var rig = OwnLaserRig();
+        rig.Api.Tip = AimAt(rig, "codec:h264");
+        rig.Tick();
+        Assert.Contains("show", rig.Api.Laser);
+        Assert.Empty(rig.Actions.Calls);
+        rig.Api.Trigger = true; rig.Tick();      // aimed at the HUD since the last tick: the trigger is taken from the game and pressed
+        Assert.True(rig.Api.LastClaim);
+        Assert.Contains("codec True", rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void The_own_laser_leaves_the_trigger_to_the_game_until_it_is_on_the_hud_and_hides_when_the_dashboard_opens()
+    {
+        var rig = OwnLaserRig();
+        rig.Api.Tip = new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(5, 5, 5));   // far away, looking down -Z
+        rig.Api.Trigger = true; rig.Tick();
+        Assert.False(rig.Api.LastClaim);
+        Assert.Empty(rig.Actions.Calls);
+        rig.Api.Tip = AimAt(rig, "codec:h264"); rig.Tick();
+        rig.Api.Laser.Clear();
+        rig.Api.Dashboard = true; rig.Tick();    // SteamVR draws its own laser now
+        Assert.Contains("hide", rig.Api.Laser);
+        Assert.DoesNotContain("show", rig.Api.Laser);
+    }
+
+    [Fact]
+    public void The_own_laser_is_off_without_input_or_when_switched_off()
+    {
+        var rig = OwnLaserRig();
+        rig.Api.Tip = AimAt(rig, "codec:h264");
+        rig.Settings.OwnLaser = false; rig.Tick();
+        Assert.DoesNotContain("show", rig.Api.Laser);
+        rig.Settings.OwnLaser = true; rig.Api.InputOn = false; rig.Tick();
+        Assert.DoesNotContain("show", rig.Api.Laser);
+    }
+
+    [Fact]
+    public void A_dashboard_refresh_request_is_sent_to_steamvr_once_the_hud_has_joined()
+    {
+        var rig = OwnLaserRig();
+        rig.Hud.RequestDashboardRefresh(); rig.Tick();
+        Assert.Equal(1, rig.Api.Refreshes);
+        rig.Tick();
+        Assert.Equal(1, rig.Api.Refreshes);
     }
 
     [Fact]

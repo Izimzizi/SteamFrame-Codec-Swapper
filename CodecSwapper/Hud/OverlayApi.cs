@@ -31,4 +31,18 @@ public interface IOverlayApi : IDisposable
     IReadOnlyList<OverlayEvent> PollEvents(ulong overlay);
     /// <summary>Whether SteamVR's dashboard is open. SteamVR only passes laser input to overlays while it is, which is also when the HUD shows its controls.</summary>
     bool DashboardVisible();
+
+    // Our own laser, for when the dashboard is closed and SteamVR draws none. Interfaces that cannot do it keep these defaults.
+    /// <summary>Whether controller input (aim and trigger) can be read through SteamVR's input system.</summary>
+    bool InputAvailable => false;
+    /// <summary>
+    /// The pointing hand's tip pose in the standing universe and whether its trigger is pressed. The trigger is only claimed from the game
+    /// (and only reported) while <paramref name="claimClick"/> is true, so a game never loses its trigger unless the laser is on the HUD.
+    /// </summary>
+    bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { tip = Pose.Identity; pressed = false; return false; }
+    /// <summary>Draws the laser: a line pose (Y along it, <paramref name="length"/> long) and a dot on the surface it hits.</summary>
+    void ShowLaser(Pose line, float length, Pose dot) { }
+    void HideLaser() { }
+    /// <summary>Asks SteamVR's dashboard to send its overlay list to the headset again. Returns what was done, for the log.</summary>
+    string RefreshDashboard() => "";
 }

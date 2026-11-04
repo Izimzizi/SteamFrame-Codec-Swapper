@@ -66,3 +66,54 @@ public readonly record struct Pose(Vector3 X, Vector3 Y, Vector3 Z, Vector3 T)
         return true;
     }
 }
+
+/// <summary>Where a pointing ray meets a flat overlay, and the geometry of the laser drawn along it. Used when SteamVR draws no laser of its own (the dashboard is closed).</summary>
+public static class HudAim
+{
+    /// <summary>The laser is still drawn this far (metres) outside an overlay's edge, so it can be seen approaching; presses only count inside.</summary>
+    public const float NearMargin = .03f;
+
+    /// <summary>
+    /// The ray starts at the tip pose and runs along its -Z. The overlay faces +Z of its pose, is centred on it and is
+    /// <paramref name="widthMeters"/> wide with the aspect of its picture. x and y are picture pixels with the origin bottom-left (the way SteamVR reports laser events).
+    /// False when the ray is parallel, behind, too far, or outside the edge by more than <paramref name="marginMeters"/>; x and y are clamped to the picture.
+    /// </summary>
+    public static bool TryHit(Pose tip, Pose overlay, float widthMeters, int pixelsWide, int pixelsHigh, float marginMeters, out float x, out float y, out float distance, out bool inside, out Vector3 point)
+    {
+        x = y = distance = 0; inside = false; point = default;
+        if (widthMeters <= 0 || pixelsWide <= 0 || pixelsHigh <= 0) return false;
+        var direction = tip.Rotate(-Vector3.UnitZ);
+        var normal = overlay.Rotate(Vector3.UnitZ);
+        var facing = Vector3.Dot(direction, normal);
+        if (MathF.Abs(facing) < 1e-4f) return false;
+        distance = Vector3.Dot(overlay.T - tip.T, normal) / facing;
+        if (distance <= 0 || distance > 2f) return false;
+        point = tip.T + direction * distance;
+        var offset = point - overlay.T;
+        var height = widthMeters * pixelsHigh / pixelsWide;
+        var across = Vector3.Dot(offset, overlay.Rotate(Vector3.UnitX));
+        var up = Vector3.Dot(offset, overlay.Rotate(Vector3.UnitY));
+        if (MathF.Abs(across) > widthMeters / 2 + marginMeters || MathF.Abs(up) > height / 2 + marginMeters) return false;
+        inside = MathF.Abs(across) <= widthMeters / 2 && MathF.Abs(up) <= height / 2;
+        x = Math.Clamp((across / widthMeters + .5f) * pixelsWide, 0, pixelsWide);
+        y = Math.Clamp((up / height + .5f) * pixelsHigh, 0, pixelsHigh);
+        return true;
+    }
+
+    /// <summary>
+    /// The pose of a flat strip between two points: X runs along it (an overlay as wide as the line is long, with a very flat picture, is the line),
+    /// Z turns toward the viewer so it never shows edge-on, and it is centred between the points.
+    /// </summary>
+    public static Pose Line(Vector3 from, Vector3 to, Vector3 viewer, out float length)
+    {
+        var along = to - from;
+        length = along.Length();
+        var x = length > 1e-4f ? along / length : Vector3.UnitX;
+        var middle = (from + to) / 2;
+        var toViewer = viewer - middle;
+        var z = toViewer - x * Vector3.Dot(toViewer, x);
+        if (z.LengthSquared() < 1e-6f) z = Vector3.Cross(x, Math.Abs(x.Y) < .9f ? Vector3.UnitY : Vector3.UnitZ);
+        z = Vector3.Normalize(z);
+        return new(x, Vector3.Cross(z, x), z, middle);
+    }
+}

@@ -15,6 +15,8 @@ public sealed class HudSettings
     public bool AutoShow { get; set; } = true;
     /// <summary>The full panel with its controls appears when the laser points at the HUD, instead of when the dashboard opens.</summary>
     public bool ExpandOnHover { get; set; }
+    /// <summary>With the dashboard closed SteamVR draws no laser, so the HUD draws its own from the pointing hand and uses the trigger as the click.</summary>
+    public bool OwnLaser { get; set; } = true;
     /// <summary>The HUD stays out of sight until a small round icon on the controller, like a watch on the wrist, is pressed with the laser.</summary>
     public bool Watch { get; set; } = true;
     /// <summary>With <see cref="Watch"/>: whether the panel is open right now. Not remembered; a new SteamVR session starts with it closed.</summary>
