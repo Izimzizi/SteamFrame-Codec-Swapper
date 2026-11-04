@@ -219,6 +219,10 @@ public sealed class EncoderSweepTests : IDisposable
         var four = run.Trials.Single(t => t.Label == "VBV 4 frame(s)");
         Assert.True(four.Step.Seconds < 8, "the storm window ended early");
         Assert.Equal(SweepVerdict.Failed, four.Step.Verdict);
+        Assert.NotNull(four.Step.ResetsPerSecond);
+        Assert.Contains("Recovery requests per second", four.Step.Reason);
+        Assert.Contains(",6", four.Step.ResetsPerSecond);
+        Assert.Contains("resets_per_second", EncoderSweepReport.ToCsv(run));
         Assert.StartsWith("not tried", run.Trials.Single(t => t.Label == "VBV 8 frame(s)").Decision);
         Assert.NotEqual(4, run.Best!.VbvFrames);
         Assert.NotEqual(8, run.Best.VbvFrames);

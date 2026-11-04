@@ -481,14 +481,14 @@ public static class EncoderSweepReport
         foreach (var line in new[] { "SteamFrame Codec Swapper encoder sweep", "started " + run.At.ToString("O", CultureInfo.InvariantCulture), "codec " + run.Codec, $"probe {run.ProbeMbps} Mbps" }.Concat(run.Setup))
             text.Append("# ").AppendLine(line.Replace('\r', ' ').Replace('\n', ' '));
         text.Append("# ").AppendLine(run.Conclusion);
-        text.AppendLine("candidate,rate_control,preset,vbv_frames,multipass,seconds,mean_mbps,held_frames,held_ms_per_minute,pc_dropped,stream_resets,encode_avg_ms,encode_max_ms,verdict,decision,reason");
+        text.AppendLine("candidate,rate_control,preset,vbv_frames,multipass,seconds,mean_mbps,held_frames,held_ms_per_minute,pc_dropped,stream_resets,encode_avg_ms,encode_max_ms,verdict,decision,reason,resets_per_second");
         string N(double? v, string f = "0.0") => v is double d && double.IsFinite(d) ? d.ToString(f, CultureInfo.InvariantCulture) : "";
         foreach (var t in run.Trials)
             text.AppendLine(string.Join(',', new[]
             {
                 "\"" + t.Label.Replace("\"", "\"\"") + "\"", t.Choice.RateControl, t.Choice.Preset.ToString(CultureInfo.InvariantCulture), t.Choice.VbvFrames.ToString(CultureInfo.InvariantCulture), t.Choice.MultiPass.ToString(CultureInfo.InvariantCulture),
                 N(t.Step.Seconds), N(t.Step.MeanMbps), t.Step.HeldFrames.ToString(CultureInfo.InvariantCulture), N(t.Step.HeldMsPerMinute, "0"), t.Step.PcDropped.ToString(CultureInfo.InvariantCulture),
-                t.Step.StreamResets.ToString(CultureInfo.InvariantCulture), N(t.Step.EncodeAverageMs, "0.00"), N(t.Step.EncodeMaxMs, "0.00"), t.Step.Verdict.ToString(), "\"" + t.Decision + "\"", "\"" + t.Step.Reason.Replace("\"", "\"\"") + "\""
+                t.Step.StreamResets.ToString(CultureInfo.InvariantCulture), N(t.Step.EncodeAverageMs, "0.00"), N(t.Step.EncodeMaxMs, "0.00"), t.Step.Verdict.ToString(), "\"" + t.Decision + "\"", "\"" + t.Step.Reason.Replace("\"", "\"\"") + "\"", "\"" + (t.Step.ResetsPerSecond ?? "") + "\""
             }));
         return text.ToString();
     }

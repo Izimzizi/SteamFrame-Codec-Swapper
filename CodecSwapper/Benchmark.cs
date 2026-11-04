@@ -24,6 +24,8 @@ public sealed record BenchmarkStep(
     /// <summary>What the encoder was actually asked for (average and peak) during the step, as seen by the encoder monitor; null when it was not observed.</summary>
     public double? AskedMbps { get; init; }
     public double? AskedMaxMbps { get; init; }
+    /// <summary>Stream recovery requests in each second of the window (comma separated), kept when there were any, so a failed window shows when the trouble started.</summary>
+    public string? ResetsPerSecond { get; init; }
     public double HeldPerMinute => Seconds > 0 ? HeldFrames * 60.0 / Seconds : 0;
     public double HeldMsPerMinute => Seconds > 0 ? HeldMs * 60.0 / Seconds : 0;
 }
@@ -221,6 +223,8 @@ public sealed class BenchmarkRunner
     {
         private StatsSample? _first, _last;
         private readonly List<double> _mbps = [], _fps = [], _qp = [], _encodeAverage = [], _asked = [], _askedMax = [];
+        private readonly List<long> _resetSeconds = [];
+        private StatsSample? _previous;
         private double _encodeMax;
         private bool _timed;
 
@@ -232,6 +236,8 @@ public sealed class BenchmarkRunner
         public void Add(StatsSample sample)
         {
             _first ??= sample; _last = sample;
+            if (_previous?.Health is { } before && sample.Health is { } after) _resetSeconds.Add(Delta(before.StreamResets, after.StreamResets));
+            _previous = sample;
             if (sample.Mbps is double m) _mbps.Add(m);
             if (sample.Fps is double f) _fps.Add(f);
             if (sample.AverageQp is double q) _qp.Add(q);
@@ -257,8 +263,11 @@ public sealed class BenchmarkRunner
             var result = LinkCapacitySweep.Evaluate(target, sample, tolerableResets: tolerableResets);
             if (_mbps.Count == 0) result = result with { Verdict = SweepVerdict.Failed, Reason = "No encoded video was seen during the step." };
             if (errors > 0 && result.Verdict != SweepVerdict.Failed) result = result with { Verdict = SweepVerdict.Failed, Reason = $"{errors} encoder error{(errors == 1 ? "" : "s")}. " + result.Reason };
+            var perSecond = _resetSeconds.Any(v => v > 0) ? string.Join(',', _resetSeconds) : null;
+            if (perSecond is not null && result.Verdict != SweepVerdict.Clean)
+                result = result with { Reason = result.Reason + " Recovery requests per second: " + (_resetSeconds.Count > 40 ? "… " + string.Join(',', _resetSeconds.Skip(_resetSeconds.Count - 40)) : perSecond) + "." };
             var step = new BenchmarkStep(target, seconds, sample.MeanVideoMbps, sample.MeanFps, sample.ThrottleEvents, sample.ThrottleMs, sample.PcDroppedFrames, Late(), Reprojected(),
-                _timed ? _encodeAverage.Average() : null, _timed ? _encodeMax : null, mean(_qp), sample.StreamResets, errors, result.Verdict, result.Reason, 1) { AskedMbps = mean(_asked), AskedMaxMbps = mean(_askedMax) };
+                _timed ? _encodeAverage.Average() : null, _timed ? _encodeMax : null, mean(_qp), sample.StreamResets, errors, result.Verdict, result.Reason, 1) { AskedMbps = mean(_asked), AskedMaxMbps = mean(_askedMax), ResetsPerSecond = perSecond };
             return new(result, step);
         }
     }
