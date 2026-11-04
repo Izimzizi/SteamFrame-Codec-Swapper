@@ -57,7 +57,21 @@ public sealed class EncoderSweepTests : IDisposable
         Assert.Equal(new EncoderChoice("vbr", 6, 1, 1), run.Best);
         Assert.Contains("Smoothest at 200 Mbps", run.Conclusion);
         Assert.Equal(Start, run.Baseline);
-        Assert.Contains(run.Trials, t => t.Label == "Preset P7" && t.Decision == "less smooth");
+        Assert.Contains(run.Trials, t => t.Label == "Preset P7" && t.Decision == "rough: not usable");
+    }
+
+    [Fact]
+    public async Task The_choice_does_not_depend_on_the_order_the_settings_were_measured_in_and_says_why()
+    {
+        var rig = new Rig { HeldPerSecond = c => c.Preset == 7 ? 3 : 0 };
+        var run = await Run(rig);
+        var steps = run.Trials.Where(t => !t.Decision.StartsWith("not tried") && t.Decision != "repeat measurement" && t.Label is not ("Final choice" or "Your current settings")).GroupBy(t => t.Choice).ToDictionary(g => g.Key, g => g.First().Step);
+        var forward = EncoderRanking.Select(steps)!.Value;
+        var backward = EncoderRanking.Select(steps.Reverse().ToDictionary(p => p.Key, p => p.Value))!.Value;
+        Assert.Equal(forward.Choice, backward.Choice);
+        Assert.Equal(run.Best, forward.Choice);
+        Assert.Contains(run.Trials, t => t.Adopted && t.Decision.StartsWith("chosen: "));
+        Assert.Contains(run.Trials, t => t.Decision.StartsWith("tied on smoothness"));
     }
 
     [Fact]
@@ -102,7 +116,7 @@ public sealed class EncoderSweepTests : IDisposable
         var rig = new Rig { HeldPerSecond = c => c.Preset == 2 ? 4 : 0 };
         var run = await Run(rig);
         Assert.NotEqual(2, run.Best!.Preset);
-        Assert.True(run.Trials.Single(t => t.Label == "Preset P2 (current)").Step.HeldMsPerMinute > 1000);
+        Assert.True(run.Trials.First(t => t.Label == "Preset P2 (current)").Step.HeldMsPerMinute > 1000);
         Assert.Contains("Held-back time", run.Conclusion);
     }
 
