@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <string>
+#include <mutex>
 #include "nvEncodeAPI11.h"
 #include "stock_forward.h"
 
@@ -49,6 +50,47 @@ void trace(const char* format,...){
  FILE* file=nullptr;if(fopen_s(&file,path.c_str(),"a")||!file)return;
  SYSTEMTIME now{};GetLocalTime(&now);fprintf(file,"%02d:%02d:%02d.%03d ",now.wHour,now.wMinute,now.wSecond,now.wMilliseconds);
  va_list args;va_start(args,format);vfprintf(file,format,args);va_end(args);fputc('\n',file);fclose(file);
+}
+// Flight recorder for the live HEVC route (flight.log in the tray's data folder). The GPU has faulted (nvlddmkm 153) a few milliseconds after some
+// reconfigures; this keeps the last calls to the encoder in memory (every reconfigure with what the driver asked and what was applied, every encode and
+// lock with its result and timing) and writes them out when something that could matter happens: a change of the applied options, or any call that
+// does not return success. The calls that follow are written as they happen. Times are microseconds from the first call, with the calling thread.
+struct Flight{LONGLONG us;DWORD thread;char kind;int result;unsigned v[8];};
+constexpr int FlightSize=300,FlightAfter=120;
+Flight flight_ring[FlightSize];int flight_head=0,flight_count=0,flight_after=0;LONGLONG flight_zero=0;std::mutex flight_lock;
+LONGLONG flight_clock(){static LARGE_INTEGER frequency{};LARGE_INTEGER now{};if(!frequency.QuadPart)QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&now);return now.QuadPart*1000000/frequency.QuadPart;}
+void flight_write(const char* heading,const Flight* entries,int count){
+ char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
+ const std::string path=std::string(base)+"\\CodecSwapper\\flight.log";
+ WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExA(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>3000000)MoveFileExA(path.c_str(),(path+".1").c_str(),MOVEFILE_REPLACE_EXISTING);
+ FILE* file=nullptr;if(fopen_s(&file,path.c_str(),"a")||!file)return;
+ SYSTEMTIME now{};GetLocalTime(&now);
+ if(heading)fprintf(file,"==== %02d:%02d:%02d.%03d %s\n",now.wHour,now.wMinute,now.wSecond,now.wMilliseconds,heading);
+ for(int i=0;i<count;i++){
+  const Flight& f=entries[i];
+  fprintf(file,"%10lld t%lu %c r=%d",static_cast<long long>(f.us),static_cast<unsigned long>(f.thread),f.kind,f.result);
+  for(int k=0;k<8;k++)fprintf(file," %u",f.v[k]);
+  fputc('\n',file);
+ }
+ fclose(file);
+}
+// kind: R reconfigure (v: driver avg, max, vbv, rc|multipass<<4|lookahead<<8|aq<<12|preset<<16 | applied avg, max, vbv, rc|multipass<<4|preset<<16|driver reset<<20|driver IDR<<21|changed<<22),
+// r reconfigure left alone, E encode (v: flags, picture type), L lock (v: bytes, picture type), I initialize, D destroy.
+void flight_note(char kind,int result,const unsigned (&v)[8],const char* why){
+ std::lock_guard<std::mutex> guard(flight_lock);
+ if(!flight_zero)flight_zero=flight_clock();
+ Flight entry{flight_clock()-flight_zero,GetCurrentThreadId(),kind,result,{}};memcpy(entry.v,v,sizeof(entry.v));
+ flight_ring[flight_head]=entry;flight_head=(flight_head+1)%FlightSize;if(flight_count<FlightSize)++flight_count;
+ if(why&&!(flight_after>0&&strcmp(why,"options changed")==0)){
+  Flight ordered[FlightSize];const int first=(flight_head-flight_count+FlightSize)%FlightSize;
+  for(int i=0;i<flight_count;i++)ordered[i]=flight_ring[(first+i)%FlightSize];
+  flight_write(why,ordered,flight_count);flight_after=FlightAfter;
+ }else if(flight_after>0){flight_write(why?"options changed again":nullptr,&entry,1);--flight_after;}
+}
+unsigned preset_number(const GUID& guid){
+ const GUID* all[]={&NV_ENC_PRESET_P1_GUID,&NV_ENC_PRESET_P2_GUID,&NV_ENC_PRESET_P3_GUID,&NV_ENC_PRESET_P4_GUID,&NV_ENC_PRESET_P5_GUID,&NV_ENC_PRESET_P6_GUID,&NV_ENC_PRESET_P7_GUID};
+ for(int i=0;i<7;i++)if(memcmp(&guid,all[i],sizeof(GUID))==0)return static_cast<unsigned>(i+1);
+ return 0;
 }
 void load_options(){
  const ULONGLONG now=GetTickCount64();if(options_checked&&now-options_checked<500)return;options_checked=now;
@@ -128,6 +170,7 @@ int StockInitialize(void* encoder,void* init){
  reconfigure_calls=0;
  if(original&&apply_options(*original,patched,config,true)){
   trace("initialize: preset P%d asked of the encoder (driver asked for tuning %d, rc=%d), multipass %d",applied_preset,static_cast<int>(original->tuningInfo),static_cast<int>(config.rcParams.rateControlMode),options.multipass);
+  { const unsigned v[8]{original->encodeWidth,original->encodeHeight,static_cast<unsigned>(options.multipass),static_cast<unsigned>(applied_preset),0,0,0,0};flight_note('I',0,v,"initialize"); }
   return status(table.nvEncInitializeEncoder(encoder,&patched));
  }
  trace("initialize: left alone (options off or no encode configuration: config=%d)",original&&original->encodeConfig?1:0);
@@ -148,6 +191,14 @@ int StockReconfigure(void* encoder,void* params){
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;
   // No resetEncoder/forceIDR on a changed option: a rate-control reset together with full-resolution two-pass (multipass 2) faulted the GPU (nvlddmkm event 153) and crashed SteamVR.
   const auto result=table.nvEncReconfigureEncoder(encoder,&copy);
+  {
+   const auto* drv=original->reInitEncodeParams.encodeConfig;
+   const unsigned v[8]{drv?drv->rcParams.averageBitRate:0,drv?drv->rcParams.maxBitRate:0,drv?drv->rcParams.vbvBufferSize:0,
+    drv?static_cast<unsigned>(drv->rcParams.rateControlMode)|static_cast<unsigned>(drv->rcParams.multiPass)<<4|(drv->rcParams.enableLookahead?1u:0u)<<8|(drv->rcParams.enableAQ?1u:0u)<<12|preset_number(original->reInitEncodeParams.presetGUID)<<16:0,
+    config.rcParams.averageBitRate,config.rcParams.maxBitRate,config.rcParams.vbvBufferSize,
+    static_cast<unsigned>(config.rcParams.rateControlMode)|static_cast<unsigned>(config.rcParams.multiPass)<<4|static_cast<unsigned>(applied_preset)<<16|(original->resetEncoder?1u:0u)<<20|(original->forceIDR?1u:0u)<<21|(signature_changed?1u:0u)<<22};
+   flight_note('R',status(result),v,result!=NV_ENC_SUCCESS?"reconfigure failed":(signature_changed?"options changed":nullptr));
+  }
   if(signature_changed||reconfigure_calls<5){
    trace("reconfigure: preset P%d, driver rc=%d vbv=%u avg=%u -> rc=%d vbv=%u, reset=%d, result=%d",applied_preset,static_cast<int>(original->reInitEncodeParams.encodeConfig->rcParams.rateControlMode),
     original->reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize,original->reInitEncodeParams.encodeConfig->rcParams.averageBitRate,
@@ -164,7 +215,9 @@ int StockReconfigure(void* encoder,void* params){
   return status(result);
  }
  if(reconfigure_calls<5){trace("reconfigure: left alone (options off or no encode configuration: config=%d)",original&&original->reInitEncodeParams.encodeConfig?1:0);++reconfigure_calls;}
- return status(table.nvEncReconfigureEncoder(encoder,original));
+ const auto left=table.nvEncReconfigureEncoder(encoder,original);
+ { const unsigned v[8]{};flight_note('r',status(left),v,left!=NV_ENC_SUCCESS?"reconfigure (left alone) failed":nullptr); }
+ return status(left);
 }
 int StockRegister(void* encoder,const void* params,void** resource){
  if(!ready||!params||!resource)return NV_ENC_ERR_INVALID_PTR;
@@ -195,7 +248,9 @@ int StockEncode(void* encoder,const void* picture,void* input,void* output,uint3
  // The caller's picture is read-only here: submit a copy that names this session's own input and output.
  auto copy=*static_cast<const NV_ENC_PIC_PARAMS*>(picture);
  copy.inputBuffer=input;copy.outputBitstream=output;copy.encodePicFlags|=extra_flags;
- return status(table.nvEncEncodePicture(encoder,&copy));
+ const auto result=table.nvEncEncodePicture(encoder,&copy);
+ { const unsigned v[8]{static_cast<unsigned>(copy.encodePicFlags),static_cast<unsigned>(copy.pictureType),0,0,0,0,0,0};flight_note('E',status(result),v,result!=NV_ENC_SUCCESS?"encode failed":nullptr); }
+ return status(result);
 }
 int StockLock(void* encoder,void* params,void* output){
  if(!ready||!params)return NV_ENC_ERR_INVALID_PTR;
@@ -203,6 +258,7 @@ int StockLock(void* encoder,void* params,void* output){
  auto copy=*caller;copy.outputBitstream=output;
  const auto result=table.nvEncLockBitstream(encoder,&copy);
  if(result==NV_ENC_SUCCESS){const auto virtual_output=caller->outputBitstream;*caller=copy;caller->outputBitstream=virtual_output;}
+ { const unsigned v[8]{result==NV_ENC_SUCCESS?static_cast<unsigned>(copy.bitstreamSizeInBytes):0,result==NV_ENC_SUCCESS?static_cast<unsigned>(copy.pictureType):0,0,0,0,0,0,0};flight_note('L',status(result),v,result!=NV_ENC_SUCCESS?"lock failed":nullptr); }
  return status(result);
 }
 int StockUnlock(void* encoder,void* output){return ready?status(table.nvEncUnlockBitstream(encoder,output)):NV_ENC_ERR_INVALID_PTR;}
@@ -216,5 +272,5 @@ int StockAppliedOptions(uint32_t* cbr,uint32_t* preset,uint32_t* vbv){
  *cbr=applied_cbr?1:0;*preset=static_cast<uint32_t>(applied_preset);*vbv=static_cast<uint32_t>(applied_vbv);return 1;
 }
 int StockMultiPass(void){load_options();return options.multipass;}
-int StockDestroy(void* encoder){if(ready)trace("encoder session destroyed");return ready?status(table.nvEncDestroyEncoder(encoder)):NV_ENC_ERR_INVALID_PTR;}
+int StockDestroy(void* encoder){if(ready){trace("encoder session destroyed");const unsigned v[8]{};flight_note('D',0,v,"encoder session destroyed");}return ready?status(table.nvEncDestroyEncoder(encoder)):NV_ENC_ERR_INVALID_PTR;}
 }
