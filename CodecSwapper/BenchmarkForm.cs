@@ -45,7 +45,7 @@ public sealed class BenchmarkForm : Form
     private List<EncoderSweepRun> _sweepHistory = [];
     private BenchmarkRun? _shown;
     private EncoderSweepRun? _shownSweep;
-    private EncoderChoice? _recommended;
+    private EncoderChoice? _recommended, _applied;
     private bool _running, _probeTouched, _updatingList;
 
     public event Action<BenchmarkSettings>? StartRequested;
@@ -116,7 +116,12 @@ public sealed class BenchmarkForm : Form
 
         UseColumns(BitrateColumns);
         _go.Click += (_, _) => { if (_running) StopRequested?.Invoke(); else Start(); };
-        _apply.Click += (_, _) => { if (_recommended is { } choice) ApplyRequested?.Invoke(choice); };
+        _apply.Click += (_, _) =>
+        {
+            if (_recommended is not { } choice) return;
+            _apply.Enabled = false; _apply.Text = "Applying…";
+            ApplyRequested?.Invoke(choice);
+        };
         _delete.Click += (_, _) => DeleteSelected();
         _compare.SelectedIndexChanged += (_, _) => ShowSelectedDetail();
         _openFolder.Click += (_, _) => { try { Directory.CreateDirectory(AppData.BenchmarksDirectory); System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppData.BenchmarksDirectory) { UseShellExecute = true }); } catch (Exception) { } };
@@ -206,6 +211,7 @@ public sealed class BenchmarkForm : Form
         _go.Text = running ? "Stop" : "Start";
         foreach (var control in new Control[] { _mode, _start, _ceiling, _step, _probe, _measure, _stopOnFailure, _scene }) control.Enabled = !running && (control != _scene || BenchmarkScene.Available);
         _delete.Enabled = !running;
+        _phase.ForeColor = SystemColors.ControlText;
         if (!running) UpdateBest(SweepMode ? _shownSweep : _shown);
         if (running)
         {
@@ -360,6 +366,26 @@ public sealed class BenchmarkForm : Form
         _best.Text = text ?? "";
         _best.Visible = text is not null;
         _apply.Visible = _recommended is not null && !_running;
+        ShowApplyState();
+    }
+
+    /// <summary>The button says what happened: ready, applied (green, inactive) or, after a failure, ready again.</summary>
+    private void ShowApplyState()
+    {
+        var applied = _recommended is not null && _recommended == _applied;
+        _apply.Text = applied ? "✓ Applied" : "Apply best settings";
+        _apply.Enabled = !applied;
+        _apply.ForeColor = applied ? Color.FromArgb(30, 130, 60) : SystemColors.ControlText;
+    }
+
+    /// <summary>The tray reports whether the settings were put into force.</summary>
+    public void ShowApplyResult(EncoderChoice choice, bool success, string message)
+    {
+        if (InvokeRequired) { BeginInvoke(() => ShowApplyResult(choice, success, message)); return; }
+        if (success) _applied = choice;
+        ShowApplyState();
+        _phase.Text = (success ? "Applied: " : "Not applied: ") + message;
+        _phase.ForeColor = success ? Color.FromArgb(30, 130, 60) : Color.FromArgb(190, 40, 40);
     }
 
     private void ShowSelectedDetail()

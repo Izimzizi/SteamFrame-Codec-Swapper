@@ -22,8 +22,8 @@ public sealed partial class TrayApp
         form.SweepRequested += (settings, useScene) => _benchmarkTask = RunAsync(() => EncoderSweepAsync(form, settings, useScene));
         form.ApplyRequested += choice => _ = RunAsync(async () =>
         {
-            try { await ApplyEncoderChoiceAsync(choice, CancellationToken.None); Balloon("Encoder settings", "Applied: " + choice.Describe(), ToolTipIcon.Info); }
-            catch (Exception error) when (error is IOException or InvalidOperationException) { Balloon("Encoder settings", "Not applied: " + error.Message, ToolTipIcon.Warning); }
+            try { await ApplyEncoderChoiceAsync(choice, CancellationToken.None); Balloon("Encoder settings", "Applied: " + choice.Describe(), ToolTipIcon.Info); form.ShowApplyResult(choice, true, choice.Describe()); }
+            catch (Exception error) when (error is IOException or InvalidOperationException) { Balloon("Encoder settings", "Not applied: " + error.Message, ToolTipIcon.Warning); form.ShowApplyResult(choice, false, error.Message); }
         });
         form.StopRequested += () => _benchmarkCancel?.Cancel();
         form.DeleteRequested += run =>
