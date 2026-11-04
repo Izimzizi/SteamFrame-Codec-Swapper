@@ -52,3 +52,6 @@ __pycache__/
 
 ## Output of the native hook tests when run from the repository root
 /legacy-bridge.h264
+
+# Output of the native stress tests
+*.h264

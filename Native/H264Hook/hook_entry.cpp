@@ -6,6 +6,8 @@
 #include <string>
 #include "nvEncodeAPI11.h"
 #include "legacy_api_bridge.h"
+#include "data_folder.h"
+#include <share.h>
 #include "MinHook.h"
 
 static HMODULE driver=nullptr,nvenc=nullptr;
@@ -109,16 +111,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookReadTrialIdentity(void* output
 // SteamVR first asks for an encoder. It reports no devices. The codec starts as stock HEVC; the supervisor (or nothing at all)
 // decides when to switch.
 static FILE* driver_log=nullptr;
-static std::string data_folder(){
- char base[MAX_PATH]{};
- if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return {};
- const std::string directory=std::string(base)+"\\CodecSwapper";CreateDirectoryA(directory.c_str(),nullptr);
- return directory;
-}
 static void driver_note(const char* text){
  if(!driver_log){
-  const auto directory=data_folder();if(directory.empty())return;
-  driver_log=fopen((directory+"\\driver.log").c_str(),"a");if(!driver_log)return;
+  const auto path=hook_data_path(L"driver.log");if(path.empty())return;
+  driver_log=_wfsopen(path.c_str(),L"a",_SH_DENYNO);if(!driver_log)return;
  }
  SYSTEMTIME time;GetLocalTime(&time);
  fprintf(driver_log,"%02d:%02d:%02d.%03d pid %lu %s\n",time.wHour,time.wMinute,time.wSecond,time.wMilliseconds,GetCurrentProcessId(),text);
@@ -126,8 +122,8 @@ static void driver_note(const char* text){
 }
 // An optional lower H.264 size limit: a text file "<width>x<height>" (or just the width) in the tray's data folder.
 static void read_h264_limit(){
- const auto directory=data_folder();if(directory.empty())return;
- FILE* file=fopen((directory+"\\h264-limit.txt").c_str(),"r");if(!file)return;
+ const auto path=hook_data_path(L"h264-limit.txt");if(path.empty())return;
+ FILE* file=nullptr;if(_wfopen_s(&file,path.c_str(),L"r")||!file)return;
  unsigned width=0,height=0;const int count=fscanf(file,"%ux%u",&width,&height);fclose(file);
  if(count>=1&&HookConfigureH264Limit(width,count>=2?height:0)==0){
   char note[96];snprintf(note,sizeof(note),"H.264 size limit %ux%u from h264-limit.txt",width,count>=2?height:0);driver_note(note);
@@ -154,7 +150,7 @@ static void wrap_get_int(){
  VirtualProtect(slot,sizeof(void*),old,&old);
 }
 static const char* const vrlink="driver_vrlink";
-static std::string restore_path(){const auto directory=data_folder();return directory.empty()?std::string():directory+"\\width-restore.txt";}
+static std::wstring restore_path(){return hook_data_path(L"width-restore.txt");}
 static int settings_get_int(const char* key,bool* ok){
  int error=0;auto* table=*static_cast<void***>(settings);
  const auto value=reinterpret_cast<int(*)(void*,const char*,const char*,int*)>(table[6])(settings,vrlink,key,&error);
@@ -175,7 +171,7 @@ static void settings_set_bool(const char* key,bool value){
 }
 static bool read_restore(int& width,int& automatic){
  const auto path=restore_path();if(path.empty())return false;
- FILE* file=fopen(path.c_str(),"r");if(!file)return false;
+ FILE* file=nullptr;if(_wfopen_s(&file,path.c_str(),L"r")||!file)return false;
  const int count=fscanf(file,"%d %d",&width,&automatic);fclose(file);return count==2;
 }
 static void restore_width(){
@@ -183,7 +179,7 @@ static void restore_width(){
  if(!settings||!read_restore(width,automatic))return;
  if(width>0)settings_set_int("streamFormatWidth",width);
  settings_set_bool("automaticStreamFormatWidth",automatic!=0);
- DeleteFileA(restore_path().c_str());
+ DeleteFileW(restore_path().c_str());
  char note[96];snprintf(note,sizeof(note),"stream width restored to %d (automatic %d)",width,automatic);driver_note(note);
 }
 // SteamVR asked for a wider stream while H.264 is the codec (the settings page allows it): put the width back to what H.264 takes.
@@ -212,7 +208,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI HookStreamWidth(void* argument){
    const int width=settings_get_int("streamFormatWidth",&ok);const bool known=ok;
    const bool automatic=settings_get_bool("automaticStreamFormatWidth",&ok);
    saved_width=known?width:0;saved_automatic=automatic?1:0;
-   const auto path=restore_path();FILE* file=path.empty()?nullptr:fopen(path.c_str(),"w");
+   const auto path=restore_path();FILE* file=nullptr;if(!path.empty())_wfopen_s(&file,path.c_str(),L"w");
    if(!file)return 41;
    fprintf(file,"%d %d\n",saved_width,saved_automatic);fclose(file);info->pending_restore=1;
   }

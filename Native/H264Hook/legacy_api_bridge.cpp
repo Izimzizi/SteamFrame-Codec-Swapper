@@ -12,6 +12,7 @@
 #include "nvEncodeAPI12.h"
 #include "legacy_api_bridge.h"
 #include "legacy_picture.h"
+#include "data_folder.h"
 #include "stock_forward.h"
 
 #ifndef ENCODE_TIMING_WINDOW_MS
@@ -69,16 +70,15 @@ struct VOutput{void* h264=nullptr;void* stock=nullptr;int last=0;LONGLONG starte
 double timing_sum=0,timing_max=0;uint32_t timing_frames=0;ULONGLONG timing_window=0;
 LONGLONG ticks(){LARGE_INTEGER value;QueryPerformanceCounter(&value);return value.QuadPart;}
 void write_timing(const char* codec){
- char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
- const std::string directory=std::string(base)+"\\CodecSwapper";CreateDirectoryA(directory.c_str(),nullptr);
- const std::string path=directory+"\\encode-timing.txt",temporary=path+".tmp";
+ const std::wstring path=hook_data_path(L"encode-timing.txt");if(path.empty())return;
+ const std::wstring temporary=path+L".tmp";
  FILETIME now{};GetSystemTimeAsFileTime(&now);
  const unsigned long long unix_ms=((static_cast<unsigned long long>(now.dwHighDateTime)<<32|now.dwLowDateTime)-116444736000000000ULL)/10000ULL;
- FILE* file=nullptr;if(fopen_s(&file,temporary.c_str(),"w")||!file)return;
+ FILE* file=nullptr;if(_wfopen_s(&file,temporary.c_str(),L"w")||!file)return;
  uint32_t width=stats.width,height=stats.height;
  if(!strcmp(codec,"HEVC"))StockEncodeSize(&width,&height);
  fprintf(file,"unix_ms=%llu\ncodec=%s\nframes=%u\navg_ms=%.2f\nmax_ms=%.2f\nwidth=%u\nheight=%u\n",unix_ms,codec,timing_frames,timing_sum/timing_frames,timing_max,width,height);fclose(file);
- MoveFileExA(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING);
+ MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING);
 }
 void note_encoded(VOutput* output,const char* codec){
  if(!output->started)return;

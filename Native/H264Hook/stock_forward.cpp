@@ -7,6 +7,7 @@
 #include <mutex>
 #include "nvEncodeAPI11.h"
 #include "stock_forward.h"
+#include "data_folder.h"
 
 namespace {
 NV_ENCODE_API_FUNCTION_LIST table{};
@@ -46,10 +47,9 @@ int applied_preset=0;bool applied_cbr=false;int applied_vbv=0;bool applied_any=f
 int applied_multipass=0,live_changes=0,changes_since_multipass2=0;char change_text[200]{};
 // Diagnosis of the live HEVC route: what SteamVR's reconfigures carry and what was done with them (hevc-hook.log in the tray's data folder).
 void trace(const char* format,...){
- char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
- const std::string path=std::string(base)+"\\CodecSwapper\\hevc-hook.log";
- WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExA(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>100000)DeleteFileA(path.c_str());
- FILE* file=nullptr;if(fopen_s(&file,path.c_str(),"a")||!file)return;
+ const std::wstring path=hook_data_path(L"hevc-hook.log");if(path.empty())return;
+ WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>100000)DeleteFileW(path.c_str());
+ FILE* file=nullptr;if(_wfopen_s(&file,path.c_str(),L"a")||!file)return;
  SYSTEMTIME now{};GetLocalTime(&now);fprintf(file,"%02d:%02d:%02d.%03d ",now.wHour,now.wMinute,now.wSecond,now.wMilliseconds);
  va_list args;va_start(args,format);vfprintf(file,format,args);va_end(args);fputc('\n',file);fclose(file);
 }
@@ -62,10 +62,9 @@ constexpr int FlightSize=300,FlightAfter=120;
 Flight flight_ring[FlightSize];int flight_head=0,flight_count=0,flight_after=0;LONGLONG flight_zero=0;std::mutex flight_lock;
 LONGLONG flight_clock(){static LARGE_INTEGER frequency{};LARGE_INTEGER now{};if(!frequency.QuadPart)QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&now);return now.QuadPart*1000000/frequency.QuadPart;}
 void flight_write(const char* heading,const Flight* entries,int count){
- char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
- const std::string path=std::string(base)+"\\CodecSwapper\\flight.log";
- WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExA(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>3000000)MoveFileExA(path.c_str(),(path+".1").c_str(),MOVEFILE_REPLACE_EXISTING);
- FILE* file=nullptr;if(fopen_s(&file,path.c_str(),"a")||!file)return;
+ const std::wstring path=hook_data_path(L"flight.log");if(path.empty())return;
+ WIN32_FILE_ATTRIBUTE_DATA info{};if(GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&info)&&info.nFileSizeLow>3000000)MoveFileExW(path.c_str(),(path+L".1").c_str(),MOVEFILE_REPLACE_EXISTING);
+ FILE* file=nullptr;if(_wfopen_s(&file,path.c_str(),L"a")||!file)return;
  SYSTEMTIME now{};GetLocalTime(&now);
  if(heading)fprintf(file,"==== %02d:%02d:%02d.%03d %s\n",now.wHour,now.wMinute,now.wSecond,now.wMilliseconds,heading);
  for(int i=0;i<count;i++){
@@ -96,9 +95,9 @@ unsigned preset_number(const GUID& guid){
 }
 void load_options(){
  const ULONGLONG now=GetTickCount64();if(options_checked&&now-options_checked<500)return;options_checked=now;
- options=HevcOptions{};char base[MAX_PATH]{};if(!GetEnvironmentVariableA("LOCALAPPDATA",base,MAX_PATH))return;
- FILE* file=nullptr;const std::string path=std::string(base)+"\\CodecSwapper\\hevc-options.txt";
- if(fopen_s(&file,path.c_str(),"r")||!file)return;
+ options=HevcOptions{};const std::wstring path=hook_data_path(L"hevc-options.txt");if(path.empty())return;
+ FILE* file=nullptr;
+ if(_wfopen_s(&file,path.c_str(),L"r")||!file)return;
  char line[96];
  while(fgets(line,sizeof(line),file)){
   int number=0;char word[16]{};
