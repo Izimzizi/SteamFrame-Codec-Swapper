@@ -64,7 +64,7 @@ public static class LinkCapacitySweep
     }
 
     /// <summary>Held-frame limits scale with the refresh rate: 0.5% of frames is marginal, 2% is a failed step.</summary>
-    public static SweepStepResult Evaluate(int targetMbps, SweepSample sample, int refreshHz = 90)
+    public static SweepStepResult Evaluate(int targetMbps, SweepSample sample, int refreshHz = 90, int tolerableResets = 0)
     {
         if (sample.Seconds < MinimumStepSeconds)
             return new(targetMbps, sample, SweepVerdict.Failed, "The step ended before enough time was measured.");
@@ -85,7 +85,9 @@ public static class LinkCapacitySweep
             if (loss >= FailedLoss) Fail($"{loss:P1} headset packet loss.");
             else if (loss >= MarginalLoss) Marginal($"{loss:P2} headset packet loss.");
         }
-        if (sample.StreamResets > 0) Fail($"{sample.StreamResets} stream recovery request{(sample.StreamResets == 1 ? "" : "s")}.");
+        // A change of encoder options itself sends a new picture, so callers that change options accept a few recovery requests per window.
+        if (sample.StreamResets > tolerableResets) Fail($"{sample.StreamResets} stream recovery request{(sample.StreamResets == 1 ? "" : "s")}.");
+        else if (sample.StreamResets > 0) reasons.Add($"{sample.StreamResets} stream recovery request{(sample.StreamResets == 1 ? "" : "s")} (tolerated).");
         if (sample.MaxLatencyMs is > MarginalLatencyMs) Marginal($"{sample.MaxLatencyMs:0} ms worst link latency.");
         var retriesPerMinute = sample.ReceiverRetryEvents * 60.0 / sample.Seconds;
         if (retriesPerMinute >= RetryFloodPerMinute) Marginal($"{sample.ReceiverRetryEvents} receiver retry requests ({retriesPerMinute:0} per minute).");

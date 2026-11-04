@@ -123,6 +123,9 @@ public sealed class BenchmarkRunner
         }
     }
 
+    /// <summary>Recovery requests in one window that do not fail it (0 for bitrate steps; the encoder sweep allows the one or two a change of options causes).</summary>
+    public int TolerableResets { get; set; }
+
     public Task ApplyTargetAsync(int mbps, CancellationToken token) => _apply(mbps, token);
 
     /// <summary>Checks that a stream is running, waits for it to be quiet and for encoded video to appear; returns the codec name.</summary>
@@ -202,7 +205,7 @@ public sealed class BenchmarkRunner
             // a large frame that adds to the load: the window ends early and counts as failed.
             if (meter.Elapsed.TotalSeconds >= StormSeconds && meter.ResetsSoFar >= StormResetsPerSecond * meter.Elapsed.TotalSeconds) break;
         }
-        return meter.Finish(target);
+        return meter.Finish(target, TolerableResets);
     }
 
     private static Measured Combine(Measured first, Measured second)
@@ -238,7 +241,7 @@ public sealed class BenchmarkRunner
 
         private static long Delta(long start, long end) => end >= start ? end - start : end;   // a counter that restarted (the user reset the counters) starts again from zero
 
-        public Measured Finish(int target)
+        public Measured Finish(int target, int tolerableResets = 0)
         {
             var seconds = Elapsed.TotalSeconds;
             var from = _first?.Health; var to = _last?.Health;
@@ -251,7 +254,7 @@ public sealed class BenchmarkRunner
             double? mean(List<double> values) => values.Count == 0 ? null : values.Average();
             var errors = _first is null || _last is null ? 0 : (long)(_last.EncodeErrors >= _first.EncodeErrors ? _last.EncodeErrors - _first.EncodeErrors : _last.EncodeErrors);
             var sample = new SweepSample(seconds, Held(), HeldMs(), 0, 0, null, null, null, Dropped(), mean(_mbps), mean(_fps), 0, Resets());
-            var result = LinkCapacitySweep.Evaluate(target, sample);
+            var result = LinkCapacitySweep.Evaluate(target, sample, tolerableResets: tolerableResets);
             if (_mbps.Count == 0) result = result with { Verdict = SweepVerdict.Failed, Reason = "No encoded video was seen during the step." };
             if (errors > 0 && result.Verdict != SweepVerdict.Failed) result = result with { Verdict = SweepVerdict.Failed, Reason = $"{errors} encoder error{(errors == 1 ? "" : "s")}. " + result.Reason };
             var step = new BenchmarkStep(target, seconds, sample.MeanVideoMbps, sample.MeanFps, sample.ThrottleEvents, sample.ThrottleMs, sample.PcDroppedFrames, Late(), Reprojected(),

@@ -42,7 +42,7 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
     public int CandidateCount => Enum.GetValues<EncoderDimension>().Sum(d => Values(new EncoderChoice("vbr", 2, 2, 0), d).Count());
 
     /// <summary>Every value is settled and measured, a better one is measured again before it is kept, plus a few confirmations and the final check.</summary>
-    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 1) + TimeSpan.FromSeconds(20);
+    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 1 + EncoderSweepSettings.VbvFrames.Length) + TimeSpan.FromSeconds(20);
 }
 
 public sealed class EncoderTrial
@@ -75,7 +75,10 @@ public sealed class EncoderSweepRun
 /// <summary>How two measurements of the same bitrate compare for the "smoothest" goal. Differences inside the noise count as equal.</summary>
 public static class EncoderRanking
 {
-    private const double HeldMsMargin = 25, DropsMargin = 2, EncodeMargin = 0.5, HeadroomShare = 0.6;
+    private const double HeldMsMargin = 25, DropsMargin = 2, EncodeMargin = 0.5, HeadroomShare = 0.6, ReachMargin = 0.05;
+
+    /// <summary>One or two recovery requests in a window are what a change of options causes; a difference of two or more in a 15 s window (8 per minute) is real.</summary>
+    private const double ResetsPerMinuteMargin = 8;
 
     private static int Class(SweepVerdict verdict) => verdict switch { SweepVerdict.Clean => 0, SweepVerdict.Marginal => 1, _ => 2 };
 
@@ -87,14 +90,20 @@ public static class EncoderRanking
     {
         if (Class(a.Verdict) != Class(b.Verdict)) return Class(a.Verdict).CompareTo(Class(b.Verdict));
         var resets = (a.StreamResets * 60.0 / Math.Max(1, a.Seconds)) - (b.StreamResets * 60.0 / Math.Max(1, b.Seconds));
-        if (Math.Abs(resets) >= 2) return resets < 0 ? -1 : 1;
+        if (Math.Abs(resets) >= ResetsPerMinuteMargin) return resets < 0 ? -1 : 1;
         var held = a.HeldMsPerMinute - b.HeldMsPerMinute;
         if (Math.Abs(held) > Math.Max(HeldMsMargin, 0.25 * Math.Max(a.HeldMsPerMinute, b.HeldMsPerMinute))) return held < 0 ? -1 : 1;
         var drops = a.PcDropped * 60.0 / Math.Max(1, a.Seconds) - b.PcDropped * 60.0 / Math.Max(1, b.Seconds);
         if (Math.Abs(drops) > DropsMargin) return drops < 0 ? -1 : 1;
         if (HasHeadroom(a) != HasHeadroom(b)) return HasHeadroom(a) ? -1 : 1;
+        // Equally smooth: the one that gets closer to the bitrate asked for is the better picture (a small buffer can look smooth just by sending less).
+        var reach = Reach(a) - Reach(b);
+        if (Math.Abs(reach) > ReachMargin) return reach > 0 ? -1 : 1;
         return 0;
     }
+
+    /// <summary>How much of the asked-for bitrate was delivered, at most all of it (more than asked is not better).</summary>
+    public static double Reach(BenchmarkStep step) => step.MeanMbps is double mbps && step.TargetMbps > 0 ? Math.Min(1, mbps / step.TargetMbps) : 0;
 
     /// <summary>Among equally smooth settings: a heavier preset or multipass is the better picture and a smaller buffer the lower latency; the rate control stays as it is.</summary>
     public static bool Prefers(EncoderDimension dimension, EncoderChoice candidate, EncoderChoice best) => dimension switch
@@ -131,7 +140,7 @@ public sealed class EncoderSweepRunner
     public async Task<EncoderSweepRun> RunAsync(EncoderSweepSettings settings, EncoderSweepRun run, EncoderChoice baseline, IProgress<EncoderSweepProgress>? progress, CancellationToken token)
     {
         run.ProbeMbps = settings.ProbeMbps; run.MeasureSeconds = (int)settings.Measure.TotalSeconds; run.Baseline = baseline;
-        var total = settings.CandidateCount + 1;
+        var total = settings.CandidateCount + 1 + EncoderSweepSettings.VbvFrames.Length;   // plus a second look at the buffer after the multipass
         var done = 0;
         EncoderChoice? bestSoFar = null;
         try
@@ -155,15 +164,20 @@ public sealed class EncoderSweepRunner
             // The options are tested in order, one after the other, every value of each (the one in use included), lightest first. The first option is
             // tried on the user's other options as they are; each later one on top of the best found so far.
             var best = baseline;
-            foreach (var dimension in Enum.GetValues<EncoderDimension>())
+            // The options affect each other (a multipass lets a small buffer reach a bitrate it falls short of without one), so when the multipass chosen
+            // differs from the one the buffer was tested with, the buffer is looked at again on top of it.
+            var vbvTestedWith = best.MultiPass;
+            for (var pass = 0; pass < 2; pass++)
+            foreach (var dimension in pass == 0 ? Enum.GetValues<EncoderDimension>() : new[] { EncoderDimension.Vbv })
             {
+                if (pass == 1 && best.MultiPass == vbvTestedWith) break;
                 EncoderChoice? leader = null;
                 BenchmarkStep? leaderStep = null;
                 var failedAt = int.MaxValue;
                 foreach (var candidate in EncoderSweepSettings.Values(best, dimension).OrderBy(c => EncoderSweepSettings.Weight(c, dimension)).ToList())
                 {
                     token.ThrowIfCancellationRequested();
-                    var label = Name(dimension, candidate) + (candidate == baseline || IsCurrentValue(dimension, candidate, baseline) ? " (current)" : "");
+                    var label = Name(dimension, candidate) + (pass == 1 ? $" (with multipass {best.MultiPass})" : IsCurrentValue(dimension, candidate, baseline) ? " (current)" : "");
                     // Heavier (a bigger buffer, a higher preset) than one that failed after a lighter one worked is only going to be worse, and would hammer the stream again.
                     if (dimension != EncoderDimension.RateControl && EncoderSweepSettings.Weight(candidate, dimension) > failedAt)
                     {
@@ -181,7 +195,7 @@ public sealed class EncoderSweepRunner
                         Record(entry);
                         throw new InvalidOperationException($"The stream was lost while trying {candidate.Describe()} (no video for the whole window), so the sweep stopped. The best settings found before that are kept as the recommendation; check the headset and SteamVR, and be careful with that option.");
                     }
-                    var rough = step.Verdict == SweepVerdict.Failed || step.StreamResets > 0;
+                    var rough = step.Verdict == SweepVerdict.Failed;
                     if (leader is null) { leader = candidate; leaderStep = step; entry.Decision = rough ? "first value tried (rough)" : "first value tried"; entry.Adopted = true; }
                     else
                     {
@@ -215,6 +229,7 @@ public sealed class EncoderSweepRunner
                 }
                 best = leader ?? best;
                 bestSoFar = best;
+                if (pass == 0 && dimension == EncoderDimension.Vbv) vbvTestedWith = best.MultiPass;
                 // The next option is tried on top of the best so far, so the best has to be what is running.
                 await _apply(best, token);
             }

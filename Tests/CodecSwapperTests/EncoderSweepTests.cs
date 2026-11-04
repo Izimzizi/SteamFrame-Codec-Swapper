@@ -23,6 +23,7 @@ public sealed class EncoderSweepTests : IDisposable
         public readonly List<EncoderChoice> Applied = [];
         public Func<EncoderChoice, int> HeldPerSecond = _ => 0;
         public Func<EncoderChoice, double> EncodeMs = c => 3 + c.Preset * 0.5;
+        public Func<EncoderChoice, double> VideoMbps = _ => 200;
 
         public Task Apply(EncoderChoice choice, CancellationToken token) { Choice = choice; Applied.Add(choice); return Task.CompletedTask; }
         public bool StuckStorm;
@@ -35,7 +36,7 @@ public sealed class EncoderSweepTests : IDisposable
             Held += held; HeldMs += held * 12;
             Resets += StuckStorm ? 5 : ResetsPerSecond(Choice);
             var health = new HealthReading(Held, 0, 0, true, 0, 0, 0) { HeldMsTotal = HeldMs, StreamResets = Resets };
-            return Task.FromResult(new StatsSample(T0.AddSeconds(Second), 200, 72, "HEVC", true, "", true, 0, null)
+            return Task.FromResult(new StatsSample(T0.AddSeconds(Second), VideoMbps(Choice), 72, "HEVC", true, "", true, 0, null)
             {
                 Health = health, Timing = new EncodeTiming("HEVC", 72, EncodeMs(Choice), EncodeMs(Choice) + 1)
             });
@@ -45,7 +46,7 @@ public sealed class EncoderSweepTests : IDisposable
     private static readonly EncoderSweepSettings Quick = new(200, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10));
 
     private static Task<EncoderSweepRun> Run(Rig rig, CancellationToken token = default) =>
-        new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next), rig.Apply).RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, token);
+        new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply).RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, token);
 
     [Fact]
     public async Task Among_equally_smooth_settings_the_heavier_preset_and_multipass_and_smaller_buffer_win_but_a_rough_one_never_does()
@@ -58,6 +59,30 @@ public sealed class EncoderSweepTests : IDisposable
         Assert.Equal(Start, run.Baseline);
         Assert.Contains(run.Trials, t => t.Label == "Preset P7" && t.Decision == "less smooth");
     }
+
+    [Fact]
+    public async Task Among_equally_smooth_buffers_the_one_that_reaches_the_target_wins_over_the_smaller_one()
+    {
+        // A one-frame buffer is clean but only delivers 150 of the 200 Mbps asked for; it must not win the tie on being the smallest.
+        var rig = new Rig { VideoMbps = c => c.VbvFrames == 1 ? 150 : 200 };
+        var run = await Run(rig);
+        Assert.Equal(2, run.Best!.VbvFrames);
+        Assert.Contains(run.Trials, t => t.Label.StartsWith("VBV 2", StringComparison.Ordinal) && t.Adopted);
+    }
+
+    [Fact]
+    public async Task A_single_recovery_request_from_the_change_itself_does_not_fail_a_value()
+    {
+        var rig = new Rig { ResetsPerSecond = c => c.MultiPass == 1 && rig_Second() % 10 == 0 ? 1 : 0 };
+        int rig_Second() => rigRef!.Second;
+        rigRef = rig;
+        var run = await Run(rig);
+        var multipass1 = run.Trials.First(t => t.Label == "Multipass 1");
+        Assert.NotEqual(SweepVerdict.Failed, multipass1.Step.Verdict);
+        Assert.NotEqual("first value tried (rough)", multipass1.Decision);
+    }
+
+    private Rig? rigRef;
 
     [Fact]
     public async Task A_rough_starting_point_is_replaced_by_the_first_smooth_alternative()
@@ -155,7 +180,9 @@ public sealed class EncoderSweepTests : IDisposable
         Assert.True(EncoderRanking.Compare(Step(heldMsPerMinute: 100), Step(heldMsPerMinute: 400)) < 0);
         Assert.Equal(0, EncoderRanking.Compare(Step(heldMsPerMinute: 100), Step(heldMsPerMinute: 115)));
         Assert.Equal(0, EncoderRanking.Compare(Step(heldMsPerMinute: 2000), Step(heldMsPerMinute: 2300)));
-        Assert.True(EncoderRanking.Compare(Step(resets: 0), Step(resets: 3)) < 0);
+        Assert.True(EncoderRanking.Compare(Step(resets: 0), Step(resets: 4)) < 0);
+        Assert.Equal(0, EncoderRanking.Compare(Step(resets: 0), Step(resets: 1)));   // one recovery request is what the change itself causes
+        Assert.True(EncoderRanking.Compare(Step(), new BenchmarkStep(200, 24, 120, 72, 0, 0, 0, 0, 0, 4, 6, null, 0, 0, SweepVerdict.Clean, "", 1)) < 0);   // reaches the target vs 60% of it
     }
 
     [Fact]

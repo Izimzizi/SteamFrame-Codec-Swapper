@@ -233,6 +233,7 @@ public sealed partial class TrayApp
             var measure = new BenchmarkRunner(
                 (mbps, token) => _controller.ChangeTargetAsync(mbps, () => throw new InvalidOperationException("This session cannot change the bitrate without restarting, so the sweep cannot run. Restart SteamVR and try again."), _ => Task.FromResult(false), token),
                 NextBenchmarkSampleAsync);
+            measure.TolerableResets = 2;
             await measure.ApplyTargetAsync(settings.ProbeMbps, cancel.Token);
             await new EncoderSweepRunner(measure, ApplyEncoderChoiceAsync).RunAsync(settings, run, baseline, new Progress<EncoderSweepProgress>(form.ShowSweepProgress), cancel.Token);
         }
