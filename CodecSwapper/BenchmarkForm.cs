@@ -93,7 +93,7 @@ public sealed class BenchmarkForm : Form
         optionsHost.Controls.AddRange([_bitrateOptions, _sweepOptions]);
         var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
         actions.Controls.AddRange([_go, _openFolder, _stress, _estimate]);
-        new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 }.SetToolTip(_stress, "Temporary debug run for the GPU error after live encoder changes. For 10 minutes it changes rate control, preset and VBV at random on the live stream every 2 seconds, and every 3rd change moves multipass to 2 or back. It stops at the first sign of trouble (lost video, encoder errors, a GPU error or a fatal driver error) and writes encoder-stress-*.log, with the flight recorder of the hook, to the results folder.");
+        new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 }.SetToolTip(_stress, "Temporary debug run for the GPU error after live encoder changes. For 10 minutes it changes rate control, preset and VBV at random on the live stream every 2 seconds, and every 3rd change steps multipass 0 -> 1 -> 2 -> 0 (sometimes jumps). It stops at the first sign of trouble (lost video, encoder errors, a GPU error or a fatal driver error) and writes encoder-stress-*.log, with the flight recorder of the hook, to the results folder.");
         _stress.Click += (_, _) => { if (!_running) StressRequested?.Invoke(_scene.Checked && BenchmarkScene.Available); };
         var bottom = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0, 6, 0, 0) };
         bottom.Controls.AddRange([_apply, _best]);

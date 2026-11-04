@@ -328,7 +328,7 @@ public sealed partial class TrayApp
         using var cancel = _benchmarkCancel = new CancellationTokenSource();
         form.SetRunning(true);
         _statsService.BenchmarkActive = true;
-        Note($"Encoder stress test, seed {plan.Seed}: a change every {StressSecondsBetweenChanges} s for {StressDuration.TotalMinutes:0} minutes, every {StressMultiPass2Every}rd change moves multipass to 2 or back, starting from {baseline.Describe()}");
+        Note($"Encoder stress test, seed {plan.Seed}: a change every {StressSecondsBetweenChanges} s for {StressDuration.TotalMinutes:0} minutes, every {StressMultiPass2Every}rd change steps multipass 0 -> 1 -> 2 -> 0 (sometimes jumping), starting from {baseline.Describe()}");
         BenchmarkEnvironment? environment = null;
         var failed = false;
         string conclusion;

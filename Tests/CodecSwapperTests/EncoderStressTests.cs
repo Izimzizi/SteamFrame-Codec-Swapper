@@ -23,7 +23,7 @@ public sealed class EncoderStressTests
     }
 
     [Fact]
-    public void Every_nth_change_moves_multipass_between_2_and_the_others_and_nothing_else_does()
+    public void Every_nth_change_moves_multipass_through_0_1_2_and_nothing_else_does()
     {
         var plan = new EncoderStressPlan(3, 3);
         var current = Start;
@@ -33,7 +33,7 @@ public sealed class EncoderStressTests
             if (change % 3 == 0)
             {
                 Assert.NotEqual(current.MultiPass, next.MultiPass);
-                Assert.True(current.MultiPass == 2 || next.MultiPass == 2);
+                Assert.InRange(next.MultiPass, 0, 2);
                 Assert.Equal(current with { MultiPass = next.MultiPass }, next);
             }
             else
@@ -44,6 +44,17 @@ public sealed class EncoderStressTests
             Assert.InRange(next.Preset, 1, 7); Assert.InRange(next.VbvFrames, 1, 8); Assert.Contains(next.RateControl, new[] { "vbr", "cbr" });
             current = next;
         }
+    }
+
+    [Fact]
+    public void Multipass_walks_0_1_2_in_order_and_also_jumps_back()
+    {
+        var plan = new EncoderStressPlan(5, 1);
+        var current = Start with { MultiPass = 0 };
+        var steps = new HashSet<(int, int)>();
+        for (var i = 0; i < 200; i++) { var next = plan.Next(current); steps.Add((current.MultiPass, next.MultiPass)); current = next; }
+        Assert.Contains((0, 1), steps); Assert.Contains((1, 2), steps); Assert.Contains((2, 0), steps);
+        Assert.Contains((2, 1), steps);
     }
 
     [Fact]

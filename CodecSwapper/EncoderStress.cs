@@ -23,7 +23,9 @@ public sealed class EncoderStressPlan(int seed, int multiPass2Every)
         if (multiPass2Every > 0 && Changes % multiPass2Every == 0)
         {
             _sinceMultiPass2 = 0;
-            return current with { MultiPass = current.MultiPass == 2 ? _random.Next(0, 2) : 2 };
+            // Mostly the walk 0 -> 1 -> 2 -> 0 that the smooth benchmark makes, sometimes a jump to either other value (2 -> 1, 0 -> 2, ...).
+            var multiPass = _random.Next(0, 3) == 0 ? (current.MultiPass + 1 + _random.Next(0, 2)) % 3 : (current.MultiPass + 1) % 3;
+            return current with { MultiPass = multiPass };
         }
         _sinceMultiPass2++;
         switch (_random.Next(0, 3))
