@@ -123,7 +123,7 @@ int main(int argc,char** argv){
   check(api.nvEncOpenEncodeSessionEx(&open,&encoder),"open");
   if(HookSetLegacyMode(1))throw std::runtime_error("Stock mode refused");
 
-  Setting state;write_options(state,mbps);Sleep(700);   // the hook reads the file about twice a second
+  Setting state;if(const char* s=getenv("STRESS_MP_START"))state.multipass=atoi(s);write_options(state,mbps);Sleep(700);   // the hook reads the file about twice a second
   NV_ENC_PRESET_CONFIG preset{};preset.version=NV_ENC_PRESET_CONFIG_VER;preset.presetCfg.version=NV_ENC_CONFIG_VER;
   check(api.nvEncGetEncodePresetConfigEx(encoder,NV_ENC_CODEC_HEVC_GUID,NV_ENC_PRESET_P2_GUID,NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,&preset),"preset");
   NV_ENC_CONFIG config=preset.presetCfg;config.rcParams.averageBitRate=uint32_t(mbps)*1000000u;config.rcParams.maxBitRate=uint32_t(double(config.rcParams.averageBitRate)*1.15);
@@ -183,7 +183,7 @@ int main(int argc,char** argv){
    if(at>=next_change){
     next_change+=double(interval_ms)/1000.0;
     ++changes;++change_number;const Setting before=state;
-    if(mp2_every>0&&changes%mp2_every==0){state.multipass=state.multipass==2?pick(0,1):2;since_mp2=0;}
+    if(mp2_every>0&&changes%mp2_every==0){state.multipass=getenv("STRESS_MP_SEQ")?(getenv("STRESS_MP_SEQ")[(changes-1)%int(strlen(getenv("STRESS_MP_SEQ")))]-'0'):getenv("STRESS_MP_TOGGLE")?(state.multipass==2?pick(0,1):2):(state.multipass+1)%3;since_mp2=0;}
     else{
      ++since_mp2;
      switch(pick(0,2)){

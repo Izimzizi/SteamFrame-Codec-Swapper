@@ -146,7 +146,11 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  // SteamVR reconfigures before every frame with its own preset, and the encoder follows the preset it is given each time, so the chosen
  // one is named on every call, not only when the encoder is created.
  init.presetGUID=preset_guid(options.preset);
- rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(options.multipass);
+ // The encoder hangs when a reconfigure goes from multipass 1 (quarter resolution) straight to 2 (full resolution), unless the 1 was itself entered from 2: found with
+ // encoder_stress_gpu_test (0->1->2 and an encoder created with 1 then 2 hang the lock; 0->2, 2->1->2 and 1->0->2 do not). So that step goes through 0 for one call.
+ int effective_multipass=options.multipass;
+ if(applied_signature!=-1&&applied_multipass==1&&options.multipass==2)effective_multipass=0;
+ rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(effective_multipass);
  // A changed rate control, buffer or preset is followed by a plain reconfigure; the encoder is not reset (a reset with multipass 2 faulted the GPU).
  const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+options.multipass*100000;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;
@@ -160,7 +164,7 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
   snprintf(change_text+used,sizeof(change_text)-used," (change %d since the encoder was created, %d since multipass was last 2)",live_changes,changes_since_multipass2);
   trace("options changed: %s",change_text);
  }
- applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;applied_multipass=options.multipass;applied_signature=signature;
+ applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;applied_multipass=effective_multipass;applied_signature=signature;
  return true;
 }
 }
