@@ -194,9 +194,9 @@ public sealed class EncoderSweepTests : IDisposable
     public async Task The_progress_total_grows_with_repeat_measurements_so_the_count_never_runs_past_it()
     {
         var rig = new Rig { HeldPerSecond = c => c.Preset == 2 ? 4 : 0 };
-        var reports = new List<EncoderSweepProgress>();
+        var reports = new System.Collections.Concurrent.ConcurrentQueue<EncoderSweepProgress>();
         var run = await new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply)
-            .RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, new Progress<EncoderSweepProgress>(reports.Add), default);
+            .RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, new Progress<EncoderSweepProgress>(reports.Enqueue), default);
         await Task.Delay(100, TestContext.Current.CancellationToken);   // Progress<T> posts asynchronously
         Assert.NotEmpty(run.Trials);
         Assert.All(reports, r => Assert.True(r.Done <= r.Total, $"{r.Done} of {r.Total}"));
