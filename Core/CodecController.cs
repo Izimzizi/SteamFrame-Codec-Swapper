@@ -305,6 +305,20 @@ public sealed class CodecController
         finally { _operations.Release(); }
     }
 
+    /// <summary>Starts the Frame's streaming client over without changing the codec, which makes the Frame's dashboard receive the PC's windows again.</summary>
+    public async Task<CodecServiceStatus> ReconnectAsync(IProgress<CodecServiceStatus>? progress = null, CancellationToken cancellationToken = default)
+    {
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var status = ReadStatus();
+            if (!status.Live || status.Busy) throw new InvalidOperationException(status.Busy ? "Wait for the current codec operation to finish." : status.Message);
+            if (!status.ModeLive && !status.DriverSession) throw new InvalidOperationException("SteamVR was started without the live codec hook; there is no stream to reconnect.");
+            return await SendAsync("reconnect", 0, status, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _operations.Release(); }
+    }
+
     private async Task<CodecServiceStatus> SendAsync(string action, int targetMbps, CodecServiceStatus owner,
         IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken, CodecStartRequest? encoder = null, string? mode = null)
     {

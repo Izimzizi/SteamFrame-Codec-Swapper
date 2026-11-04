@@ -31,6 +31,8 @@ internal sealed class FakeCodec : ICodecService
         if (AfterSwitch is not null) Status = AfterSwitch;
         return Task.FromResult(Status);
     }
+    public int Reconnects { get; private set; }
+    public Task<CodecServiceStatus> ReconnectAsync(IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken) { Calls.Add("reconnect"); Reconnects++; return Task.FromResult(Status); }
     public Task<CodecServiceStatus> CloseAsync(IProgress<CodecServiceStatus>? progress, CancellationToken cancellationToken)
     {
         Calls.Add("close");
@@ -425,6 +427,22 @@ public sealed class TrayControllerTests
         await rig.Controller.RefreshAsync();
         Assert.True(await rig.Controller.ApplyEncoderOptionsAsync());
         Assert.Equal([("cbr", 4, 2)], rig.Codec.Encoders); Assert.Empty(rig.Live.Applied);
+    }
+
+    [Fact]
+    public async Task Restoring_dashboard_windows_reconnects_only_a_hooked_ready_session()
+    {
+        var rig = new Rig();
+        rig.Prefs.KeepH264 = true; rig.Codec.Status = LiveRate() with { ModeLive = true };
+        await rig.Controller.RefreshAsync();
+        Assert.True(await rig.Controller.ReconnectLiveAsync());
+        Assert.Equal(1, rig.Codec.Reconnects);
+
+        var unhooked = new Rig();
+        unhooked.Prefs.KeepH264 = true; unhooked.Codec.Status = LiveRate();
+        await unhooked.Controller.RefreshAsync();
+        Assert.False(await unhooked.Controller.ReconnectLiveAsync());
+        Assert.Equal(0, unhooked.Codec.Reconnects);
     }
 
     [Fact]
