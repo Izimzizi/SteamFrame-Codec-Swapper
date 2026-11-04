@@ -61,7 +61,7 @@ def validate_request(value):
  identifier=str(uuid.UUID(value['id']))
  if identifier!=value['id']:raise ValueError('Noncanonical request ID')
  action=value.get('action')
- if action not in ('close','rate','encoder','mode','reconnect'):raise ValueError('Unknown codec action')
+ if action not in ('close','rate','encoder','mode'):raise ValueError('Unknown codec action')
  if action=='mode' and value.get('mode') not in ('h264','stock'):raise ValueError('Unknown codec mode')
  if action=='rate':validate_target(value.get('target_mbps'))
  if action=='encoder':validate_encoder_options(value.get('rate_control'),value.get('preset'),value.get('vbv_frames'))
@@ -544,43 +544,6 @@ class Supervisor:
   if self.driver:self.want_h264=mode=='h264'
   self.update(state='ready',active_codec='HEVC' if mode=='stock' else 'H.264',target_mbps=target,fps=fps,stream_pid=self.pid,
    message='Streaming '+('stock HEVC; the hook stays ready for H.264.' if mode=='stock' else 'H.264.'),last_result={'ok':True},operation_id=operation_id)
- def reconnect(self,operation_id=''):
-  """Start the Frame's streaming client over without changing the codec: the stream stops, the client binary is unmounted and mounted again (the
-  same steps a codec switch takes, so the Frame builds its dashboard anew and the PC sends its windows again), the stream starts."""
-  if not (self.pid and self.server_alive()):raise RuntimeError('SteamVR is not running with the codec hook; there is no stream to reconnect.')
-  stock=bool(self.stock_mode)
-  target=self.applied or self.config['target_mbps']
-  fps=self.status.get('fps')
-  if fps not in RATES:fps=self.current_refresh()
-  self.verify_seconds=20
-  self.update(state='switching',active_codec='Unknown',operation_id=operation_id,last_result=None,message='Reconnecting the Frame to restore its dashboard windows.')
-  def remount():
-   self.phase='Frame client restart'
-   if stock:
-    if not self.action('client-h264').get('mounted'):raise RuntimeError('Client activation failed.')
-    if self.action('rollback')['inventory']['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
-    self.frame_mounted=False
-   else:
-    if self.action('rollback')['inventory']['client_trial_active']:raise RuntimeError('Stock codec recovery failed.')
-    if not self.action('client-h264').get('mounted'):raise RuntimeError('H.264 client activation failed.')
-    self.frame_mounted=True
-  try:
-   self.phase='stopping stream'
-   if not self.stop_frame_stream():raise RuntimeError('The Frame did not accept the stream stop; try again in a moment.')
-   time.sleep(.3);self.wait_decoder_idle()
-   remount()
-   self.phase='starting Frame stream';self.cef('start')
-   self.phase='verifying hardware stream'
-   if stock:self.verify_stock(fps)
-   else:self.verify_stream(target,fps)
-  except Exception as error:
-   self.log('reconnect failed ('+self.phase+'): '+str(error)[:300])
-   try:self.cef('start')
-   except Exception:pass
-   self.update(state='ready',active_codec='HEVC' if stock else 'H.264',stream_pid=self.pid,message='The reconnect failed ('+str(error)[:120]+').')
-   raise
-  self.update(state='ready',active_codec='HEVC' if stock else 'H.264',target_mbps=target,fps=fps,stream_pid=self.pid,
-   message='Reconnected; streaming '+('stock HEVC.' if stock else 'H.264.'),last_result={'ok':True},operation_id=operation_id)
  def set_encoder(self,rate_control,preset,vbv,operation_id=''):
   """Queue new NVENC options on the resident hook; the encoder SteamVR builds next (after a stream reset) uses them."""
   validate_encoder_options(rate_control,preset,vbv)
@@ -839,11 +802,6 @@ class Supervisor:
     try:self.set_mode(value['mode'],identifier)
     except Exception as error:
      self.update(operation_id=identifier,last_result={'ok':False,'error':'Live codec switch unavailable: '+str(error)[:200]})
-    continue
-   if action=='reconnect':
-    try:self.reconnect(identifier)
-    except Exception as error:
-     self.update(operation_id=identifier,last_result={'ok':False,'error':'The reconnect failed: '+str(error)[:200]})
     continue
    if action=='encoder':
     try:self.set_encoder(value['rate_control'],value['preset'],value['vbv_frames'],identifier)

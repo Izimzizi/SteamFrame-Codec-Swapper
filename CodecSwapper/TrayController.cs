@@ -135,21 +135,6 @@ public sealed class TrayController
         finally { _gate.Release(); }
     }
 
-    /// <summary>Starts the Frame's streaming client over with the same codec, so its dashboard gets the PC's windows again. False when the session cannot do it now.</summary>
-    public async Task<bool> ReconnectLiveAsync(CancellationToken cancellationToken = default)
-    {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            var status = await _codec.ReadStatusAsync(cancellationToken);
-            if (!(status.Live && (status.ModeLive || status.DriverSession) && status.State == "ready")) return false;
-            var result = await _codec.ReconnectAsync(new Progress<CodecServiceStatus>(), cancellationToken);
-            Publish(Map(result));
-            return true;
-        }
-        finally { _gate.Release(); }
-    }
-
     /// <summary>Stock codec: SteamVR's own setting is the bitrate, so write it live, or into its settings file while SteamVR is closed.</summary>
     private async Task<ChangeOutcome> ChangeDisarmedAsync(int mbps, Func<BitratePatchStatus, Task<bool>> confirmPatch, CancellationToken cancellationToken)
     {

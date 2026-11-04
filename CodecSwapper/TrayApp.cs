@@ -110,7 +110,6 @@ public sealed partial class TrayApp : ApplicationContext
         _useH264.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? Task.CompletedTask : ArmAsync());
         _useDefault.Click += async (_, _) => await RunAsync(() => _controller.Current.IsArmed ? DisarmAsync() : Task.CompletedTask);
         _statsItem.Click += (_, _) => ToggleStats();
-        _restoreWindows.Click += async (_, _) => await RunAsync(RestoreDashboardWindowsAsync);
         _benchmarkItem.Click += (_, _) => ShowBenchmark();
         _record.Click += (_, _) => ToggleRecording();
         _resetCounters.Click += (_, _) => _healthReader?.ResetCounters();
@@ -137,13 +136,12 @@ public sealed partial class TrayApp : ApplicationContext
         folder.Click += (_, _) => { try { Directory.CreateDirectory(_codec.SessionDirectory); Process.Start(new ProcessStartInfo(_codec.SessionDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += async (_, _) => await ExitAsync();
-        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _widthLabel, _widthSlider, _rateMenu, _restoreWindows, new ToolStripSeparator(), _statsItem, _benchmarkItem, _record, _resetCounters, hudMenu, openLogs,
+        menu.Items.AddRange([_status, new ToolStripSeparator(), _useH264, _useDefault, _bitrateLabel, _menuSlider, _widthLabel, _widthSlider, _rateMenu, new ToolStripSeparator(), _statsItem, _benchmarkItem, _record, _resetCounters, hudMenu, openLogs,
             new ToolStripSeparator(), _startup, setup, _password, _patchMenu, _driverMenu, folder, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
             _startup.Checked = StartupRegistration.IsEnabled;
             _statsItem.Checked = _stats.Visible;
-            _restoreWindows.Enabled = _controller.Current.State is TrayState.Armed or TrayState.Disarmed;
             _record.Checked = _statsService.Recording;
             _admin.Visible = !Elevation.IsElevated;
             _forgetPassword.Enabled = _controller.HasPassword;
@@ -346,31 +344,13 @@ public sealed partial class TrayApp : ApplicationContext
         var source = _heal = new CancellationTokenSource();
         var frame = new FrameStreamControl(_preferences);
         var ui = SynchronizationContext.Current ?? new SynchronizationContext();
-        var heal = new DashboardHeal(expression => frame.EvaluateAsync(expression), () => ui.Post(_ => Balloon("Dashboard windows missing", "The Frame's dashboard has no desktop or Steam window. Right-click the tray icon and choose Restore dashboard windows.", ToolTipIcon.Warning), null), _dashboardWatch.Note);
+        var heal = new DashboardHeal(expression => frame.EvaluateAsync(expression), () => ui.Post(_ => Balloon("Dashboard windows missing", "The Frame's dashboard has no desktop or Steam window. Press + in the dashboard and add any window to bring them back.", ToolTipIcon.Warning), null), _dashboardWatch.Note);
         _ = Task.Run(async () =>
         {
             try { await heal.RunAsync(source.Token); }
             catch (OperationCanceledException) { /* another switch started */ }
             catch (Exception error) when (error is not OutOfMemoryException) { _dashboardWatch.Note("HEAL failed: " + error.Message); }
         });
-    }
-
-    private readonly ToolStripMenuItem _restoreWindows = new("Restore dashboard windows") { ToolTipText = "Starts the Frame's streaming client over (the codec stays) so its dashboard gets the PC's desktop and Steam windows again." };
-
-    private async Task RestoreDashboardWindowsAsync()
-    {
-        _dashboardWatch.Note("RESTORE requested from the tray menu");
-        try
-        {
-            var done = await _controller.ReconnectLiveAsync();
-            _dashboardWatch.Note(done ? "RESTORE reconnect finished" : "RESTORE not possible now (no running session with the live codec hook)");
-            if (!done) Balloon("Dashboard windows", "Not possible right now: SteamVR must be running with the codec hook and the stream ready.", ToolTipIcon.Info);
-        }
-        catch (Exception error) when (error is InvalidOperationException or IOException or TimeoutException)
-        {
-            _dashboardWatch.Note("RESTORE failed: " + error.Message);
-            Balloon("Dashboard windows", error.Message, ToolTipIcon.Error);
-        }
     }
 
     private static void TrayLog(string what)

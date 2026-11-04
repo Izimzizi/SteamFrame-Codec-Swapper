@@ -5,8 +5,8 @@ namespace CodecSwapper;
 /// <summary>
 /// After a codec switch the Frame's dashboard sometimes has the stream but none of the PC's windows (the desktop and the Steam window reach it as frames
 /// from the PC, and the PC does not always send them after the new stream starts). Ten seconds after a switch the Frame is asked what its dashboard holds,
-/// and when it has a stream without any PC frame the user is told (the tray's "Restore dashboard windows" brings them back). A plain stream restart does
-/// not, so nothing is restarted here. Every decision is written to the dashboard watch log.
+/// and when it has a stream without any PC frame the user is told. Nothing is restarted: a stream restart and a Frame client restart were both tried and do not
+/// bring the windows back; adding any window with + in the dashboard does. Every decision is written to the dashboard watch log.
 /// </summary>
 public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Action missing, Action<string> log, Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
@@ -41,7 +41,7 @@ public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Action mi
         if (await ReadAsync() is not { } first) return;
         if (first.Streams == 0) { log("HEAL no stream on the Frame ten seconds after the switch; nothing to do"); return; }
         if (first.Remote > 0) { log($"HEAL the Frame has {first.Remote} PC frame(s); nothing to do"); return; }
-        log("HEAL the Frame has a stream but no PC frames (the desktop and Steam windows); telling the user to restore them");
+        log("HEAL the Frame has a stream but no PC frames (the desktop and Steam windows); telling the user");
         missing();
     }
 }
