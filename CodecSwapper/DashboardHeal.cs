@@ -10,7 +10,7 @@ namespace CodecSwapper;
 /// </summary>
 public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Func<Task<int>> nudge, Action failed, Action<string> log, Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
-    public static readonly TimeSpan Wait = TimeSpan.FromSeconds(10), Recheck = TimeSpan.FromSeconds(6);
+    public static readonly TimeSpan Wait = TimeSpan.FromSeconds(6), Recheck = TimeSpan.FromSeconds(5);
     private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? ((time, token) => Task.Delay(time, token));
 
     /// <summary>The number of running streams and of dashboard frames that come from the PC, from the Frame's reply; null when it cannot be read.</summary>

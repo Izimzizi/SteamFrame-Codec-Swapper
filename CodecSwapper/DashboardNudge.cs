@@ -14,6 +14,8 @@ internal static unsafe class DashboardNudge
 {
     public const string Argument = "--dashboard-nudge";
     private const string Interface = "IVRMailbox_002";
+    /// <summary>How long the window exists around the message, in milliseconds. In VR the dashboard shows it as a large window for as long as it lives, so it is kept as short as the desktop view allows.</summary>
+    private const int ShownBeforeSend = 400, ShownAfterSend = 700;
 
     /// <summary>0 = done; 1 = SteamVR is not running; 2 = SteamVR did not accept the connection; 3 = the mailbox is not what this was built for; 4 = the message was refused.</summary>
     public static int Run()
@@ -54,12 +56,12 @@ internal static unsafe class DashboardNudge
         {
             using var window = new NudgeWindow();
             window.Show();
-            Pump(window, 1500);
+            Pump(window, ShownBeforeSend);
             var message = $"{{\"type\":\"request_spawn_window_view\",\"hwnd\":\"{window.Handle.ToInt64()}\"}}";
             int sent;
             fixed (byte* to = Ascii("desktopview")) fixed (byte* text = Ascii(message))
                 sent = ((delegate* unmanaged<nint, ulong, byte*, byte*, int>)table[2])(mailbox, handle, to, text);
-            Pump(window, 2000);
+            Pump(window, ShownAfterSend);
             window.Close();
             return sent == 0 ? 0 : 4;
         }
@@ -87,7 +89,7 @@ internal static unsafe class DashboardNudge
             ShowInTaskbar = true;
             StartPosition = FormStartPosition.Manual;
             var area = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
-            Size = new Size(240, 70);
+            Size = new Size(160, 60);
             Location = new Point(area.Right - Width, area.Bottom - Height);
         }
 
