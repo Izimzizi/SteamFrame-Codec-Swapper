@@ -39,6 +39,7 @@ public sealed class BenchmarkForm : Form
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly ListView _table = new() { View = View.Details, FullRowSelect = true, GridLines = true, Dock = DockStyle.Fill, HideSelection = false };
     private readonly RunChart _chart = new() { Dock = DockStyle.Fill };
+    private readonly RunSummaryView _summary = new() { Dock = DockStyle.Fill };
     private readonly RunList _compare = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
     private readonly TextBox _conclusion = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Height = 120, BackColor = SystemColors.Window };
 
@@ -102,7 +103,14 @@ public sealed class BenchmarkForm : Form
         side.Controls.Add(new Label { Text = "Tick the runs to draw on the charts. The first entry is the run on screen. Click one to read its full name and best settings; the trash can at the end of a line deletes that run and its saved files.", AutoSize = true, MaximumSize = new Size(430, 0), Margin = new Padding(4, 4, 4, 6) }, 0, 0);
         side.Controls.Add(_compare, 0, 1);
         side.Controls.Add(_detail, 0, 2);
-        chartPage.Controls.Add(_chart);
+        // The summary answers first (who got furthest, which settings won and why); the details are the curves for those who want to read them.
+        var views = new TabControl { Dock = DockStyle.Fill };
+        var summaryPage = new TabPage("Summary");
+        summaryPage.Controls.Add(_summary);
+        var detailsPage = new TabPage("Details");
+        detailsPage.Controls.Add(_chart);
+        views.TabPages.AddRange([summaryPage, detailsPage]);
+        chartPage.Controls.Add(views);
         chartPage.Controls.Add(side);
         _tabs.TabPages.AddRange([tablePage, chartPage]);
 
@@ -517,6 +525,7 @@ public sealed class BenchmarkForm : Form
             }
         }
         _chart.Show(series, bars: SweepMode);
+        _summary.Show(picked.Select((entry, i) => new SummaryRun(entry.Text, ChartData.Palette[i % ChartData.Palette.Length], entry.Run)));
         // Two bitrate runs ticked: say in words which one is better, target by target.
         if (!_running && !SweepMode && picked.Count == 2 && picked[0].Run is BenchmarkRun a && picked[1].Run is BenchmarkRun b)
             _conclusion.Text = (a.Conclusion.Length > 0 ? a.Conclusion + Environment.NewLine + Environment.NewLine : "") + BenchmarkReport.Compare(a, b);
