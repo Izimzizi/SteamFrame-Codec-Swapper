@@ -116,7 +116,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         // The laser only reaches the HUD while the dashboard is open; anything else is ignored so a stray event can never press a button.
         // SteamVR does not always report a dashboard that was already open when the HUD joined, so the laser moving over the panel counts as proof it is open (a click alone never does).
         var events = api.PollEvents(_overlay);
-        if (events.Count > 0) _nativeAt = at;
+        if (events.Any(e => e.Kind != OverlayEventKind.Other)) _nativeAt = at;
         if (_ownPanel.Count > 0) events = [.. events, .. _ownPanel];
         // The laser leaving the panel is reported, so in hover mode the panel shrinks at once; the hold only covers a missed report.
         foreach (var e in events)
@@ -147,10 +147,15 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void TickOwnLaser(uint carrier, DateTime at)
     {
         _ownIcon.Clear(); _ownPanel.Clear();
-        if (!settings.OwnLaser || !api.InputAvailable || api.DashboardVisible() || at - _nativeAt < NativeLaserHold || !api.TryDevicePose(carrier, out var carrierPose)) { EndOwnLaser(); return; }
+        if (!settings.OwnLaser || !api.InputAvailable) { EndOwnLaser(); return; }
+        // SteamVR's own laser is in use when it sends this HUD mouse events. (The PC reports the dashboard as open all the time on a Steam Link
+        // session, so the dashboard flag cannot decide this.)
+        if (at - _nativeAt < NativeLaserHold) { OwnLaserNote("SteamVR's laser is on the HUD"); EndOwnLaser(); return; }
+        if (!api.TryDevicePose(carrier, out var carrierPose)) { OwnLaserNote("the carrying controller is not tracked"); EndOwnLaser(); return; }
         var left = !settings.IsLeft;
         var pointer = api.ControllerIndex(left);
-        if (pointer == IOverlayApi.NoDevice || !api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { EndOwnLaser(); return; }
+        if (pointer == IOverlayApi.NoDevice) { OwnLaserNote("the pointing controller is not seen"); EndOwnLaser(); return; }
+        if (!api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { OwnLaserNote("no aim from the pointing hand"); EndOwnLaser(); return; }
 
         AimHit? best = null;
         void Consider(Over target, Pose local, float width, int pixelsWide, int pixelsHigh)
@@ -168,6 +173,16 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_panelVisible)
             Consider(Over.Panel, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters, HudPanel.Width, HudPanel.Height);
 
+        if (best is null)
+        {
+            // Not near anything: say how far off the ray is, so a wrongly tilted tip shows in the log.
+            var aim = tip.Rotate(-Vector3.UnitZ);
+            var toPanel = carrierPose.Then(settings.Pose).T - tip.T;
+            var off = (toPanel - aim * Vector3.Dot(toPanel, aim)).Length() * 100;
+            var local = carrierPose.Inverse().Rotate(aim);
+            OwnLaserNote($"aiming, not near the HUD (ray passes {off:0} cm from the panel centre, {Vector3.Dot(toPanel, aim) * 100:0} cm along it; direction in the carrier's space {local.X:0.00},{local.Y:0.00},{local.Z:0.00})");
+        }
+        else OwnLaserNote($"on the {best.Value.Target} ({best.Value.Distance * 100:0} cm away, {(best.Value.Inside ? "inside" : "near the edge")}), trigger {(pressed ? "down" : "up")}");
         var target = best is { Inside: true } inside ? inside.Target : Over.None;
         void Emit(Over over, OverlayEventKind kind, float x, float y) => (over == Over.Icon ? _ownIcon : _ownPanel).Add(new(kind, pointer, x, y));
         if (target != _over)
@@ -187,6 +202,18 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var line = HudAim.Line(tip.T, seen.Point, head.T, out var length);
         var facing = Vector3.Dot(head.T - seen.Point, seen.Overlay.Z) >= 0 ? 1f : -1f;
         api.ShowLaser(line, length, seen.Overlay with { T = seen.Point + seen.Overlay.Z * (.002f * facing) });
+    }
+
+    private string _ownNote = "";
+    private DateTime _ownNoteAt = DateTime.MinValue;
+
+    // Written to hud.log when the situation changes (and at most once a second), so a laser that does not appear can be explained from the log.
+    private void OwnLaserNote(string what)
+    {
+        var kind = what.Length > 12 ? what[..12] : what;
+        if (kind == _ownNote || _clock - _ownNoteAt < TimeSpan.FromSeconds(1)) return;
+        _ownNote = kind; _ownNoteAt = _clock;
+        log?.Invoke("HUD laser: " + what);
     }
 
     private void EndOwnLaser()
@@ -288,7 +315,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             _iconDevice = device; _iconPose = pose; _iconWidth = width;
         }
         var iconEvents = api.PollEvents(_icon);
-        if (iconEvents.Count > 0) _nativeAt = at;
+        if (iconEvents.Any(e => e.Kind != OverlayEventKind.Other)) _nativeAt = at;
         foreach (var e in iconEvents.Concat(_ownIcon))
         {
             if (e.Kind is OverlayEventKind.MouseMove or OverlayEventKind.FocusEnter) _iconHover = true;

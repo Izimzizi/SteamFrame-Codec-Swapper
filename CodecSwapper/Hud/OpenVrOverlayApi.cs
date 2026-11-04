@@ -385,7 +385,15 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
                 return $"asked the dashboard to show {key} again ({string.Join(", ", seen)})";
             }
         }
-        return "no known dashboard overlay is active, nothing sent (" + string.Join(", ", seen) + ")";
+        // Nothing known is the active tab: show the desktop one. Only while a dashboard is up, so this never opens one.
+        if (DashboardVisible())
+        {
+            const string desktop = "system.desktop.1";
+            var bytes = Encoding.UTF8.GetBytes(desktop + "\0");
+            fixed (byte* k = bytes) ((delegate* unmanaged<nint, byte*, void>)Slot(_overlay, ShowDashboardSlot))(_overlay, k);
+            return $"no known tab is active, asked the dashboard to show {desktop} ({string.Join(", ", seen)})";
+        }
+        return "no dashboard is up, nothing sent (" + string.Join(", ", seen) + ")";
     }
 
     public void Dispose() => Disconnect();

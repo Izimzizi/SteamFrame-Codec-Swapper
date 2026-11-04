@@ -344,7 +344,7 @@ public sealed class HudControllerTests
     }
 
     [Fact]
-    public void The_own_laser_leaves_the_trigger_to_the_game_until_it_is_on_the_hud_and_hides_when_the_dashboard_opens()
+    public void The_own_laser_leaves_the_trigger_to_the_game_until_it_is_on_the_hud_and_hides_when_steamvrs_own_laser_takes_over()
     {
         var rig = OwnLaserRig();
         rig.Api.Tip = new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(5, 5, 5));   // far away, looking down -Z
@@ -353,7 +353,12 @@ public sealed class HudControllerTests
         Assert.Empty(rig.Actions.Calls);
         rig.Api.Tip = AimAt(rig, "codec:h264"); rig.Tick();
         rig.Api.Laser.Clear();
-        rig.Api.Dashboard = true; rig.Tick();    // SteamVR draws its own laser now
+        rig.Api.Dashboard = true;                // reported open all the time on a Steam Link session: this alone changes nothing
+        rig.Tick();
+        Assert.Contains("show", rig.Api.Laser);
+        rig.Api.Laser.Clear();
+        rig.Api.Events.Enqueue(new(OverlayEventKind.MouseMove, 4, 10, 10)); rig.Tick();    // SteamVR's own laser reaches the HUD...
+        rig.Api.Laser.Clear(); rig.Tick();   // ...and ours steps aside from the next tick on
         Assert.Contains("hide", rig.Api.Laser);
         Assert.DoesNotContain("show", rig.Api.Laser);
     }
