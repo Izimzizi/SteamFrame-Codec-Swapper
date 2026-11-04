@@ -130,7 +130,9 @@ public sealed class BenchmarkForm : Form
             _apply.Enabled = false; _apply.Text = "Applying…";
             ApplyRequested?.Invoke(choice);
         };
-        _compare.TrashClicked += index => { if (!_running && index < _compare.Items.Count && _compare.Items[index] is ListEntry entry) DeleteEntry(entry); };
+        // Old runs can be deleted while a benchmark runs; only the run being measured cannot.
+        _compare.CanDelete = index => index < _compare.Items.Count && _compare.Items[index] is ListEntry entry && !IsRunning(entry);
+        _compare.TrashClicked += index => { if (index < _compare.Items.Count && _compare.Items[index] is ListEntry entry && !IsRunning(entry)) DeleteEntry(entry); };
         // Hovering a row of the results shows what happened in full: a long reason does not fit its column.
         var rowTip = new ToolTip { AutoPopDelay = 60000, InitialDelay = 200, ReshowDelay = 100 };
         ListViewItem? tipped = null;
@@ -235,7 +237,6 @@ public sealed class BenchmarkForm : Form
         _running = running;
         _go.Text = running ? "Stop" : "Start";
         foreach (var control in new Control[] { _mode, _start, _ceiling, _step, _probe, _measure, _stopOnFailure, _scene }) control.Enabled = !running && (control != _scene || BenchmarkScene.Available);
-        _compare.TrashEnabled = !running;
         _compare.Invalidate();
         _phase.ForeColor = SystemColors.ControlText;
         if (!running) UpdateBest(SweepMode ? _shownSweep : _shown);
@@ -444,9 +445,11 @@ public sealed class BenchmarkForm : Form
     }
 
     /// <summary>One click on a run's trash can: the run and its saved files are removed.</summary>
+    private bool IsRunning(ListEntry entry) => _running && (ReferenceEquals(entry.Run, _shown) || ReferenceEquals(entry.Run, _shownSweep));
+
     private void DeleteEntry(ListEntry entry)
     {
-        if (_running) return;
+        if (IsRunning(entry)) return;
         DeleteRequested?.Invoke(entry.Run);
         switch (entry.Run)
         {
@@ -526,8 +529,9 @@ internal sealed class RunList : CheckedListBox
     private const int TrashWidth = 28;
     private static readonly Font TrashFont = new("Segoe UI Symbol", 10f);
     public event Action<int>? TrashClicked;
+    /// <summary>Whether the run on a line may be deleted (the run being measured may not).</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public bool TrashEnabled { get; set; } = true;
+    public Func<int, bool> CanDelete { get; set; } = _ => true;
 
     private bool InTrash(Point point) => point.X >= ClientSize.Width - TrashWidth;
 
@@ -542,20 +546,22 @@ internal sealed class RunList : CheckedListBox
         var text = new Rectangle(box.Right + 4, e.Bounds.Y, Math.Max(10, e.Bounds.Width - box.Right - 4 - TrashWidth), e.Bounds.Height);
         TextRenderer.DrawText(e.Graphics, GetItemText(Items[e.Index]), Font, text, ink, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
         var trash = new Rectangle(e.Bounds.Right - TrashWidth, e.Bounds.Y, TrashWidth, e.Bounds.Height);
-        var color = !TrashEnabled ? SystemColors.GrayText : selected ? SystemColors.HighlightText : Color.FromArgb(190, 40, 40);
+        var enabled = CanDelete(e.Index);
+        var color = !enabled ? SystemColors.GrayText : selected ? SystemColors.HighlightText : Color.FromArgb(190, 40, 40);
         TextRenderer.DrawText(e.Graphics, "\U0001F5D1", TrashFont, trash, color, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         var index = IndexFromPoint(e.Location);
-        if (index >= 0 && InTrash(e.Location)) { if (TrashEnabled) TrashClicked?.Invoke(index); return; }
+        if (index >= 0 && InTrash(e.Location)) { if (CanDelete(index)) TrashClicked?.Invoke(index); return; }
         base.OnMouseDown(e);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        Cursor = IndexFromPoint(e.Location) >= 0 && InTrash(e.Location) && TrashEnabled ? Cursors.Hand : Cursors.Default;
+        var over = IndexFromPoint(e.Location);
+        Cursor = over >= 0 && InTrash(e.Location) && CanDelete(over) ? Cursors.Hand : Cursors.Default;
         base.OnMouseMove(e);
     }
 }
