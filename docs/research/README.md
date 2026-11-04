@@ -16,6 +16,7 @@ commit or in a new release. Temporary live overrides remain private experiments.
 - [USB, radio driver and firmware scheduling](radio-stream-map.md)
 - [Experiment register: completed tests, failures and untested candidates](experiment-register.md)
 - [H.264 and multiple decoder streams: implemented paths and remaining work](codec-stream-options.md)
+- [NVENC hang on a live multipass change (GPU error 153): cause, reproduction and fix](nvenc-multipass-hang.md)
 - [Measurements and encoder experiments](../encoder-and-codec-research.md)
 
 The latest [full-area square H.264 comparison](codec-stream-options.md#full-area-square-h264-isolated-cavlc-capacity-and-cadence-pass)
