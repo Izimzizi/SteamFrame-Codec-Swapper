@@ -20,6 +20,8 @@ public sealed class FramePreferences
     public int PeripheralOffset { get; set; } = 8;
     public bool QualityEnabled { get; set; }
     public bool ReapplyAfterRestart { get; set; }
+    /// <summary>After a codec switch, restart the stream once when the Frame has it but none of the PC's windows (the desktop and Steam window).</summary>
+    public bool HealDashboard { get; set; } = true;
     public EncoderRateControl RateControl { get; set; }
     public EncoderMultiPass MultiPass { get; set; }
     public AdvancedEncoding AdvancedEncoding { get; set; } = new();

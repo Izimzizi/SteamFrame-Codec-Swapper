@@ -77,6 +77,7 @@ public sealed partial class TrayApp : ApplicationContext
         Render(_controller.Current);
         _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleStats(); };
         _dashboardWatch = new DashboardWatch(Path.Combine(AppData.Root, "dashboard-watch.log"), _paths.SteamVrRoot, _paths.SteamRoot, () => _controller.Current.State.ToString(), expression => new FrameStreamControl(_preferences).EvaluateAsync(expression));
+        _controller.Changed += NoteSwitchForDashboardHeal;
         _poll.Tick += async (_, _) => { _dashboardWatch.Tick(); try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
         StartHud();
@@ -328,6 +329,29 @@ public sealed partial class TrayApp : ApplicationContext
     }
 
     /// <summary>Who asked for a codec change, so a switch that goes back by itself can be traced.</summary>
+    private TrayState _healLastState = TrayState.Disarmed;
+    private CancellationTokenSource? _heal;
+
+    /// <summary>Ten seconds after a codec switch finishes, checks that the Frame's dashboard still has the PC's windows and restarts the stream once if not.</summary>
+    private void NoteSwitchForDashboardHeal(TraySnapshot snapshot)
+    {
+        var was = _healLastState;
+        _healLastState = snapshot.State;
+        if (snapshot.State is TrayState.Arming or TrayState.Disarming) { _heal?.Cancel(); return; }
+        var finished = (was == TrayState.Arming && snapshot.State == TrayState.Armed) || (was == TrayState.Disarming && snapshot.State == TrayState.Disarmed);
+        if (!finished || !_preferences.HealDashboard) return;
+        _heal?.Cancel();
+        var source = _heal = new CancellationTokenSource();
+        var frame = new FrameStreamControl(_preferences);
+        var heal = new DashboardHeal(expression => frame.EvaluateAsync(expression), () => frame.StopAsync(), () => frame.StartAsync(), _dashboardWatch.Note);
+        _ = Task.Run(async () =>
+        {
+            try { await heal.RunAsync(source.Token); }
+            catch (OperationCanceledException) { /* another switch started */ }
+            catch (Exception error) when (error is not OutOfMemoryException) { _dashboardWatch.Note("HEAL failed: " + error.Message); }
+        });
+    }
+
     private static void TrayLog(string what)
     {
         try

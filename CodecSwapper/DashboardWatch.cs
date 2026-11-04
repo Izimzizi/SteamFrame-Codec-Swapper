@@ -74,7 +74,7 @@ internal sealed class DashboardWatch
 
     // What the Frame's own dashboard holds. The desktop and Steam windows reach it as frames that come from the PC over the stream (isVRLinkRemote):
     // after a switch with windows missing, these are the ones absent here. Reading it takes an SSH round trip, so it runs beside the other snapshot.
-    private const string FrameExpression = """
+    internal const string FrameExpression = """
         (() => { try {
           const s = window.vrFrameStore, r = window.RemotePlayStore_SteamUI;
           const frames = s ? Array.from(s.m_mapFrames.values()).map(f => ({
@@ -215,6 +215,8 @@ internal sealed class DashboardWatch
         for (string? line; (line = reader.ReadLine()) is not null;) lines.Add(line);
         return lines;
     }
+
+    public void Note(string what) { try { lock (_gate) Write(what); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* diagnostics only */ } }
 
     private void Write(string what)
     {
