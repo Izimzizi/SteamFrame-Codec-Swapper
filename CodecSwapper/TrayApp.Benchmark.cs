@@ -11,6 +11,8 @@ public sealed partial class TrayApp
 
     private async void ShowBenchmark()
     {
+        // The stream stats monitor opens with the benchmark, so the numbers can be watched while it runs.
+        if (!_stats.Visible) _stats.Show();
         if (_benchmarkForm is { IsDisposed: false } open) { open.Show(); open.Activate(); return; }
         var patched = false;
         try { patched = (await _patch.InspectAsync()).IsPatched; }
@@ -24,6 +26,15 @@ public sealed partial class TrayApp
             catch (Exception error) when (error is IOException or InvalidOperationException) { Balloon("Encoder settings", "Not applied: " + error.Message, ToolTipIcon.Warning); }
         });
         form.StopRequested += () => _benchmarkCancel?.Cancel();
+        form.DeleteRequested += run =>
+        {
+            try
+            {
+                if (run is BenchmarkRun benchmark) BenchmarkReport.Delete(AppData.BenchmarksDirectory, benchmark);
+                else if (run is EncoderSweepRun sweep) EncoderSweepReport.Delete(AppData.BenchmarksDirectory, sweep);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Balloon("Benchmark", "The run could not be deleted: " + error.Message, ToolTipIcon.Warning); }
+        };
         form.SetHistory(BenchmarkReport.LoadAll(AppData.BenchmarksDirectory));
         form.SetSweepHistory(EncoderSweepReport.LoadAll(AppData.BenchmarksDirectory));
         form.SetProbe(_controller.TargetMbps);

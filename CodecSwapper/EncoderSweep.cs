@@ -39,10 +39,13 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
         _ => 0,
     };
 
+    /// <summary>The order the options are tried in: the multipass before the buffer, because a multipass lets a small buffer reach a bitrate it falls short of without one.</summary>
+    public static readonly EncoderDimension[] Order = [EncoderDimension.Preset, EncoderDimension.RateControl, EncoderDimension.MultiPass, EncoderDimension.Vbv];
+
     public int CandidateCount => Enum.GetValues<EncoderDimension>().Sum(d => Values(new EncoderChoice("vbr", 2, 2, 0), d).Count());
 
     /// <summary>Every value is settled and measured, a better one is measured again before it is kept, plus a few confirmations and the final check.</summary>
-    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 1 + EncoderSweepSettings.VbvFrames.Length) + TimeSpan.FromSeconds(20);
+    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 1) + TimeSpan.FromSeconds(20);
 }
 
 public sealed class EncoderTrial
@@ -140,12 +143,16 @@ public sealed class EncoderSweepRunner
     public async Task<EncoderSweepRun> RunAsync(EncoderSweepSettings settings, EncoderSweepRun run, EncoderChoice baseline, IProgress<EncoderSweepProgress>? progress, CancellationToken token)
     {
         run.ProbeMbps = settings.ProbeMbps; run.MeasureSeconds = (int)settings.Measure.TotalSeconds; run.Baseline = baseline;
-        var total = settings.CandidateCount + 1 + EncoderSweepSettings.VbvFrames.Length;   // plus a second look at the buffer after the multipass
+        var total = settings.CandidateCount + 1;   // grows by one for each repeat measurement, so the count never runs past the total
         var done = 0;
         EncoderChoice? bestSoFar = null;
         try
         {
             run.Codec = await _measure.PrepareAsync([settings.ProbeMbps], new Progress<BenchmarkProgress>(p => { }), token);
+            // Right after the codec switch and the scene starting, the stream is still settling and asks for fresh pictures all the time; the first value would take the blame.
+            progress?.Report(new("waiting for the stream to settle", "start", 0, total, 0, null));
+            if (!await _measure.WaitQuietAsync(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(90), null, token))
+                throw new InvalidOperationException("The stream did not settle before the first measurement (it kept asking for recovery for 90 seconds), so the sweep did not start. Check the link and that the headset is connected, then try again.");
 
             async Task<BenchmarkStep> Window(string label)
             {
@@ -164,20 +171,15 @@ public sealed class EncoderSweepRunner
             // The options are tested in order, one after the other, every value of each (the one in use included), lightest first. The first option is
             // tried on the user's other options as they are; each later one on top of the best found so far.
             var best = baseline;
-            // The options affect each other (a multipass lets a small buffer reach a bitrate it falls short of without one), so when the multipass chosen
-            // differs from the one the buffer was tested with, the buffer is looked at again on top of it.
-            var vbvTestedWith = best.MultiPass;
-            for (var pass = 0; pass < 2; pass++)
-            foreach (var dimension in pass == 0 ? Enum.GetValues<EncoderDimension>() : new[] { EncoderDimension.Vbv })
+            foreach (var dimension in EncoderSweepSettings.Order)
             {
-                if (pass == 1 && best.MultiPass == vbvTestedWith) break;
                 EncoderChoice? leader = null;
                 BenchmarkStep? leaderStep = null;
                 var failedAt = int.MaxValue;
                 foreach (var candidate in EncoderSweepSettings.Values(best, dimension).OrderBy(c => EncoderSweepSettings.Weight(c, dimension)).ToList())
                 {
                     token.ThrowIfCancellationRequested();
-                    var label = Name(dimension, candidate) + (pass == 1 ? $" (with multipass {best.MultiPass})" : IsCurrentValue(dimension, candidate, baseline) ? " (current)" : "");
+                    var label = Name(dimension, candidate) + (IsCurrentValue(dimension, candidate, baseline) ? " (current)" : "");
                     // Heavier (a bigger buffer, a higher preset) than one that failed after a lighter one worked is only going to be worse, and would hammer the stream again.
                     if (dimension != EncoderDimension.RateControl && EncoderSweepSettings.Weight(candidate, dimension) > failedAt)
                     {
@@ -205,6 +207,7 @@ public sealed class EncoderSweepRunner
                         else
                         {
                             // Looking better once may be noise on a link like Wi-Fi: it has to hold up in a second window to take the lead.
+                            total++;
                             var again = await Window(label + " (confirming)");
                             var second = EncoderRanking.Compare(again, leaderStep!);
                             if (second < 0 || second == 0 && EncoderRanking.Prefers(dimension, candidate, leader) && !EncoderRanking.CostsMuchMore(again, leaderStep!))
@@ -229,7 +232,6 @@ public sealed class EncoderSweepRunner
                 }
                 best = leader ?? best;
                 bestSoFar = best;
-                if (pass == 0 && dimension == EncoderDimension.Vbv) vbvTestedWith = best.MultiPass;
                 // The next option is tried on top of the best so far, so the best has to be what is running.
                 await _apply(best, token);
             }
@@ -310,6 +312,9 @@ public static class EncoderSweepReport
         return stem + ".json";
     }
 
+    /// <summary>Removes a saved sweep (its json and csv).</summary>
+    public static void Delete(string directory, EncoderSweepRun run) => ReportFiles.Delete(directory, "encoder-sweep-", run.At);
+
     /// <summary>Earlier sweeps, newest first. Unreadable files are skipped.</summary>
     public static List<EncoderSweepRun> LoadAll(string directory)
     {
@@ -329,14 +334,14 @@ public static class EncoderSweepReport
         foreach (var line in new[] { "SteamFrame Codec Swapper encoder sweep", "started " + run.At.ToString("O", CultureInfo.InvariantCulture), "codec " + run.Codec, $"probe {run.ProbeMbps} Mbps" }.Concat(run.Setup))
             text.Append("# ").AppendLine(line.Replace('\r', ' ').Replace('\n', ' '));
         text.Append("# ").AppendLine(run.Conclusion);
-        text.AppendLine("candidate,rate_control,preset,vbv_frames,multipass,seconds,mean_mbps,held_frames,held_ms_per_minute,pc_dropped,stream_resets,encode_avg_ms,encode_max_ms,verdict,decision");
+        text.AppendLine("candidate,rate_control,preset,vbv_frames,multipass,seconds,mean_mbps,held_frames,held_ms_per_minute,pc_dropped,stream_resets,encode_avg_ms,encode_max_ms,verdict,decision,reason");
         string N(double? v, string f = "0.0") => v is double d && double.IsFinite(d) ? d.ToString(f, CultureInfo.InvariantCulture) : "";
         foreach (var t in run.Trials)
             text.AppendLine(string.Join(',', new[]
             {
                 "\"" + t.Label.Replace("\"", "\"\"") + "\"", t.Choice.RateControl, t.Choice.Preset.ToString(CultureInfo.InvariantCulture), t.Choice.VbvFrames.ToString(CultureInfo.InvariantCulture), t.Choice.MultiPass.ToString(CultureInfo.InvariantCulture),
                 N(t.Step.Seconds), N(t.Step.MeanMbps), t.Step.HeldFrames.ToString(CultureInfo.InvariantCulture), N(t.Step.HeldMsPerMinute, "0"), t.Step.PcDropped.ToString(CultureInfo.InvariantCulture),
-                t.Step.StreamResets.ToString(CultureInfo.InvariantCulture), N(t.Step.EncodeAverageMs, "0.00"), N(t.Step.EncodeMaxMs, "0.00"), t.Step.Verdict.ToString(), "\"" + t.Decision + "\""
+                t.Step.StreamResets.ToString(CultureInfo.InvariantCulture), N(t.Step.EncodeAverageMs, "0.00"), N(t.Step.EncodeMaxMs, "0.00"), t.Step.Verdict.ToString(), "\"" + t.Decision + "\"", "\"" + t.Step.Reason.Replace("\"", "\"\"") + "\""
             }));
         return text.ToString();
     }

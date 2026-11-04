@@ -166,7 +166,43 @@ public sealed class EncoderSweepTests : IDisposable
         var run = await runner.RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, default);
         Assert.Contains("did not settle", run.Error);
         Assert.NotNull(run.Best);
-        Assert.DoesNotContain(run.Trials, t => t.Label.StartsWith("Multipass"));
+        Assert.DoesNotContain(run.Trials, t => t.Label.StartsWith("VBV 8"));   // the buffer is the last option tried, so nothing after VBV 4
+    }
+
+    [Fact]
+    public async Task A_stream_that_never_settles_before_the_first_window_does_not_start_the_sweep()
+    {
+        var rig = new Rig { StuckStorm = true };
+        var run = await Run(rig);
+        Assert.Contains("did not settle before the first measurement", run.Error);
+        Assert.Empty(run.Trials);
+    }
+
+    [Fact]
+    public async Task The_progress_total_grows_with_repeat_measurements_so_the_count_never_runs_past_it()
+    {
+        var rig = new Rig { HeldPerSecond = c => c.Preset == 2 ? 4 : 0 };
+        var reports = new List<EncoderSweepProgress>();
+        var run = await new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply)
+            .RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, new Progress<EncoderSweepProgress>(reports.Add), default);
+        await Task.Delay(100, TestContext.Current.CancellationToken);   // Progress<T> posts asynchronously
+        Assert.NotEmpty(run.Trials);
+        Assert.All(reports, r => Assert.True(r.Done <= r.Total, $"{r.Done} of {r.Total}"));
+    }
+
+    [Fact]
+    public void Deleting_a_saved_run_removes_its_json_and_csv()
+    {
+        var sweep = new EncoderSweepRun { At = T0, Codec = "H.264" };
+        var path = EncoderSweepReport.Save(_dir, sweep);
+        Assert.True(File.Exists(path)); Assert.True(File.Exists(Path.ChangeExtension(path, ".csv")));
+        EncoderSweepReport.Delete(_dir, sweep);
+        Assert.False(File.Exists(path)); Assert.False(File.Exists(Path.ChangeExtension(path, ".csv")));
+        var bench = new BenchmarkRun { At = T0 };
+        var benchPath = BenchmarkReport.Save(_dir, bench);
+        BenchmarkReport.Delete(_dir, bench);
+        Assert.False(File.Exists(benchPath));
+        BenchmarkReport.Delete(_dir, bench);   // already gone is fine
     }
 
     private static BenchmarkStep Step(SweepVerdict verdict = SweepVerdict.Clean, double heldMsPerMinute = 0, double seconds = 24, double? encodeMax = 6, double fps = 72, long resets = 0, long drops = 0) =>

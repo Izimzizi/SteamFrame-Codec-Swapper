@@ -16,7 +16,7 @@ public sealed class BenchmarkForm : Form
 
     private static readonly (string Text, int Width)[] SweepColumns =
     [
-        ("Tried", 230), ("Encoded", 78), ("FPS", 50), ("Held ms/min", 90), ("Held frames", 80), ("PC drops", 66), ("Encode ms (avg / max)", 150), ("Result", 78), ("What happened", 320)
+        ("Tried", 230), ("Encoded", 78), ("FPS", 50), ("Held ms/min", 90), ("Held frames", 80), ("Resets", 56), ("PC drops", 66), ("Encode ms (avg / max)", 150), ("Result", 78), ("What happened", 320)
     ];
 
     private readonly ComboBox _mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 380 };
@@ -27,7 +27,10 @@ public sealed class BenchmarkForm : Form
     private readonly FlowLayoutPanel _bitrateOptions = new() { AutoSize = true, WrapContents = true, Margin = new Padding(0, 0, 0, 4), MaximumSize = new Size(1060, 0) };
     private readonly FlowLayoutPanel _sweepOptions = new() { AutoSize = true, WrapContents = true, Margin = new Padding(0, 0, 0, 4), MaximumSize = new Size(1060, 0), Visible = false };
     private readonly Button _go = new() { Text = "Start", AutoSize = true, MinimumSize = new Size(90, 30) };
-    private readonly Button _apply = new() { Text = "Apply recommended settings", AutoSize = true, MinimumSize = new Size(90, 30), Visible = false };
+    private readonly Button _apply = new() { Text = "Apply best settings", AutoSize = true, MinimumSize = new Size(170, 34), Visible = false, Font = new Font(SystemFonts.MessageBoxFont!, FontStyle.Bold) };
+    private readonly Label _best = new() { AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(10, 8, 0, 0), Font = new Font(SystemFonts.MessageBoxFont!, FontStyle.Bold), Visible = false };
+    private readonly Button _delete = new() { Text = "Delete selected run", Dock = DockStyle.Fill, MinimumSize = new Size(90, 28) };
+    private readonly Label _detail = new() { AutoSize = true, MaximumSize = new Size(420, 0), Margin = new Padding(4, 6, 4, 4) };
     private readonly Button _openFolder = new() { Text = "Open results folder", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Label _estimate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
     private readonly Label _phase = new() { AutoSize = true, Text = "Ready." };
@@ -49,6 +52,7 @@ public sealed class BenchmarkForm : Form
     public event Action<EncoderSweepSettings, bool>? SweepRequested;
     public event Action<EncoderChoice>? ApplyRequested;
     public event Action? StopRequested;
+    public event Action<object>? DeleteRequested;
 
     public bool Running => _running;
     private bool SweepMode => _mode.SelectedIndex == 1;
@@ -82,31 +86,39 @@ public sealed class BenchmarkForm : Form
         var optionsHost = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0) };
         optionsHost.Controls.AddRange([_bitrateOptions, _sweepOptions]);
         var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
-        actions.Controls.AddRange([_go, _apply, _openFolder, _estimate]);
+        actions.Controls.AddRange([_go, _openFolder, _estimate]);
+        var bottom = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0, 6, 0, 0) };
+        bottom.Controls.AddRange([_apply, _best]);
         _estimate.Margin = new Padding(12, 8, 0, 0);
 
         var tablePage = new TabPage("Results") { Padding = new Padding(4) };
         tablePage.Controls.Add(_table);
         var chartPage = new TabPage("Charts") { Padding = new Padding(4) };
-        var side = new TableLayoutPanel { Dock = DockStyle.Right, Width = 330, ColumnCount = 1, RowCount = 2 };
-        side.RowStyles.Add(new RowStyle(SizeType.AutoSize)); side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        side.Controls.Add(new Label { Text = "Tick the runs to draw on the charts. The first entry is the run on screen.", AutoSize = true, MaximumSize = new Size(320, 0), Margin = new Padding(4, 4, 4, 6) }, 0, 0);
+        var side = new TableLayoutPanel { Dock = DockStyle.Right, Width = 440, ColumnCount = 1, RowCount = 4 };
+        side.RowStyles.Add(new RowStyle(SizeType.AutoSize)); side.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); side.RowStyles.Add(new RowStyle(SizeType.AutoSize)); side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        side.Controls.Add(new Label { Text = "Tick the runs to draw on the charts. The first entry is the run on screen. Click one to read its full name and best settings.", AutoSize = true, MaximumSize = new Size(430, 0), Margin = new Padding(4, 4, 4, 6) }, 0, 0);
+        _compare.HorizontalScrollbar = true;
         side.Controls.Add(_compare, 0, 1);
+        side.Controls.Add(_detail, 0, 2);
+        side.Controls.Add(_delete, 0, 3);
         chartPage.Controls.Add(_chart);
         chartPage.Controls.Add(side);
         _tabs.TabPages.AddRange([tablePage, chartPage]);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(12, 10, 12, 10) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9, Padding = new Padding(12, 10, 12, 10) };
         for (var i = 0; i < 6; i++) root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(intro, 0, 0); root.Controls.Add(modeRow, 0, 1); root.Controls.Add(optionsHost, 0, 2); root.Controls.Add(actions, 0, 3);
-        root.Controls.Add(_phase, 0, 4); root.Controls.Add(_bar, 0, 5); root.Controls.Add(_tabs, 0, 6); root.Controls.Add(_conclusion, 0, 7);
+        root.Controls.Add(_phase, 0, 4); root.Controls.Add(_bar, 0, 5); root.Controls.Add(_tabs, 0, 6); root.Controls.Add(_conclusion, 0, 7); root.Controls.Add(bottom, 0, 8);
         Controls.Add(root);
 
         UseColumns(BitrateColumns);
         _go.Click += (_, _) => { if (_running) StopRequested?.Invoke(); else Start(); };
         _apply.Click += (_, _) => { if (_recommended is { } choice) ApplyRequested?.Invoke(choice); };
+        _delete.Click += (_, _) => DeleteSelected();
+        _compare.SelectedIndexChanged += (_, _) => ShowSelectedDetail();
         _openFolder.Click += (_, _) => { try { Directory.CreateDirectory(AppData.BenchmarksDirectory); System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppData.BenchmarksDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         foreach (var control in new Control[] { _start, _ceiling, _step, _probe, _measure }) { if (control is NumericUpDown n) n.ValueChanged += (_, _) => UpdateEstimate(); else ((ComboBox)control).SelectedIndexChanged += (_, _) => UpdateEstimate(); }
         _probe.ValueChanged += (_, _) => _probeTouched = true;
@@ -140,12 +152,12 @@ public sealed class BenchmarkForm : Form
         _bitrateOptions.Visible = !SweepMode;
         _sweepOptions.Visible = SweepMode;
         UseColumns(SweepMode ? SweepColumns : BitrateColumns);
-        _apply.Visible = SweepMode && _recommended is not null;
         _conclusion.Text = "";
         _bar.Value = 0;
         _phase.Text = "Ready.";
         if (SweepMode && _shownSweep is { Trials.Count: > 0 } sweep) ShowSweep(sweep, null); else if (!SweepMode && _shown is { Steps.Count: > 0 } run) ShowRun(run, null);
         RebuildCompareList();
+        UpdateBest(SweepMode ? _shownSweep : _shown);
         UpdateEstimate();
     }
 
@@ -162,7 +174,7 @@ public sealed class BenchmarkForm : Form
         if (SweepMode)
         {
             var sweep = CurrentSweep();
-            _estimate.Text = $"{sweep.CandidateCount + 1} settings to measure, about {Math.Ceiling(sweep.Estimate.TotalMinutes):0} minutes";
+            _estimate.Text = $"{sweep.CandidateCount} settings and a final check, plus a repeat for each one that looks better; about {Math.Ceiling(sweep.Estimate.TotalMinutes):0} minutes";
             return;
         }
         if (Current() is not { } settings) { _estimate.Text = "The last target must not be below the first."; return; }
@@ -193,10 +205,12 @@ public sealed class BenchmarkForm : Form
         _running = running;
         _go.Text = running ? "Stop" : "Start";
         foreach (var control in new Control[] { _mode, _start, _ceiling, _step, _probe, _measure, _stopOnFailure, _scene }) control.Enabled = !running && (control != _scene || BenchmarkScene.Available);
+        _delete.Enabled = !running;
+        if (!running) UpdateBest(SweepMode ? _shownSweep : _shown);
         if (running)
         {
             _table.Items.Clear(); _conclusion.Text = ""; _bar.Value = 0;
-            _apply.Visible = false; _recommended = null;
+            UpdateBest(null);
             if (SweepMode) _shownSweep = new EncoderSweepRun { At = DateTimeOffset.Now }; else _shown = new BenchmarkRun { At = DateTimeOffset.Now };
             RebuildCompareList();
         }
@@ -269,6 +283,7 @@ public sealed class BenchmarkForm : Form
         _phase.Text = run.Stopped ? "Stopped." : run.Error is null ? "Finished." : "Ended: " + run.Error;
         _bar.Value = run.Stopped || run.Error is not null ? _bar.Value : _bar.Maximum;
         if (SweepMode) return;
+        UpdateBest(run);
         _table.Items.Clear();
         foreach (var step in run.Steps) AddRow(step);
         _conclusion.Text = run.Conclusion + (savedTo is null ? "" : Environment.NewLine + Environment.NewLine + "Saved: " + savedTo);
@@ -300,8 +315,10 @@ public sealed class BenchmarkForm : Form
         item.SubItems.AddRange(
         [
             step.MeanMbps is double mbps ? $"{mbps:0} Mbps" : "—", step.MeanFps is double fps ? fps.ToString("0.0", CultureInfo.InvariantCulture) : "—",
-            step.HeldMsPerMinute.ToString("0", CultureInfo.InvariantCulture), step.HeldFrames.ToString(CultureInfo.InvariantCulture), step.PcDropped.ToString(CultureInfo.InvariantCulture),
-            step.EncodeAverageMs is double avg ? $"{avg:0.0} / {step.EncodeMaxMs:0.0}" : "—", step.Verdict.ToString(), trial.Decision
+            step.HeldMsPerMinute.ToString("0", CultureInfo.InvariantCulture), step.HeldFrames.ToString(CultureInfo.InvariantCulture), step.StreamResets.ToString(CultureInfo.InvariantCulture), step.PcDropped.ToString(CultureInfo.InvariantCulture),
+            step.EncodeAverageMs is double avg ? $"{avg:0.0} / {step.EncodeMaxMs:0.0}" : "—", step.Verdict.ToString(),
+            // A failed value says why, so it never reads as "rough" with nothing behind it.
+            step.Verdict == SweepVerdict.Failed && step.Reason.Length > 0 && step.Reason != "not tried" ? trial.Decision + " — " + step.Reason : trial.Decision
         ]);
         item.ForeColor = VerdictColor(step.Verdict);
         if (trial.Adopted) item.Font = new Font(_table.Font, FontStyle.Bold);
@@ -314,14 +331,64 @@ public sealed class BenchmarkForm : Form
         _shownSweep = run;
         _phase.Text = run.Stopped ? "Stopped." : run.Error is null ? "Finished." : "Ended: " + run.Error;
         _bar.Value = run.Stopped || run.Error is not null ? _bar.Value : _bar.Maximum;
-        _recommended = run.Best is { } best && best != run.Baseline ? best : null;
         if (!SweepMode) return;
+        UpdateBest(run);
         _table.Items.Clear();
         foreach (var trial in run.Trials) AddTrialRow(trial);
         _conclusion.Text = run.Conclusion + (savedTo is null ? "" : Environment.NewLine + Environment.NewLine + "Saved: " + savedTo);
-        _apply.Visible = _recommended is not null;
         RebuildCompareList();
         if (run.Trials.Count > 0) _tabs.SelectedIndex = 1;
+    }
+
+    // ----- best result, selection and deleting -----
+
+    /// <summary>The run's best result in plain sight at the bottom left, with the button that puts it into force.</summary>
+    private void UpdateBest(object? run)
+    {
+        _recommended = null;
+        string? text = null;
+        switch (run)
+        {
+            case EncoderSweepRun { Best: { } best } sweep:
+                text = "Best settings at " + sweep.ProbeMbps + " Mbps: " + best.Describe() + (best == sweep.Baseline ? " (what you use now)" : "");
+                if (best != sweep.Baseline) _recommended = best;
+                break;
+            case BenchmarkRun { BestCleanMbps: int clean }:
+                text = "Highest clean bitrate: " + clean + " Mbps";
+                break;
+        }
+        _best.Text = text ?? "";
+        _best.Visible = text is not null;
+        _apply.Visible = _recommended is not null && !_running;
+    }
+
+    private void ShowSelectedDetail()
+    {
+        if (_compare.SelectedItem is not ListEntry entry) { _detail.Text = ""; return; }
+        var best = entry.Run switch { EncoderSweepRun { Best: { } b } => Environment.NewLine + "Best settings: " + b.Describe(), BenchmarkRun { BestCleanMbps: int clean } => Environment.NewLine + "Highest clean bitrate: " + clean + " Mbps", _ => "" };
+        _detail.Text = entry.Text + best;
+        if (!_running) UpdateBest(entry.Run);
+    }
+
+    private void DeleteSelected()
+    {
+        if (_running || _compare.SelectedItem is not ListEntry entry) return;
+        if (MessageBox.Show(this, "Delete this run and its saved files?" + Environment.NewLine + Environment.NewLine + entry.Text, "Delete run", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        DeleteRequested?.Invoke(entry.Run);
+        switch (entry.Run)
+        {
+            case BenchmarkRun run:
+                _history = _history.Where(r => r.At != run.At).ToList();
+                if (_shown?.At == run.At) { _shown = null; if (!SweepMode) _table.Items.Clear(); }
+                break;
+            case EncoderSweepRun sweep:
+                _sweepHistory = _sweepHistory.Where(r => r.At != sweep.At).ToList();
+                if (_shownSweep?.At == sweep.At) { _shownSweep = null; if (SweepMode) _table.Items.Clear(); }
+                break;
+        }
+        _detail.Text = "";
+        UpdateBest(SweepMode ? _shownSweep : _shown);
+        RebuildCompareList();
     }
 
     // ----- charts and comparison -----

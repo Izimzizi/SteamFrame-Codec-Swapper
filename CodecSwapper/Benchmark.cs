@@ -264,6 +264,17 @@ public sealed class BenchmarkRunner
     }
 }
 
+internal static class ReportFiles
+{
+    /// <summary>Deletes the json and csv saved for a run started at <paramref name="at"/>; files already gone are fine.</summary>
+    public static void Delete(string directory, string prefix, DateTimeOffset at)
+    {
+        var stem = Path.Combine(directory, prefix + at.LocalDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
+        foreach (var extension in new[] { ".json", ".csv" })
+            if (File.Exists(stem + extension)) File.Delete(stem + extension);
+    }
+}
+
 /// <summary>Saves, loads and compares finished runs.</summary>
 public static class BenchmarkReport
 {
@@ -277,6 +288,9 @@ public static class BenchmarkReport
         File.WriteAllText(stem + ".csv", ToCsv(run), new UTF8Encoding(false));
         return stem + ".json";
     }
+
+    /// <summary>Removes a saved run (its json and csv).</summary>
+    public static void Delete(string directory, BenchmarkRun run) => ReportFiles.Delete(directory, "benchmark-", run.At);
 
     /// <summary>Earlier runs, newest first. Unreadable files are skipped.</summary>
     public static List<BenchmarkRun> LoadAll(string directory)
