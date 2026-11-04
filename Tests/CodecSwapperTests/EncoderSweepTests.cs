@@ -75,6 +75,46 @@ public sealed class EncoderSweepTests : IDisposable
     }
 
     [Fact]
+    public async Task Testing_the_current_settings_measures_them_once_and_changes_nothing()
+    {
+        var rig = new Rig { HeldPerSecond = _ => 0 };
+        var run = await new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply)
+            .RunAsync(Quick with { Goal = EncoderGoal.Current }, new EncoderSweepRun { At = T0 }, Start, null, default);
+        Assert.Empty(rig.Applied);
+        Assert.Single(run.Trials);
+        Assert.Equal(EncoderGoal.Current, run.Goal);
+        Assert.Equal(Start, run.Best);
+        Assert.Contains("Nothing was changed", run.Conclusion);
+        Assert.Contains("current settings test", run.Title);
+    }
+
+    [Fact]
+    public async Task The_best_picture_goal_takes_the_settings_that_deliver_more_of_the_bitrate_and_says_so()
+    {
+        // A one-frame buffer is clean but only delivers 150 of 200 Mbps; the picture goal must not choose it.
+        var rig = new Rig { VideoMbps = c => c.VbvFrames == 1 ? 150 : 200 };
+        var run = await new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply)
+            .RunAsync(Quick with { Goal = EncoderGoal.Picture }, new EncoderSweepRun { At = T0 }, Start, null, default);
+        Assert.NotEqual(1, run.Best!.VbvFrames);
+        Assert.Contains("Best picture at 200 Mbps", run.Conclusion);
+        Assert.Contains(run.Trials, t => t.Adopted && t.Decision.StartsWith("chosen: best picture"));
+        Assert.Contains(run.Trials, t => t.Decision.StartsWith("lower picture"));
+        Assert.Contains("best-picture sweep", run.Title);
+    }
+
+    [Fact]
+    public void Best_picture_accepts_a_slightly_rougher_setting_only_when_it_delivers_clearly_more()
+    {
+        var rig = new Rig();
+        BenchmarkStep Step(double mbps) => new(200, 24, mbps, 72, 0, 0, 0, 0, 0, 4.0, 5.0, 1000, 0, 0, SweepVerdict.Clean, "", 1);
+        var a = new EncoderChoice("vbr", 4, 2, 0);
+        var b = new EncoderChoice("vbr", 6, 2, 0);
+        var picked = EncoderRanking.Select(new Dictionary<EncoderChoice, BenchmarkStep> { [a] = Step(150), [b] = Step(195) }, EncoderGoal.Picture)!.Value;
+        Assert.Equal(b, picked.Choice);
+        Assert.Contains("delivered", picked.Why);
+    }
+
+    [Fact]
     public async Task Among_equally_smooth_buffers_the_one_that_reaches_the_target_wins_over_the_smaller_one()
     {
         // A one-frame buffer is clean but only delivers 150 of the 200 Mbps asked for; it must not win the tie on being the smallest.

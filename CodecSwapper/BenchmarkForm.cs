@@ -55,7 +55,9 @@ public sealed class BenchmarkForm : Form
     public event Action<object>? DeleteRequested;
 
     public bool Running => _running;
-    private bool SweepMode => _mode.SelectedIndex == 1;
+    private bool SweepMode => _mode.SelectedIndex >= 1;
+    private EncoderGoal Goal => _mode.SelectedIndex switch { 2 => EncoderGoal.Picture, 3 => EncoderGoal.Current, _ => EncoderGoal.Smoothest };
+    private Label _sweepLead = null!, _sweepTail = null!;
 
     public BenchmarkForm(bool driverPatched)
     {
@@ -70,19 +72,19 @@ public sealed class BenchmarkForm : Form
         _ceiling.Value = driverPatched ? WirelessAdvisor.PatchedCeilingMbps : WirelessAdvisor.StockCeilingMbps;
         _measure.Items.AddRange(["15 s", "24 s", "45 s"]);
         _measure.SelectedIndex = 1;
-        _mode.Items.AddRange(["Bitrate steps — how high can the link go?", "Best encoder settings — the smoothest at one bitrate"]);
+        _mode.Items.AddRange(["Bitrate steps — how high can the link go?", "Best encoder settings — the smoothest at one bitrate", "Best encoder settings — the best picture that still streams well", "Test my current settings — one measurement, nothing is changed"]);
         _mode.SelectedIndex = 0;
 
         var intro = new Label
         {
             AutoSize = true, MaximumSize = new Size(1060, 0), Margin = new Padding(0, 0, 0, 8),
             Text = "The run asks the Frame to stay awake and, with the built-in test scene ticked, shows a moving high-detail room on the headset (it replaces whatever VR app is on screen; untick it to test with your own busy game and stay in it). " +
-                   "Bitrate steps raises the target step by step and judges each one. Best encoder settings measures your current encoder options, then tries the preset, rate control, VBV and multipass one at a time at a single bitrate and keeps what streams smoothest. Your own settings are put back afterwards."
+                   "Bitrate steps raises the target step by step and judges each one. Best encoder settings tries the preset, rate control, multipass and VBV at a single bitrate, starting at the lightest values and working up, and keeps what streams smoothest (or, for the best-picture goal, what delivers the most of the bitrate while still streaming acceptably). Test my current settings measures what you use now, once, at your current bitrate target, and changes nothing. Your own settings are put back afterwards."
         };
         var modeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4) };
         modeRow.Controls.AddRange([Caption("Run:"), _mode, Caption("Measure each for"), _measure, _scene]);
         _bitrateOptions.Controls.AddRange([Caption("From"), _start, Caption("to"), _ceiling, Caption("Mbps in steps of"), _step, Caption("Mbps"), _stopOnFailure]);
-        _sweepOptions.Controls.AddRange([Caption("Measure every candidate at"), _probe, Caption("Mbps. Pick a bitrate a little below where your link starts to fail (about 85% of a bitrate run's highest clean step, which is the default after a bitrate run): right at the limit every change tips the stream into recovery, and at an easy bitrate every setting looks the same.")]);
+        _sweepOptions.Controls.AddRange([_sweepLead = Caption("Measure every candidate at"), _probe, _sweepTail = Caption("Mbps. Pick a bitrate a little below where your link starts to fail (about 85% of a bitrate run's highest clean step, which is the default after a bitrate run): right at the limit every change tips the stream into recovery, and at an easy bitrate every setting looks the same.")]);
         var optionsHost = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0) };
         optionsHost.Controls.AddRange([_bitrateOptions, _sweepOptions]);
         var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
@@ -163,6 +165,9 @@ public sealed class BenchmarkForm : Form
     {
         _bitrateOptions.Visible = !SweepMode;
         _sweepOptions.Visible = SweepMode;
+        var current = Goal == EncoderGoal.Current;
+        _probe.Visible = _sweepTail.Visible = !current;
+        _sweepLead.Text = current ? "Measures the encoder settings you use now at your current bitrate target, once (the length chosen above), and changes nothing. Start it whenever you like." : "Measure every candidate at";
         UseColumns(SweepMode ? SweepColumns : BitrateColumns);
         _conclusion.Text = "";
         _bar.Value = 0;
@@ -179,13 +184,14 @@ public sealed class BenchmarkForm : Form
         return new((int)_start.Value, (int)_ceiling.Value, (int)_step.Value, LinkCapacitySweep.SettleTime, Measure, _stopOnFailure.Checked, _scene.Checked && BenchmarkScene.Available);
     }
 
-    private EncoderSweepSettings CurrentSweep() => new((int)_probe.Value, TimeSpan.FromSeconds(6), Measure);
+    private EncoderSweepSettings CurrentSweep() => new((int)_probe.Value, TimeSpan.FromSeconds(6), Measure, Goal);
 
     private void UpdateEstimate()
     {
         if (SweepMode)
         {
             var sweep = CurrentSweep();
+            if (sweep.Goal == EncoderGoal.Current) { _estimate.Text = $"one measurement, about {Math.Ceiling(sweep.Estimate.TotalSeconds / 10) * 10:0} seconds"; return; }
             _estimate.Text = $"{sweep.CandidateCount} settings and a final check, plus a repeat for each one that looks better; about {Math.Ceiling(sweep.Estimate.TotalMinutes):0} minutes";
             return;
         }
@@ -362,8 +368,11 @@ public sealed class BenchmarkForm : Form
         string? text = null;
         switch (run)
         {
+            case EncoderSweepRun { Goal: EncoderGoal.Current, Trials.Count: > 0 } measured:
+                text = "Your current settings: " + measured.Trials[0].Decision + " at " + measured.ProbeMbps + " Mbps";
+                break;
             case EncoderSweepRun { Best: { } best } sweep:
-                text = "Best settings at " + sweep.ProbeMbps + " Mbps: " + best.Describe() + (best == sweep.Baseline ? " (what you use now)" : "");
+                text = (sweep.Goal == EncoderGoal.Picture ? "Best picture at " : "Smoothest settings at ") + sweep.ProbeMbps + " Mbps: " + best.Describe() + (best == sweep.Baseline ? " (what you use now)" : "");
                 if (best != sweep.Baseline) _recommended = best;
                 break;
             case BenchmarkRun { BestCleanMbps: int clean }:

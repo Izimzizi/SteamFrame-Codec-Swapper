@@ -15,8 +15,11 @@ public sealed record EncoderChoice(string RateControl, int Preset, int VbvFrames
 
 public enum EncoderDimension { Preset, RateControl, Vbv, MultiPass }
 
+/// <summary>What a run is after: the smoothest stream, the best picture that still streams acceptably, or just a look at the settings in use (nothing is changed).</summary>
+public enum EncoderGoal { Smoothest, Picture, Current }
+
 /// <param name="ProbeMbps">The one bitrate every candidate is measured at, so settings are compared with each other and not with the link.</param>
-public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSpan Measure)
+public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSpan Measure, EncoderGoal Goal = EncoderGoal.Smoothest)
 {
     public static readonly int[] Presets = [1, 2, 4, 6, 7], VbvFrames = [1, 2, 4, 8], MultiPasses = [0, 1, 2];
     public static readonly string[] RateControls = ["vbr", "cbr"];
@@ -48,7 +51,7 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
     public int CandidateCount => Enum.GetValues<EncoderDimension>().Sum(d => Values(new EncoderChoice("vbr", 2, 2, 0), d).Count());
 
     /// <summary>Every value is settled and measured, a better one is measured again before it is kept, plus a few confirmations and the final check.</summary>
-    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 6 + 2) + TimeSpan.FromSeconds(20);
+    public TimeSpan Estimate => Goal == EncoderGoal.Current ? Settle + Measure + TimeSpan.FromSeconds(20) : (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 6 + 2) + TimeSpan.FromSeconds(20);
 }
 
 public sealed class EncoderTrial
@@ -67,6 +70,7 @@ public sealed class EncoderSweepRun
     public string Codec { get; set; } = "";
     public List<string> Setup { get; set; } = [];
     public int ProbeMbps { get; set; }
+    public EncoderGoal Goal { get; set; }
     public int MeasureSeconds { get; set; }
     public EncoderChoice Baseline { get; set; } = new("vbr", 2, 2, 0);
     public EncoderChoice? Best { get; set; }
@@ -75,7 +79,7 @@ public sealed class EncoderSweepRun
     public bool Stopped { get; set; }
     public string? Error { get; set; }
 
-    public string Title => $"{At.LocalDateTime:MMM d HH:mm} · {Codec} · encoder sweep at {ProbeMbps} Mbps" + (Best is { } best ? " · " + best.Describe() : "") + (Stopped ? " (stopped)" : "");
+    public string Title => $"{At.LocalDateTime:MMM d HH:mm} · {Codec} · " + Goal switch { EncoderGoal.Picture => "best-picture sweep", EncoderGoal.Current => "current settings test", _ => "encoder sweep" } + $" at {ProbeMbps} Mbps" + (Best is { } best ? " · " + best.Describe() : "") + (Stopped ? " (stopped)" : "");
 }
 
 /// <summary>How two measurements of the same bitrate compare for the "smoothest" goal. Differences inside the noise count as equal.</summary>
@@ -124,12 +128,13 @@ public static class EncoderRanking
     /// The one choice among everything measured, whatever order it was measured in: the smoothest by <see cref="Compare"/>, and among those equally smooth the
     /// one that delivers the most of the bitrate, then the heavier preset, the heavier multipass and the smaller buffer.
     /// </summary>
-    public static (EncoderChoice Choice, string Why)? Select(IReadOnlyDictionary<EncoderChoice, BenchmarkStep> measured)
+    public static (EncoderChoice Choice, string Why)? Select(IReadOnlyDictionary<EncoderChoice, BenchmarkStep> measured, EncoderGoal goal = EncoderGoal.Smoothest)
     {
         if (measured.Count == 0) return null;
         var usable = measured.Where(p => p.Value.Verdict != SweepVerdict.Failed).ToList();
         if (usable.Count == 0) usable = measured.ToList();
         usable = usable.OrderBy(p => p.Key.RateControl == "vbr" ? 0 : 1).ThenBy(p => p.Key.Preset).ThenBy(p => p.Key.MultiPass).ThenBy(p => p.Key.VbvFrames).ToList();
+        if (goal == EncoderGoal.Picture) return SelectPicture(usable);
         var smoothest = usable[0];
         foreach (var p in usable.Skip(1)) if (Compare(p.Value, smoothest.Value) < 0) smoothest = p;
         var tied = usable.Where(p => Compare(p.Value, smoothest.Value) == 0 && !CostsMuchMore(p.Value, smoothest.Value)).ToList();
@@ -143,6 +148,26 @@ public static class EncoderRanking
         if (tied.Count == 1) return (pick.Key, "the smoothest of those measured");
         var higherReach = tied.Any(p => p.Key != pick.Key && Reach(pick.Value) - Reach(p.Value) > ReachMargin);
         return (pick.Key, $"{tied.Count} settings were equally smooth; picked for " + (higherReach ? "delivering more of the bitrate" : "the heavier settings (better picture)"));
+    }
+
+    /// <summary>
+    /// Best picture: among the settings that did not fail and leave the encoder room, the one that delivers the most of the bitrate asked for; settings within 5% of
+    /// that count as equal, and of those the smoothest wins, then the heavier preset, the heavier multipass and the smaller buffer.
+    /// </summary>
+    private static (EncoderChoice Choice, string Why) SelectPicture(List<KeyValuePair<EncoderChoice, BenchmarkStep>> usable)
+    {
+        var pool = usable.Where(p => HasHeadroom(p.Value)).ToList();
+        if (pool.Count == 0) pool = usable;
+        var top = pool.Max(p => Reach(p.Value));
+        var near = pool.Where(p => top - Reach(p.Value) <= ReachMargin).ToList();
+        var smooth = near[0];
+        foreach (var p in near.Skip(1)) if (Compare(p.Value, smooth.Value) < 0) smooth = p;
+        var tied = near.Where(p => Compare(p.Value, smooth.Value) == 0 && !CostsMuchMore(p.Value, smooth.Value)).ToList();
+        if (tied.Count == 0) tied.Add(smooth);
+        var pick = tied[0];
+        foreach (var p in tied.Skip(1)) if (Heavier(p.Key, pick.Key)) pick = p;
+        var why = $"best picture: delivered {Reach(pick.Value) * 100:0}% of the bitrate asked for" + (near.Count > 1 ? $"; {near.Count} settings were within 5% of that, picked the smoothest of them and then the heavier settings" : "");
+        return (pick.Key, why);
     }
 
     private static bool Heavier(EncoderChoice a, EncoderChoice b) => a.Preset != b.Preset ? a.Preset > b.Preset : a.MultiPass != b.MultiPass ? a.MultiPass > b.MultiPass : a.VbvFrames < b.VbvFrames;
@@ -172,6 +197,8 @@ public sealed class EncoderSweepRunner
 
     public async Task<EncoderSweepRun> RunAsync(EncoderSweepSettings settings, EncoderSweepRun run, EncoderChoice baseline, IProgress<EncoderSweepProgress>? progress, CancellationToken token)
     {
+        if (settings.Goal == EncoderGoal.Current) return await RunCurrentAsync(settings, run, baseline, progress, token);
+        run.Goal = settings.Goal;
         run.ProbeMbps = settings.ProbeMbps; run.MeasureSeconds = (int)settings.Measure.TotalSeconds; run.Baseline = baseline;
         var total = settings.CandidateCount + 2;   // grows by one for each repeat measurement, so the count never runs past the total
         var done = 0;
@@ -259,10 +286,10 @@ public sealed class EncoderSweepRunner
                                 throw new InvalidOperationException($"The stream did not settle after {candidate.Describe()} (it kept asking for recovery), so the sweep stopped to protect it. The best settings found so far are kept as the recommendation.");
                         }
                         else lighterWorked = true;
-                        bestSoFar = EncoderRanking.Select(measured)?.Choice;
+                        bestSoFar = EncoderRanking.Select(measured, settings.Goal)?.Choice;
                     }
                     // Looking better once may be noise on a link like Wi-Fi: a new best is measured a second time, and the worse of the two counts.
-                    var chosen = EncoderRanking.Select(measured)?.Choice ?? best;
+                    var chosen = EncoderRanking.Select(measured, settings.Goal)?.Choice ?? best;
                     while (chosen != best && confirmed.Add(chosen))
                     {
                         await _apply(chosen, token);
@@ -272,7 +299,7 @@ public sealed class EncoderSweepRunner
                         if (again.MeanMbps is null) { Record(new EncoderTrial { Label = label, Choice = chosen, Step = again, Decision = "the stream was lost" }); throw Lost(chosen); }
                         measured[chosen] = Worse(measured[chosen], again);
                         Record(new EncoderTrial { Label = label, Choice = chosen, Step = again, Decision = "repeat measurement" });
-                        chosen = EncoderRanking.Select(measured)?.Choice ?? best;
+                        chosen = EncoderRanking.Select(measured, settings.Goal)?.Choice ?? best;
                     }
                     best = chosen;
                     bestSoFar = best;
@@ -302,7 +329,30 @@ public sealed class EncoderSweepRunner
             run.Error = error.Message;
             if (run.Error.StartsWith("The stream did not settle", StringComparison.Ordinal) || run.Error.StartsWith("The stream was lost", StringComparison.Ordinal)) run.Best = bestSoFar;
         }
-        if (run.Best is { } chosenBest) Annotate(run, chosenBest, measured);
+        if (run.Best is { } chosenBest && run.Goal != EncoderGoal.Current) Annotate(run, chosenBest, measured);
+        run.Conclusion = Conclude(run);
+        return run;
+    }
+
+    /// <summary>Measures the settings in use as they are: one window, nothing is changed.</summary>
+    private async Task<EncoderSweepRun> RunCurrentAsync(EncoderSweepSettings settings, EncoderSweepRun run, EncoderChoice baseline, IProgress<EncoderSweepProgress>? progress, CancellationToken token)
+    {
+        run.Goal = EncoderGoal.Current; run.ProbeMbps = settings.ProbeMbps; run.MeasureSeconds = (int)settings.Measure.TotalSeconds; run.Baseline = baseline;
+        try
+        {
+            run.Codec = await _measure.PrepareAsync([settings.ProbeMbps], new Progress<BenchmarkProgress>(p => { }), token);
+            progress?.Report(new("waiting for the stream to settle", "start", 0, 1, 0, null));
+            if (!await _measure.WaitQuietAsync(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(90), null, token))
+                throw new InvalidOperationException("The stream did not settle before the measurement (it kept asking for recovery for 90 seconds). Check the link and that the headset is connected, then try again.");
+            var step = await _measure.MeasureStepAsync(settings.ProbeMbps, 0, 1, TimeSpan.FromSeconds(2), settings.Measure, recheck: false,
+                new Progress<BenchmarkProgress>(p => progress?.Report(new(p.Phase, "Your current settings", 0, 1, p.PhaseSecondsLeft, null))), token, waitQuiet: false);
+            var trial = new EncoderTrial { Label = "Your current settings", Choice = baseline, Step = step, Adopted = true, Decision = step.MeanMbps is null ? "no video in the window" : step.Verdict switch { SweepVerdict.Clean => "clean", SweepVerdict.Marginal => "small problems", _ => "failed" } };
+            run.Trials.Add(trial);
+            progress?.Report(new("done", trial.Label, 1, 1, 0, trial));
+            run.Best = baseline;
+        }
+        catch (OperationCanceledException) { run.Stopped = true; }
+        catch (InvalidOperationException error) { run.Error = error.Message; }
         run.Conclusion = Conclude(run);
         return run;
     }
@@ -316,7 +366,7 @@ public sealed class EncoderSweepRunner
     private static void Annotate(EncoderSweepRun run, EncoderChoice best, IReadOnlyDictionary<EncoderChoice, BenchmarkStep> measured)
     {
         if (!measured.TryGetValue(best, out var bestStep)) return;
-        var why = EncoderRanking.Select(measured) is { } pick && pick.Choice == best ? pick.Why : "the best found before the sweep ended";
+        var why = EncoderRanking.Select(measured, run.Goal) is { } pick && pick.Choice == best ? pick.Why : "the best found before the sweep ended";
         foreach (var trial in run.Trials)
         {
             if (trial.Label is "Final choice" or "Your current settings" || trial.Decision.StartsWith("not tried", StringComparison.Ordinal) || trial.Decision is "the stream was lost" or "repeat measurement") continue;
@@ -324,6 +374,8 @@ public sealed class EncoderSweepRunner
             trial.Adopted = false;
             if (trial.Step.Verdict == SweepVerdict.Failed) { trial.Decision = "rough: not usable"; continue; }
             var order = EncoderRanking.Compare(trial.Step, bestStep);
+            if (run.Goal == EncoderGoal.Picture && EncoderRanking.Reach(bestStep) - EncoderRanking.Reach(trial.Step) > 0.05)
+            { trial.Decision = $"lower picture: delivered {EncoderRanking.Reach(trial.Step) * 100:0}% of the bitrate against {EncoderRanking.Reach(bestStep) * 100:0}%"; continue; }
             trial.Decision = order > 0 ? "less smooth than the chosen"
                 : order < 0 ? "smoother in this window, but within the noise of the chosen (see the repeat measurement)"
                 : EncoderRanking.CostsMuchMore(trial.Step, bestStep) ? "tied on smoothness, costs much more encode time"
@@ -350,16 +402,31 @@ public sealed class EncoderSweepRunner
 
     private static BenchmarkStep Worse(BenchmarkStep a, BenchmarkStep b) => EncoderRanking.Compare(a, b) >= 0 ? a : b;
 
+    private static string ConcludeCurrent(EncoderSweepRun run)
+    {
+        var step = run.Trials[0].Step;
+        var text = new StringBuilder($"Your current settings ({run.Baseline.Describe()}) at a {run.ProbeMbps} Mbps target, {step.Seconds:0} s: ");
+        text.Append(step.MeanMbps is null ? "no video arrived. " : $"{step.Verdict.ToString().ToLowerInvariant()}. Delivered {step.MeanMbps:0} Mbps ({EncoderRanking.Reach(step) * 100:0}% of the target), ");
+        if (step.MeanMbps is not null)
+            text.Append($"held back {step.HeldMsPerMinute:0} ms/min ({step.HeldFrames} frames), {step.StreamResets} stream reset(s), {step.PcDropped} PC drop(s), encode {step.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} / {step.EncodeMaxMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} ms (average / slowest)" + (EncoderRanking.HasHeadroom(step) ? "" : ", the slowest encode leaves little room in a frame") + ". ");
+        if (step.Verdict != SweepVerdict.Clean && step.Reason.Length > 0) text.Append("Why: " + step.Reason + " ");
+        text.Append("Nothing was changed. ");
+        if (run.Stopped) text.Append("The run was stopped early. ");
+        if (run.Error is not null) text.Append(run.Error);
+        return text.ToString().Trim();
+    }
+
     public static string Conclude(EncoderSweepRun run)
     {
         if (run.Trials.Count == 0) return run.Error ?? "Nothing was measured.";
+        if (run.Goal == EncoderGoal.Current) return ConcludeCurrent(run);
         var text = new StringBuilder();
         var measured = run.Trials.Where(t => !t.Decision.StartsWith("not tried", StringComparison.Ordinal) && t.Label != "Final choice" && t.Label != "Your current settings").ToList();
         if (run.Best is null) text.Append("The sweep ended before a recommendation could be made. ");
-        else if (run.Best == run.Baseline) text.Append($"Your current settings ({run.Baseline.Describe()}) came out as the smoothest of those tried at {run.ProbeMbps} Mbps. ");
+        else if (run.Best == run.Baseline) text.Append($"Your current settings ({run.Baseline.Describe()}) came out as the {(run.Goal == EncoderGoal.Picture ? "best picture" : "smoothest")} of those tried at {run.ProbeMbps} Mbps. ");
         else
         {
-            text.Append($"Smoothest at {run.ProbeMbps} Mbps: {run.Best.Describe()} (now {run.Baseline.Describe()}). ");
+            text.Append($"{(run.Goal == EncoderGoal.Picture ? "Best picture" : "Smoothest")} at {run.ProbeMbps} Mbps: {run.Best.Describe()} (now {run.Baseline.Describe()}). ");
             var final = run.Trials.LastOrDefault(t => t.Label == "Final choice")?.Step;
             // The step measured with the user's own value of the first option, on their other options as they were, is the nearest thing to "before".
             var before = run.Trials.FirstOrDefault(t => t.Label == "Your current settings")?.Step ?? measured.FirstOrDefault(t => t.Choice == run.Baseline)?.Step;

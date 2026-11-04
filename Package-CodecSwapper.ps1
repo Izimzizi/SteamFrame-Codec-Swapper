@@ -1,7 +1,9 @@
 param(
     # A CodecLab folder that supplies runtime\ (isolated Python; Tools\Prepare-CodecLab.ps1 builds it) and Backend\ (the PC hook binaries, or use -BuildBackend).
     [string]$CodecLabSource = (Join-Path $PSScriptRoot 'artifacts\CodecLab'),
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\CodecSwapper'),
+    # Leave empty to let the script choose: artifacts\CodecSwapper, or when a CodecSwapper.exe is running from there (a test in progress) the next free
+    # slot, artifacts\CodecSwapper-2, -3 ... The first slot nothing is running from is replaced, so folders only pile up while older builds are still in use.
+    [string]$OutputDirectory = '',
     # Rebuild the PC hook binaries from Native\H264Hook instead of taking them from CodecLabSource.
     [switch]$BuildBackend,
     # Bundle the .NET runtime so users need nothing installed (larger download). Pass -SelfContained:$false for a small build.
@@ -12,13 +14,24 @@ param(
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    $out = [IO.Path]::GetFullPath($OutputDirectory)
+    function Test-InUse([string]$directory) {
+        $prefix = [IO.Path]::GetFullPath($directory).TrimEnd([char]92) + [char]92
+        [bool](Get-Process -Name CodecSwapper -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+    }
+    if ($OutputDirectory) { $out = [IO.Path]::GetFullPath($OutputDirectory) }
+    else {
+        $out = $null
+        foreach ($slot in 1..9) {
+            $candidate = Join-Path $PSScriptRoot ('artifacts' + [char]92 + $(if ($slot -eq 1) { 'CodecSwapper' } else { "CodecSwapper-$slot" }))
+            if (-not (Test-InUse $candidate)) { $out = [IO.Path]::GetFullPath($candidate); break }
+        }
+        if (-not $out) { throw 'Nine builds are running; exit one of them first.' }
+    }
     $source = [IO.Path]::GetFullPath($CodecLabSource)
     foreach ($required in @('runtime\python.exe')) {
         if (-not (Test-Path -LiteralPath (Join-Path $source $required))) { throw "CodecLab source is missing $required ($source). Run Tools\Prepare-CodecLab.ps1 or point -CodecLabSource at a CodecLab folder." }
     }
-    $running = Get-Process -Name CodecSwapper -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($out, [StringComparison]::OrdinalIgnoreCase) }
-    if ($running) { throw 'Exit CodecSwapper (right-click the icon, Exit) before packaging over it.' }
+    if (Test-InUse $out) { throw 'That CodecSwapper is running; exit it (right-click the icon, Exit) or leave -OutputDirectory out so a free folder is chosen.' }
 
     $probe = Join-Path $PSScriptRoot 'Native\build\SteamFrameEncoderProbe.dll'
     if (-not ((Test-Path -LiteralPath $probe) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Native\build\SteamFrameBenchmark.exe')))) { & (Join-Path $PSScriptRoot 'Native\build.ps1') -SkipTests }

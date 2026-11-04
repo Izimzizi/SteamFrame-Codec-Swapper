@@ -231,6 +231,9 @@ public sealed partial class TrayApp
     {
         var original = _controller.TargetMbps;
         var baseline = EncoderChoice.From(_preferences);
+        // Testing the current settings changes nothing: it runs at the bitrate target in force and puts nothing back afterwards.
+        var observeOnly = settings.Goal == EncoderGoal.Current;
+        if (observeOnly) settings = settings with { ProbeMbps = original };
         var run = new EncoderSweepRun { At = DateTimeOffset.Now, Setup = BenchmarkSetup() };
         using var cancel = _benchmarkCancel = new CancellationTokenSource();
         form.SetRunning(true);
@@ -245,7 +248,7 @@ public sealed partial class TrayApp
                 (mbps, token) => _controller.ChangeTargetAsync(mbps, () => throw new InvalidOperationException("This session cannot change the bitrate without restarting, so the sweep cannot run. Restart SteamVR and try again."), _ => Task.FromResult(false), token),
                 NextBenchmarkSampleAsync);
             measure.TolerableResets = 2;
-            await measure.ApplyTargetAsync(settings.ProbeMbps, cancel.Token);
+            if (!observeOnly) await measure.ApplyTargetAsync(settings.ProbeMbps, cancel.Token);
             await new EncoderSweepRunner(measure, ApplyEncoderChoiceAsync).RunAsync(settings, run, baseline, new Progress<EncoderSweepProgress>(form.ShowSweepProgress), cancel.Token);
         }
         catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException)
@@ -259,10 +262,13 @@ public sealed partial class TrayApp
             _statsService.BenchmarkActive = false;
             _benchmarkCancel = null;
             // The user's own encoder options and bitrate come back whatever happened; the recommendation is applied only on request.
+            if (!observeOnly)
+            {
             try { await ApplyEncoderChoiceAsync(baseline, CancellationToken.None); }
             catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder sweep", $"Your encoder options could not be put back ({baseline.Describe()}): {error.Message}", ToolTipIcon.Warning); }
             try { await _controller.ChangeTargetAsync(original, () => Task.FromResult<string?>(null), _ => Task.FromResult(false)); }
             catch (Exception error) when (error is not OperationCanceledException) { Balloon("Encoder sweep", $"Your bitrate target could not be put back to {original} Mbps: {error.Message}", ToolTipIcon.Warning); }
+            }
         }
         if (run.Trials.Count > 0)
         {
