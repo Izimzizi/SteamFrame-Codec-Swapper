@@ -479,7 +479,6 @@ class Supervisor:
   """Switch the running SteamVR between H.264 and its own HEVC without restarting it: the stream stops, the hook and the Frame's
   client flip together, the stream starts again. On any failure the previous codec is put back."""
   if mode not in ('h264','stock'):raise ValueError('Unknown codec mode')
-  if mode not in ('h264','stock'):raise ValueError('Unknown codec mode')
   if self.driver and not self.pid:
    # SteamVR is closed: only the choice is recorded; it is applied when SteamVR starts.
    self.want_h264=mode=='h264'

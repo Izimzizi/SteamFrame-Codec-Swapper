@@ -27,3 +27,19 @@ jobs:
       - name: Frame supervisor tests
         working-directory: Frame/Codec
         run: python -m unittest
+      - name: Compositor timing check
+        run: dotnet run --project Tests/CompositorTimingTests
+      - name: Native hook build and tests that need no GPU
+        shell: pwsh
+        run: |
+          ./Native/H264Hook/build.ps1
+          foreach ($test in 'picture_abi_test', 'hevc_options_test') {
+            & "artifacts/H264Hook/$test.exe"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Native encoder probe tests
+        shell: pwsh
+        run: |
+          cmake -S Native -B Native/build-ci
+          cmake --build Native/build-ci --config Release
+          ctest --test-dir Native/build-ci -C Release --output-on-failure

@@ -284,12 +284,12 @@ NVENCSTATUS reconfigure_h264(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
  requested.frameRateNum=requested_fps;requested.frameRateDen=1;
  // Encoder options queued while this session runs are adopted here: the host reconfigures before every frame, so the
  // new rate control, VBV and preset reach the running encoder without a new session.
- bool adopted=false;uint32_t old_rate_control=0,old_preset=0,old_vbv=0;
+ bool adopted=false;uint32_t previous_rate_control=0,previous_preset=0,previous_vbv=0;
  {std::lock_guard<std::mutex> lock(mutex);
   if(pending_encoder){
-   old_rate_control=requested_rate_control;old_preset=requested_preset;old_vbv=requested_vbv_frames;
+   previous_rate_control=requested_rate_control;previous_preset=requested_preset;previous_vbv=requested_vbv_frames;
    requested_rate_control=pending_rate_control;requested_preset=pending_preset;requested_vbv_frames=pending_vbv_frames;pending_encoder=false;adopted=true;
-   auto found=sessions.find(encoder);if(found!=sessions.end()&&old_preset!=requested_preset)found->second.baseline_ready=false;
+   auto found=sessions.find(encoder);if(found!=sessions.end()&&previous_preset!=requested_preset)found->second.baseline_ready=false;
   }}
  if(!configure(encoder,requested,copy.reInitEncodeParams,config))return reject(NV_ENC_ERR_INVALID_PARAM);
  // A new picture size needs the encoder reset, with a fresh sequence for the decoder.
@@ -300,7 +300,7 @@ NVENCSTATUS reconfigure_h264(void* encoder,NV_ENC_RECONFIGURE_PARAMS* source){
  auto status=api.nvEncReconfigureEncoder(encoder,&copy);
  if(adopted&&status!=NV_ENC_SUCCESS){
   // The encoder refused the new options (a preset cannot always change in place): keep running on the old ones.
-  {std::lock_guard<std::mutex> lock(mutex);requested_rate_control=old_rate_control;requested_preset=old_preset;requested_vbv_frames=old_vbv;
+  {std::lock_guard<std::mutex> lock(mutex);requested_rate_control=previous_rate_control;requested_preset=previous_preset;requested_vbv_frames=previous_vbv;
    auto found=sessions.find(encoder);if(found!=sessions.end())found->second.baseline_ready=false;}
   copy=NV_ENC_RECONFIGURE_PARAMS{};config=NV_ENC_CONFIG{};
   if(!upgrade(source,copy,old_reconfigure,NV_ENC_RECONFIGURE_PARAMS_VER)||!configure(encoder,requested,copy.reInitEncodeParams,config))return reject(NV_ENC_ERR_INVALID_PARAM);
@@ -506,9 +506,13 @@ NVENCSTATUS NVENCAPI destroy(void* encoder){
   for(auto* item:session->outputs)delete item;
   for(auto* item:session->mapped)delete item;
   session->resources.clear();session->outputs.clear();session->mapped.clear();}}
- if(stock)StockDestroy(stock);
+ // The stock encoder goes only once the H.264 one is gone: when that destroy fails the session stays registered, and its stock
+ // encoder must still be there for the next call.
  const auto status=api.nvEncDestroyEncoder(encoder);
- if(status==NV_ENC_SUCCESS){std::lock_guard<std::mutex> lock(mutex);sessions.erase(encoder);}
+ if(status==NV_ENC_SUCCESS){
+  if(stock)StockDestroy(stock);
+  std::lock_guard<std::mutex> lock(mutex);sessions.erase(encoder);
+ }
  return status;
 }
 }
@@ -589,8 +593,8 @@ extern "C" int HOOK_CALL HookGetLegacyIdentity(HookTrialIdentity* output){
 
 extern "C" int HOOK_CALL HookIsH264Selected(void){std::lock_guard<std::mutex> lock(mutex);return active_mode==0?1:0;}
 extern "C" int HOOK_CALL HookSetOversizeHandler(void (*handler)()){std::lock_guard<std::mutex> lock(mutex);oversize_handler=handler;return 0;}
-extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* factory){
- std::lock_guard<std::mutex> lock(mutex);return StockSetTable(sdk11_table,bytes,factory);
+extern "C" int HOOK_CALL HookProvideStockTable(const void* sdk11_table,uint32_t bytes,void* stock_factory){
+ std::lock_guard<std::mutex> lock(mutex);return StockSetTable(sdk11_table,bytes,stock_factory);
 }
 // 0 = H.264, 1 = the driver's own HEVC. Takes effect at the next frame SteamVR maps; refused unless every open session has a stock encoder.
 extern "C" int HOOK_CALL HookSetLegacyMode(uint32_t mode){

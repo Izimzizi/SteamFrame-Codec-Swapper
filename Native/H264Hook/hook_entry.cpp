@@ -124,7 +124,7 @@ static void driver_note(const char* text){
 static void read_h264_limit(){
  const auto path=hook_data_path(L"h264-limit.txt");if(path.empty())return;
  FILE* file=nullptr;if(_wfopen_s(&file,path.c_str(),L"r")||!file)return;
- unsigned width=0,height=0;const int count=fscanf(file,"%ux%u",&width,&height);fclose(file);
+ unsigned width=0,height=0;const int count=fscanf_s(file,"%ux%u",&width,&height);fclose(file);
  if(count>=1&&HookConfigureH264Limit(width,count>=2?height:0)==0){
   char note[96];snprintf(note,sizeof(note),"H.264 size limit %ux%u from h264-limit.txt",width,count>=2?height:0);driver_note(note);
  }
@@ -172,7 +172,7 @@ static void settings_set_bool(const char* key,bool value){
 static bool read_restore(int& width,int& automatic){
  const auto path=restore_path();if(path.empty())return false;
  FILE* file=nullptr;if(_wfopen_s(&file,path.c_str(),L"r")||!file)return false;
- const int count=fscanf(file,"%d %d",&width,&automatic);fclose(file);return count==2;
+ const int count=fscanf_s(file,"%d %d",&width,&automatic);fclose(file);return count==2;
 }
 static void restore_width(){
  int width=0,automatic=0;

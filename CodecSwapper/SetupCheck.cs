@@ -88,6 +88,12 @@ public sealed class ProcessRunner : IProcessRunner
             try { process.Kill(true); } catch (InvalidOperationException) { }
             return new(-1, "", "Timed out.");
         }
+        catch (OperationCanceledException)
+        {
+            // The caller gave up (a cancelled setup): the program must not keep running behind it.
+            try { process.Kill(true); } catch (InvalidOperationException) { }
+            throw;
+        }
         return new(process.ExitCode, await output, await error);
     }
 }
