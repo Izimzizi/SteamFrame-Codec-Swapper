@@ -20,6 +20,7 @@ public sealed partial class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _resetCounters = new("Reset dropped-frame counters");
     private HealthReader? _healthReader;
     private readonly NotifyIcon _icon = new() { Visible = true };
+    private DashboardWatch _dashboardWatch = null!;
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 2000 };
     private readonly ToolStripMenuItem _status = new() { Enabled = false, AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 24), TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripMenuItem _useH264 = new("H.264");
@@ -75,7 +76,8 @@ public sealed partial class TrayApp : ApplicationContext
         _controller.Changed += Render;
         Render(_controller.Current);
         _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleStats(); };
-        _poll.Tick += async (_, _) => { try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
+        _dashboardWatch = new DashboardWatch(Path.Combine(AppData.Root, "dashboard-watch.log"), _paths.SteamVrRoot, _paths.SteamRoot, () => _controller.Current.State.ToString());
+        _poll.Tick += async (_, _) => { _dashboardWatch.Tick(); try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
         StartHud();
         if (driverBehind)
