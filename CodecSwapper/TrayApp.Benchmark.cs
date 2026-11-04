@@ -79,6 +79,17 @@ public sealed partial class TrayApp
     {
         if (!_steamVrLaunchedByBenchmark && !useScene) return;
         _steamVrLaunchedByBenchmark = false;
+        // The headset first: while the Frame still holds the stream it starts SteamVR again by itself a moment after the PC side is closed.
+        form.ShowStatus("Disconnecting the headset...");
+        try
+        {
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            if (await new FrameStreamControl(_preferences).StopAsync(limit.Token)) { TrayLog("Benchmark stopped the stream on the Frame"); await Task.Delay(FrameStreamControl.SettleTime); }
+        }
+        catch (Exception error) when (error is IOException or OperationCanceledException or ArgumentException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            TrayLog("Benchmark could not stop the stream on the Frame: " + error.Message);
+        }
         if (!OpenVrSettings.IsRunning) return;
         form.ShowStatus("Closing SteamVR so the next run starts clean...");
         TrayLog("Benchmark closes SteamVR");
