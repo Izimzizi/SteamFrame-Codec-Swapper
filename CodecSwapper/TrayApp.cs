@@ -344,13 +344,28 @@ public sealed partial class TrayApp : ApplicationContext
         var source = _heal = new CancellationTokenSource();
         var frame = new FrameStreamControl(_preferences);
         var ui = SynchronizationContext.Current ?? new SynchronizationContext();
-        var heal = new DashboardHeal(expression => frame.EvaluateAsync(expression), () => ui.Post(_ => Balloon("Dashboard windows missing", "The Frame's dashboard has no desktop or Steam window. Press + in the dashboard and add any window to bring them back.", ToolTipIcon.Warning), null), _dashboardWatch.Note);
+        var heal = new DashboardHeal(expression => frame.EvaluateAsync(expression), RunNudgeAsync, () => ui.Post(_ => Balloon("Dashboard windows missing", "The Frame's dashboard has no desktop or Steam window. Press + in the dashboard and add any window to bring them back.", ToolTipIcon.Warning), null), _dashboardWatch.Note);
         _ = Task.Run(async () =>
         {
             try { await heal.RunAsync(source.Token); }
             catch (OperationCanceledException) { /* another switch started */ }
             catch (Exception error) when (error is not OutOfMemoryException) { _dashboardWatch.Note("HEAL failed: " + error.Message); }
         });
+    }
+
+    /// <summary>Runs the short helper process that does what the dashboard's + does; returns its exit code (-1 when it could not be started or hung).</summary>
+    private static async Task<int> RunNudgeAsync()
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, DashboardNudge.Argument) { UseShellExecute = false, CreateNoWindow = true });
+            if (process is null) return -1;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            try { await process.WaitForExitAsync(timeout.Token); }
+            catch (OperationCanceledException) { try { process.Kill(); } catch (InvalidOperationException) { } return -1; }
+            return process.ExitCode;
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { return -1; }
     }
 
     private static void TrayLog(string what)

@@ -18,7 +18,7 @@ public sealed class DashboardHealTests
         public readonly Queue<string> Replies = new();
         public readonly List<string> Calls = [];
         public readonly List<string> Log = [];
-        public DashboardHeal Heal => new(_ => { Calls.Add("ask"); return Task.FromResult(Replies.Dequeue()); }, () => Calls.Add("missing"), Log.Add, (_, _) => Task.CompletedTask);
+        public DashboardHeal Heal => new(_ => { Calls.Add("ask"); return Task.FromResult(Replies.Dequeue()); }, () => { Calls.Add("nudge"); return Task.FromResult(0); }, () => Calls.Add("failed"), Log.Add, (_, _) => Task.CompletedTask);
     }
 
     [Fact]
@@ -48,18 +48,28 @@ public sealed class DashboardHealTests
     }
 
     [Fact]
-    public async Task A_stream_without_PC_frames_is_reported_and_nothing_is_restarted()
+    public async Task A_stream_without_PC_frames_is_nudged_once_and_checked_again()
     {
-        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0));
+        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 3));
         await rig.Heal.RunAsync(CancellationToken.None);
-        Assert.Equal(["ask", "missing"], rig.Calls);
+        Assert.Equal(["ask", "nudge", "ask"], rig.Calls);
+        Assert.Contains(rig.Log, l => l.StartsWith("HEAL worked"));
+    }
+
+    [Fact]
+    public async Task A_nudge_that_does_not_help_is_reported_and_not_repeated()
+    {
+        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 0));
+        await rig.Heal.RunAsync(CancellationToken.None);
+        Assert.Equal(["ask", "nudge", "ask", "failed"], rig.Calls);
+        Assert.Contains(rig.Log, l => l.StartsWith("HEAL did not help"));
     }
 
     [Fact]
     public async Task An_unreachable_Frame_reports_nothing()
     {
         var calls = new List<string>(); var log = new List<string>();
-        var heal = new DashboardHeal(_ => throw new IOException("no Frame"), () => calls.Add("missing"), log.Add, (_, _) => Task.CompletedTask);
+        var heal = new DashboardHeal(_ => throw new IOException("no Frame"), () => { calls.Add("nudge"); return Task.FromResult(0); }, () => calls.Add("failed"), log.Add, (_, _) => Task.CompletedTask);
         await heal.RunAsync(CancellationToken.None);
         Assert.Empty(calls);
         Assert.Contains(log, l => l.Contains("could not be asked"));
@@ -70,7 +80,7 @@ public sealed class DashboardHealTests
     {
         var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0));
         using var source = new CancellationTokenSource();
-        var heal = new DashboardHeal(_ => { rig.Calls.Add("ask"); return Task.FromResult(rig.Replies.Dequeue()); }, () => rig.Calls.Add("missing"), rig.Log.Add,
+        var heal = new DashboardHeal(_ => { rig.Calls.Add("ask"); return Task.FromResult(rig.Replies.Dequeue()); }, () => Task.FromResult(0), () => rig.Calls.Add("failed"), rig.Log.Add,
             (_, token) => { source.Cancel(); token.ThrowIfCancellationRequested(); return Task.CompletedTask; });
         await Assert.ThrowsAsync<OperationCanceledException>(() => heal.RunAsync(source.Token));
         Assert.Empty(rig.Calls);

@@ -5,12 +5,12 @@ namespace CodecSwapper;
 /// <summary>
 /// After a codec switch the Frame's dashboard sometimes has the stream but none of the PC's windows (the desktop and the Steam window reach it as frames
 /// from the PC, and the PC does not always send them after the new stream starts). Ten seconds after a switch the Frame is asked what its dashboard holds,
-/// and when it has a stream without any PC frame the user is told. Nothing is restarted: a stream restart and a Frame client restart were both tried and do not
-/// bring the windows back; adding any window with + in the dashboard does. Every decision is written to the dashboard watch log.
+/// and when it has a stream without any PC frame the windows are brought back the way the dashboard's + does it (see <see cref="DashboardNudge"/>; a stream
+/// restart and a Frame client restart were tried and do not help), then it is checked again. Every decision is written to the dashboard watch log.
 /// </summary>
-public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Action missing, Action<string> log, Func<TimeSpan, CancellationToken, Task>? delay = null)
+public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Func<Task<int>> nudge, Action failed, Action<string> log, Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
-    public static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan Wait = TimeSpan.FromSeconds(10), Recheck = TimeSpan.FromSeconds(6);
     private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? ((time, token) => Task.Delay(time, token));
 
     /// <summary>The number of running streams and of dashboard frames that come from the PC, from the Frame's reply; null when it cannot be read.</summary>
@@ -41,7 +41,13 @@ public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Action mi
         if (await ReadAsync() is not { } first) return;
         if (first.Streams == 0) { log("HEAL no stream on the Frame ten seconds after the switch; nothing to do"); return; }
         if (first.Remote > 0) { log($"HEAL the Frame has {first.Remote} PC frame(s); nothing to do"); return; }
-        log("HEAL the Frame has a stream but no PC frames (the desktop and Steam windows); telling the user");
-        missing();
+        log("HEAL the Frame has a stream but no PC frames (the desktop and Steam windows); asking the PC's dashboard to send them");
+        var code = await nudge();
+        log("HEAL nudge finished with code " + code);
+        await _delay(Recheck, token);
+        if (await ReadAsync() is not { } second) return;
+        if (second.Remote > 0) { log($"HEAL worked: the Frame now has {second.Remote} PC frame(s)"); return; }
+        log($"HEAL did not help: still no PC frames (streams {second.Streams})");
+        failed();
     }
 }
