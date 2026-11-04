@@ -85,10 +85,7 @@ Asked held_request(uint32_t average,uint32_t peak){
  return current.average>=previous.average?current:previous;
 }
 // Applies the options to a copy of the driver's init parameters and its encode configuration; returns whether it changed anything.
-// The multipass mode the driver's encoder was created with. NVENC cannot change it on a running encoder: a live change (the options file is read on every
-// reconfigure) faulted the GPU (nvlddmkm event 153, then "Perf: Frame not in expected state" and a SteamVR crash), so a new value waits for the next initialize.
-static int initialized_multipass=-1;
-bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool initial){
+bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARAMS& init,NV_ENC_CONFIG& config,bool){
  load_options();if(!options.enabled||!source.encodeConfig)return false;
  init=source;config=*source.encodeConfig;init.encodeConfig=&config;
  auto& rc=config.rcParams;
@@ -105,10 +102,9 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  // SteamVR reconfigures before every frame with its own preset, and the encoder follows the preset it is given each time, so the chosen
  // one is named on every call, not only when the encoder is created.
  init.presetGUID=preset_guid(options.preset);
- if(initial||initialized_multipass<0)initialized_multipass=options.multipass;
- rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(initialized_multipass);
+ rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(options.multipass);
  // A changed rate control, buffer or preset is followed by a plain reconfigure; the encoder is not reset (a reset with multipass 2 faulted the GPU).
- const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+initialized_multipass*100000;
+ const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+options.multipass*100000;
  applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
  return true;
