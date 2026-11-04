@@ -338,7 +338,9 @@ public sealed partial class TrayApp : ApplicationContext
         var was = _healLastState;
         _healLastState = snapshot.State;
         if (snapshot.State is TrayState.Arming or TrayState.Disarming) { _heal?.Cancel(); return; }
-        var finished = (was == TrayState.Arming && snapshot.State == TrayState.Armed) || (was == TrayState.Disarming && snapshot.State == TrayState.Disarmed);
+        // Any busy state that settles counts: a switch back to H.264 pressed while the switch to HEVC is still finishing goes Disarming -> Armed without an Arming in between,
+        // and the check was skipped for exactly those (the windows stayed missing after 2 of 3 quick switches).
+        var finished = was is TrayState.Arming or TrayState.Disarming && snapshot.State is TrayState.Armed or TrayState.Disarmed;
         if (!finished || !_preferences.HealDashboard) return;
         _heal?.Cancel();
         var source = _heal = new CancellationTokenSource();
