@@ -45,16 +45,16 @@ public sealed class EncoderSweepTests : IDisposable
 
     private static readonly EncoderSweepSettings Quick = new(200, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10));
 
-    private static Task<EncoderSweepRun> Run(Rig rig, CancellationToken token = default) =>
-        new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply).RunAsync(Quick, new EncoderSweepRun { At = T0 }, Start, null, token);
+    private static Task<EncoderSweepRun> Run(Rig rig, CancellationToken token = default, EncoderChoice? baseline = null) =>
+        new EncoderSweepRunner(new BenchmarkRunner((_, _) => Task.CompletedTask, rig.Next) { TolerableResets = 2 }, rig.Apply).RunAsync(Quick, new EncoderSweepRun { At = T0 }, baseline ?? Start, null, token);
 
     [Fact]
     public async Task Among_equally_smooth_settings_the_heavier_preset_and_multipass_and_smaller_buffer_win_but_a_rough_one_never_does()
     {
-        // P7, multipass 2 and a one-frame buffer are rough on this stream; everything else is clean.
-        var rig = new Rig { HeldPerSecond = c => c.Preset == 7 || c.MultiPass == 2 || c.VbvFrames == 1 ? 3 : 0 };
+        // P7, multipass 2 and an eight-frame buffer are rough on this stream; everything else is clean.
+        var rig = new Rig { HeldPerSecond = c => c.Preset == 7 || c.MultiPass == 2 || c.VbvFrames == 8 ? 3 : 0 };
         var run = await Run(rig);
-        Assert.Equal(new EncoderChoice("vbr", 6, 2, 1), run.Best);
+        Assert.Equal(new EncoderChoice("vbr", 6, 1, 1), run.Best);
         Assert.Contains("Smoothest at 200 Mbps", run.Conclusion);
         Assert.Equal(Start, run.Baseline);
         Assert.Contains(run.Trials, t => t.Label == "Preset P7" && t.Decision == "less smooth");
@@ -85,6 +85,18 @@ public sealed class EncoderSweepTests : IDisposable
     private Rig? rigRef;
 
     [Fact]
+    public async Task The_sweep_starts_at_the_lowest_values_and_measures_the_users_own_settings_at_the_end_for_comparison()
+    {
+        var user = new EncoderChoice("vbr", 4, 4, 2);
+        var rig = new Rig();
+        var run = await Run(rig, baseline: user);
+        Assert.Equal(EncoderSweepSettings.Lowest, rig.Applied[0]);
+        Assert.Equal("Preset P1", run.Trials[0].Label);
+        Assert.Equal(user, run.Trials[^1].Choice);
+        Assert.Equal("Your current settings", run.Trials[^1].Label);
+    }
+
+    [Fact]
     public async Task A_rough_starting_point_is_replaced_by_the_first_smooth_alternative()
     {
         var rig = new Rig { HeldPerSecond = c => c.Preset == 2 ? 4 : 0 };
@@ -97,10 +109,10 @@ public sealed class EncoderSweepTests : IDisposable
     [Fact]
     public async Task When_nothing_beats_the_current_settings_they_are_kept_and_said_so()
     {
-        // Every other preset, rate control, buffer and multipass is rougher than the current ones.
-        var rig = new Rig { HeldPerSecond = c => c == Start ? 0 : 3 };
-        var run = await Run(rig);
-        Assert.Equal(Start, run.Best);
+        // The sweep starts at the lowest values, so those are the "current" ones here; every other preset, rate control, buffer and multipass is rougher.
+        var rig = new Rig { HeldPerSecond = c => c == EncoderSweepSettings.Lowest ? 0 : 3 };
+        var run = await Run(rig, baseline: EncoderSweepSettings.Lowest);
+        Assert.Equal(EncoderSweepSettings.Lowest, run.Best);
         Assert.Contains("came out as the smoothest", run.Conclusion);
     }
 

@@ -21,6 +21,9 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
     public static readonly int[] Presets = [1, 2, 4, 6, 7], VbvFrames = [1, 2, 4, 8], MultiPasses = [0, 1, 2];
     public static readonly string[] RateControls = ["vbr", "cbr"];
 
+    /// <summary>Where every sweep starts: the lightest value of each option, so nothing the user happens to have set (a multipass, a big buffer) colours the first measurements.</summary>
+    public static readonly EncoderChoice Lowest = new("vbr", Presets[0], VbvFrames[0], MultiPasses[0]);
+
     /// <summary>Every value of one option, lightest first, built on <paramref name="best"/>: the value already in use is one of them and is measured like the others.</summary>
     public static IEnumerable<EncoderChoice> Values(EncoderChoice best, EncoderDimension dimension) => dimension switch
     {
@@ -45,7 +48,7 @@ public sealed record EncoderSweepSettings(int ProbeMbps, TimeSpan Settle, TimeSp
     public int CandidateCount => Enum.GetValues<EncoderDimension>().Sum(d => Values(new EncoderChoice("vbr", 2, 2, 0), d).Count());
 
     /// <summary>Every value is settled and measured, a better one is measured again before it is kept, plus a few confirmations and the final check.</summary>
-    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 1) + TimeSpan.FromSeconds(20);
+    public TimeSpan Estimate => (Settle + Measure + TimeSpan.FromSeconds(5)) * (CandidateCount + 3 + 2) + TimeSpan.FromSeconds(20);
 }
 
 public sealed class EncoderTrial
@@ -143,12 +146,14 @@ public sealed class EncoderSweepRunner
     public async Task<EncoderSweepRun> RunAsync(EncoderSweepSettings settings, EncoderSweepRun run, EncoderChoice baseline, IProgress<EncoderSweepProgress>? progress, CancellationToken token)
     {
         run.ProbeMbps = settings.ProbeMbps; run.MeasureSeconds = (int)settings.Measure.TotalSeconds; run.Baseline = baseline;
-        var total = settings.CandidateCount + 1;   // grows by one for each repeat measurement, so the count never runs past the total
+        var total = settings.CandidateCount + 2;   // grows by one for each repeat measurement, so the count never runs past the total
         var done = 0;
         EncoderChoice? bestSoFar = null;
         try
         {
             run.Codec = await _measure.PrepareAsync([settings.ProbeMbps], new Progress<BenchmarkProgress>(p => { }), token);
+            // Everything starts at the lowest value and works its way up; the user's own combination is measured at the end for comparison.
+            await _apply(EncoderSweepSettings.Lowest, token);
             // Right after the codec switch and the scene starting, the stream is still settling and asks for fresh pictures all the time; the first value would take the blame.
             progress?.Report(new("waiting for the stream to settle", "start", 0, total, 0, null));
             if (!await _measure.WaitQuietAsync(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(90), null, token))
@@ -170,7 +175,7 @@ public sealed class EncoderSweepRunner
 
             // The options are tested in order, one after the other, every value of each (the one in use included), lightest first. The first option is
             // tried on the user's other options as they are; each later one on top of the best found so far.
-            var best = baseline;
+            var best = EncoderSweepSettings.Lowest;
             foreach (var dimension in EncoderSweepSettings.Order)
             {
                 EncoderChoice? leader = null;
@@ -240,6 +245,13 @@ public sealed class EncoderSweepRunner
             await _apply(best, token);
             var final = await Window("final choice");
             Record(new EncoderTrial { Label = "Final choice", Choice = best, Step = final, Decision = final.Verdict == SweepVerdict.Clean ? "the chosen combination, measured as a whole" : "the chosen combination was not clean as a whole: run again, or at a lower bitrate", Adopted = true });
+            // The user's own settings, measured the same way, so "before" and "after" are two real measurements and not a guess.
+            if (best != baseline)
+            {
+                await _apply(baseline, token);
+                var yours = await Window("your current settings");
+                Record(new EncoderTrial { Label = "Your current settings", Choice = baseline, Step = yours, Decision = "for comparison" });
+            }
             run.Best = best;
         }
         catch (OperationCanceledException) { run.Stopped = true; }
@@ -274,7 +286,7 @@ public sealed class EncoderSweepRunner
     {
         if (run.Trials.Count == 0) return run.Error ?? "Nothing was measured.";
         var text = new StringBuilder();
-        var measured = run.Trials.Where(t => !t.Decision.StartsWith("not tried", StringComparison.Ordinal) && t.Label != "Final choice").ToList();
+        var measured = run.Trials.Where(t => !t.Decision.StartsWith("not tried", StringComparison.Ordinal) && t.Label != "Final choice" && t.Label != "Your current settings").ToList();
         if (run.Best is null) text.Append("The sweep ended before a recommendation could be made. ");
         else if (run.Best == run.Baseline) text.Append($"Your current settings ({run.Baseline.Describe()}) came out as the smoothest of those tried at {run.ProbeMbps} Mbps. ");
         else
@@ -282,7 +294,7 @@ public sealed class EncoderSweepRunner
             text.Append($"Smoothest at {run.ProbeMbps} Mbps: {run.Best.Describe()} (now {run.Baseline.Describe()}). ");
             var final = run.Trials.LastOrDefault(t => t.Label == "Final choice")?.Step;
             // The step measured with the user's own value of the first option, on their other options as they were, is the nearest thing to "before".
-            var before = measured.FirstOrDefault(t => t.Choice == run.Baseline)?.Step;
+            var before = run.Trials.FirstOrDefault(t => t.Label == "Your current settings")?.Step ?? measured.FirstOrDefault(t => t.Choice == run.Baseline)?.Step;
             if (before is not null && final is not null)
             {
                 text.Append($"Held-back time {before.HeldMsPerMinute:0} → {final.HeldMsPerMinute:0} ms/min, encode time {before.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} → {final.EncodeAverageMs?.ToString("0.0", CultureInfo.InvariantCulture) ?? "—"} ms. ");
