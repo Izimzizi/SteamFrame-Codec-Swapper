@@ -492,17 +492,30 @@ public sealed partial class TrayApp : ApplicationContext
         }
     }
 
+    /// <summary>How long Exit waits for the switch back to Default (HEVC) before it closes anyway; the supervisor finishes the restore in the background.</summary>
+    private static readonly TimeSpan ExitGrace = TimeSpan.FromSeconds(15);
+
     private async Task ExitAsync()
     {
-        if (_exiting) return;
+        // A second press while the first is still waiting does not wait again: it leaves now.
+        if (_exiting) { ExitApp(); return; }
         _exiting = true;
         _benchmarkCancel?.Cancel();
         if (_benchmarkTask is { IsCompleted: false } running) await Task.WhenAny(running, Task.Delay(TimeSpan.FromSeconds(8)));   // the run puts the user's bitrate target back first
         if (_controller.Current.IsArmed)
         {
-            // H.264 is kept only while the tray is running and armed. If the Frame cannot be reached right now the
-            // supervisor notices the tray is gone and keeps retrying the restore for ten minutes.
-            try { await DisarmAsync(); }
+            // H.264 is kept only while the tray is running and armed. If the Frame cannot be reached (or the switch hangs) the tray closes after a short
+            // wait anyway: the supervisor notices the tray is gone and keeps retrying the restore for ten minutes.
+            var disarm = DisarmAsync();
+            try
+            {
+                if (await Task.WhenAny(disarm, Task.Delay(ExitGrace)) != disarm)
+                {
+                    TrayLog($"Exit: switching back to Default (HEVC) did not finish in {ExitGrace.TotalSeconds:0} s; closing anyway");
+                    _ = disarm.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                }
+                else await disarm;
+            }
             catch (Exception error) { Balloon("SteamFrame Codec Swapper", "H.264 will be released in the background: " + error.Message, ToolTipIcon.Warning); }
         }
         // A session kept open for fast switching ends with the tray (the supervisor also notices the tray is gone).
