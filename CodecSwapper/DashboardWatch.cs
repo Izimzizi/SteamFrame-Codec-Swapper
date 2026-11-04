@@ -29,7 +29,6 @@ internal sealed class DashboardWatch
     private DateTime _changed = DateTime.MinValue;
     private int _next;
     private bool _wasRunning;
-    private long _vrserverSeen = -1;
 
     public DashboardWatch(string path, string steamVrRoot, string steamRoot, Func<string> tray, Func<string, Task<string>>? frame = null)
     {

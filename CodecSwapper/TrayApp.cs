@@ -21,6 +21,14 @@ public sealed partial class TrayApp : ApplicationContext
     private HealthReader? _healthReader;
     private readonly NotifyIcon _icon = new() { Visible = true };
     private DashboardWatch _dashboardWatch = null!;
+    private int _dashboardWatchBusy;
+
+    /// <summary>The watch lists processes and reads logs, so it runs off the UI thread; a tick that is still running makes the next one skip.</summary>
+    private void TickDashboardWatch()
+    {
+        if (Interlocked.Exchange(ref _dashboardWatchBusy, 1) == 1) return;
+        _ = Task.Run(() => { try { _dashboardWatch.Tick(); } finally { Volatile.Write(ref _dashboardWatchBusy, 0); } });
+    }
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 2000 };
     private readonly ToolStripMenuItem _status = new() { Enabled = false, AutoSize = false, Size = new Size(MenuBitrateSlider.MenuWidth, 24), TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripMenuItem _useH264 = new("H.264");
@@ -78,7 +86,7 @@ public sealed partial class TrayApp : ApplicationContext
         _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleStats(); };
         _dashboardWatch = new DashboardWatch(Path.Combine(AppData.Root, "dashboard-watch.log"), _paths.SteamVrRoot, _paths.SteamRoot, () => _controller.Current.State.ToString(), expression => new FrameStreamControl(_preferences).EvaluateAsync(expression));
         _controller.Changed += NoteSwitchForDashboardHeal;
-        _poll.Tick += async (_, _) => { _dashboardWatch.Tick(); try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
+        _poll.Tick += async (_, _) => { TickDashboardWatch(); try { await _controller.RefreshAsync(); } catch (Exception) { /* the next poll retries */ } };
         _poll.Start();
         StartHud();
         if (driverBehind)

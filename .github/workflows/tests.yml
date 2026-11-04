@@ -1,0 +1,29 @@
+name: Tests
+
+# Runs the suites that need no GPU, no SteamVR and no Frame on every push and pull request.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: .NET tests
+        shell: pwsh
+        run: |
+          foreach ($project in 'CodecSwapperTests', 'CoreTests', 'PatcherTests', 'StreamingHealthTests') {
+            dotnet test "Tests/$project" --nologo
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Frame supervisor tests
+        working-directory: Frame/Codec
+        run: python -m unittest
