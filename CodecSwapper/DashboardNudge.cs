@@ -15,7 +15,7 @@ internal static unsafe class DashboardNudge
     public const string Argument = "--dashboard-nudge";
     private const string Interface = "IVRMailbox_002";
     /// <summary>How long the window exists around the message, in milliseconds. In VR the dashboard shows it as a large window for as long as it lives, so it is kept as short as the desktop view allows.</summary>
-    private const int ShownBeforeSend = 400, ShownAfterSend = 700;
+    private const int ShownBeforeSend = 400, ShownAfterSend = 1000;
 
     /// <summary>0 = done; 1 = SteamVR is not running; 2 = SteamVR did not accept the connection; 3 = the mailbox is not what this was built for; 4 = the message was refused.</summary>
     public static int Run()

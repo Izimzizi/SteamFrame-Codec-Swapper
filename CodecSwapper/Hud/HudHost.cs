@@ -16,7 +16,7 @@ public static class HudHost
         void Send(HudMessage message) { lock (output) { try { output.WriteLine(message.ToLine()); } catch (IOException) { /* the tray is gone */ } } }
         void Log(string line) => Send(new() { Type = "log", Line = line });
 
-        var settings = new HudSettings();
+        var settings = new HudSettings { Received = false };
         var view = HudView.Empty;
         var quit = false;
         var actions = new HostActions(Send);
@@ -41,6 +41,7 @@ public static class HudHost
                     if (message.Type == "view" && message.View is not null) view = message.View;
                     else if (message.Type == "settings" && message.Settings is not null)
                     {
+                        settings.Received = true;
                         settings.Enabled = message.Settings.Enabled; settings.Hand = message.Settings.Hand; settings.FlipLaserY = message.Settings.FlipLaserY;
                         settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover; settings.Watch = message.Settings.Watch; settings.FadeAngle = message.Settings.FadeAngle; settings.FadeDistanceCm = message.Settings.FadeDistanceCm; settings.GuideDone = message.Settings.GuideDone; settings.OwnLaser = message.Settings.OwnLaser;
                         // The helper owns the placement while the user is moving the HUD.

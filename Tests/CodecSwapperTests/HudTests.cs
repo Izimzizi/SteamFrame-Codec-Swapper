@@ -389,6 +389,18 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void A_helper_that_has_not_yet_received_the_trays_settings_draws_nothing_so_no_guide_flashes_up_when_VR_is_already_on()
+    {
+        var rig = new Rig();
+        rig.Settings.Watch = true; rig.Settings.GuideDone = false; rig.Settings.Received = false;   // the defaults of a fresh helper
+        rig.Tick();
+        Assert.DoesNotContain("create", rig.Api.Calls);
+        rig.Settings.GuideDone = true; rig.Settings.Received = true;                                  // the tray's settings arrive: the guide was finished long ago
+        rig.Tick();
+        Assert.Equal(2, rig.Api.Calls.Count(c => c == "create"));   // panel and watch, no bubble
+    }
+
+    [Fact]
     public void The_first_run_guide_starts_with_a_bubble_at_the_watch_then_walks_the_panel_and_is_remembered()
     {
         var rig = new Rig();

@@ -79,6 +79,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var at = now ?? DateTime.UtcNow;
         _clock = at;
         if (!settings.Enabled || !steamVrRunning()) { Teardown(); return; }
+        if (!settings.Received) return;   // the tray's settings (first-run guide done, placement) have not arrived yet
         if (!api.Connected)
         {
             if (at < _nextConnect) return;
