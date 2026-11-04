@@ -64,10 +64,10 @@ int main(){
 
  // Changing only the preset restarts the encoder's rate control once, like a rate-control change does.
  write_options("enabled=1\nrate_control=cbr\npreset=3\nvbv=4\n");Sleep(600);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==1&&memcmp(&seen_init.presetGUID,&NV_ENC_PRESET_P3_GUID,sizeof(GUID))==0);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&memcmp(&seen_init.presetGUID,&NV_ENC_PRESET_P3_GUID,sizeof(GUID))==0);
  CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0);
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\n");Sleep(600);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==1);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0);
 
  // The monitor reports what the encoder was given: CBR and 4 frames now, the preset now in force (P7).
  { uint32_t cbr=9,preset=9,vbv=9;CHECK(StockAppliedOptions(&cbr,&preset,&vbv)==1&&cbr==1&&preset==7&&vbv==4); }
@@ -75,13 +75,13 @@ int main(){
  // Multipass: named in the file, applied to the driver's encoder, and one rate-control restart when it changes. The H.264 bridge reads it with StockMultiPass.
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\nmultipass=2\n");Sleep(600);
  CHECK(StockMultiPass()==2);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==1&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_FULL_RESOLUTION);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_FULL_RESOLUTION);
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\nmultipass=1\n");Sleep(600);
  CHECK(StockMultiPass()==1);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==1&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_QUARTER_RESOLUTION);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_TWO_PASS_QUARTER_RESOLUTION);
  write_options("enabled=1\nrate_control=cbr\npreset=7\nvbv=4\n");Sleep(600);
  CHECK(StockMultiPass()==0);
- CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==1&&seen_config.rcParams.multiPass==NV_ENC_MULTI_PASS_DISABLED);
+ CHECK(StockReconfigure(nullptr,&re)==0&&seen_reset==0&&seen_config.rcParams.multiPass==NV_ENC_MULTI_PASS_DISABLED);
 
  // VBR keeps the driver's own peak.
  write_options("enabled=1\nrate_control=vbr\npreset=2\nvbv=1\n");Sleep(600);

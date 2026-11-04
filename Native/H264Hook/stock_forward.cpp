@@ -103,7 +103,7 @@ bool apply_options(const NV_ENC_INITIALIZE_PARAMS& source,NV_ENC_INITIALIZE_PARA
  // one is named on every call, not only when the encoder is created.
  init.presetGUID=preset_guid(options.preset);
  rc.multiPass=static_cast<NV_ENC_MULTI_PASS>(options.multipass);
- // A changed rate control, buffer or preset needs the encoder to restart its rate control: the caller asks for a reset on that one reconfigure.
+ // A changed rate control, buffer or preset is followed by a plain reconfigure; the encoder is not reset (a reset with multipass 2 faulted the GPU).
  const int signature=(options.cbr?1000:0)+options.vbv+options.preset*10000+options.multipass*100000;
  applied_any=true;applied_cbr=options.cbr;applied_vbv=options.vbv;applied_preset=options.preset;
  signature_changed=applied_signature!=-1&&applied_signature!=signature;applied_signature=signature;
@@ -146,7 +146,7 @@ int StockReconfigure(void* encoder,void* params){
  if(original&&apply_options(original->reInitEncodeParams,patched,config,false)){
   requested_average=config.rcParams.averageBitRate;requested_peak=config.rcParams.maxBitRate;   // the monitor shows what the encoder is really held to
   NV_ENC_RECONFIGURE_PARAMS copy=*original;copy.reInitEncodeParams=patched;
-  if(signature_changed){copy.resetEncoder=1;copy.forceIDR=1;}
+  // No resetEncoder/forceIDR on a changed option: a rate-control reset together with full-resolution two-pass (multipass 2) faulted the GPU (nvlddmkm event 153) and crashed SteamVR.
   const auto result=table.nvEncReconfigureEncoder(encoder,&copy);
   if(signature_changed||reconfigure_calls<5){
    trace("reconfigure: preset P%d, driver rc=%d vbv=%u avg=%u -> rc=%d vbv=%u, reset=%d, result=%d",applied_preset,static_cast<int>(original->reInitEncodeParams.encodeConfig->rcParams.rateControlMode),
