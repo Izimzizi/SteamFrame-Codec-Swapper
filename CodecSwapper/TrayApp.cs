@@ -332,7 +332,7 @@ public sealed partial class TrayApp : ApplicationContext
     private TrayState _healLastState = TrayState.Disarmed;
     private CancellationTokenSource? _heal;
 
-    /// <summary>Ten seconds after a codec switch finishes, checks that the Frame's dashboard still has the PC's windows and says so when it does not.</summary>
+    /// <summary>A second after a codec switch finishes, checks that the Frame's dashboard still has the PC's windows and says so when it does not.</summary>
     private void NoteSwitchForDashboardHeal(TraySnapshot snapshot)
     {
         var was = _healLastState;

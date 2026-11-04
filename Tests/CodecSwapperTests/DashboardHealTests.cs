@@ -42,27 +42,45 @@ public sealed class DashboardHealTests
     [Fact]
     public async Task No_stream_means_nothing_to_report()
     {
-        var rig = new Rig(); rig.Replies.Enqueue(Reply(0, 0));
+        var rig = new Rig(); for (var i = 0; i < 20; i++) rig.Replies.Enqueue(Reply(0, 0));
         await rig.Heal.RunAsync(CancellationToken.None);
-        Assert.Equal(["ask"], rig.Calls);
+        Assert.All(rig.Calls, call => Assert.Equal("ask", call));
+        Assert.DoesNotContain("nudge", rig.Calls);
+        Assert.InRange(rig.Calls.Count, 2, 20);   // it keeps looking for a stream for a while, then gives up
     }
 
     [Fact]
     public async Task A_stream_without_PC_frames_is_nudged_once_and_checked_again()
     {
-        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 3));
+        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 3));
         await rig.Heal.RunAsync(CancellationToken.None);
-        Assert.Equal(["ask", "nudge", "ask"], rig.Calls);
+        Assert.Equal(["ask", "ask", "nudge", "ask"], rig.Calls);
         Assert.Contains(rig.Log, l => l.StartsWith("HEAL worked"));
     }
 
     [Fact]
     public async Task A_nudge_that_does_not_help_is_reported_and_not_repeated()
     {
-        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 0));
+        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 0));
         await rig.Heal.RunAsync(CancellationToken.None);
-        Assert.Equal(["ask", "nudge", "ask", "failed"], rig.Calls);
+        Assert.Equal(["ask", "ask", "nudge", "ask", "failed"], rig.Calls);
         Assert.Contains(rig.Log, l => l.StartsWith("HEAL did not help"));
+    }
+
+    [Fact]
+    public async Task PC_frames_that_arrive_while_it_confirms_are_not_nudged()
+    {
+        var rig = new Rig(); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 3));
+        await rig.Heal.RunAsync(CancellationToken.None);
+        Assert.Equal(["ask", "ask"], rig.Calls);
+    }
+
+    [Fact]
+    public async Task A_stream_that_starts_late_is_found_by_asking_again()
+    {
+        var rig = new Rig(); rig.Replies.Enqueue(Reply(0, 0)); rig.Replies.Enqueue(Reply(0, 0)); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 0)); rig.Replies.Enqueue(Reply(1, 3));
+        await rig.Heal.RunAsync(CancellationToken.None);
+        Assert.Equal(["ask", "ask", "ask", "ask", "nudge", "ask"], rig.Calls);
     }
 
     [Fact]

@@ -4,13 +4,13 @@ namespace CodecSwapper;
 
 /// <summary>
 /// After a codec switch the Frame's dashboard sometimes has the stream but none of the PC's windows (the desktop and the Steam window reach it as frames
-/// from the PC, and the PC does not always send them after the new stream starts). Ten seconds after a switch the Frame is asked what its dashboard holds,
-/// and when it has a stream without any PC frame the windows are brought back the way the dashboard's + does it (see <see cref="DashboardNudge"/>; a stream
+/// from the PC, and the PC does not always send them after the new stream starts). A second after a switch finishes the Frame is asked what its dashboard
+/// holds (again every second until it has a stream); when it has a stream without any PC frame, and still has none a second later, the windows are brought back the way the dashboard's + does it (see <see cref="DashboardNudge"/>; a stream
 /// restart and a Frame client restart were tried and do not help), then it is checked again. Every decision is written to the dashboard watch log.
 /// </summary>
 public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Func<Task<int>> nudge, Action failed, Action<string> log, Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
-    public static readonly TimeSpan Wait = TimeSpan.FromSeconds(6), Recheck = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan First = TimeSpan.FromSeconds(1), Poll = TimeSpan.FromSeconds(1), Settle = TimeSpan.FromSeconds(1), Recheck = TimeSpan.FromSeconds(3), GiveUp = TimeSpan.FromSeconds(15);
     private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? ((time, token) => Task.Delay(time, token));
 
     /// <summary>The number of running streams and of dashboard frames that come from the PC, from the Frame's reply; null when it cannot be read.</summary>
@@ -37,10 +37,24 @@ public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Func<Task
 
     public async Task RunAsync(CancellationToken token)
     {
-        await _delay(Wait, token);
-        if (await ReadAsync() is not { } first) return;
-        if (first.Streams == 0) { log("HEAL no stream on the Frame ten seconds after the switch; nothing to do"); return; }
-        if (first.Remote > 0) { log($"HEAL the Frame has {first.Remote} PC frame(s); nothing to do"); return; }
+        // The dashboard is empty for as long as this takes, so it looks early and often instead of waiting once: the stream may not be up yet, and the
+        // windows normally follow the stream within a second or two.
+        await _delay(First, token);
+        var waited = First;
+        (int Streams, int Remote) state;
+        while (true)
+        {
+            if (await ReadAsync() is not { } read) return;
+            state = read;
+            if (state.Remote > 0) { log($"HEAL the Frame has {state.Remote} PC frame(s); nothing to do"); return; }
+            if (state.Streams > 0) break;
+            if (waited >= GiveUp) { log("HEAL no stream on the Frame after the switch; nothing to do"); return; }
+            await _delay(Poll, token);
+            waited += Poll;
+        }
+        await _delay(Settle, token);
+        if (await ReadAsync() is not { } confirm) return;
+        if (confirm.Remote > 0) { log($"HEAL the Frame has {confirm.Remote} PC frame(s); nothing to do"); return; }
         log("HEAL the Frame has a stream but no PC frames (the desktop and Steam windows); asking the PC's dashboard to send them");
         var code = await nudge();
         log("HEAL nudge finished with code " + code);
