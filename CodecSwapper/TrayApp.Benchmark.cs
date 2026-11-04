@@ -20,6 +20,7 @@ public sealed partial class TrayApp
         var form = _benchmarkForm = new BenchmarkForm(patched);
         form.StartRequested += settings => _benchmarkTask = RunAsync(() => BenchmarkAsync(form, settings));
         form.SweepRequested += (settings, useScene) => _benchmarkTask = RunAsync(() => EncoderSweepAsync(form, settings, useScene));
+        form.StressRequested += useScene => _benchmarkTask = RunAsync(() => EncoderStressAsync(form, useScene));
         form.ApplyRequested += choice => _ = RunAsync(async () =>
         {
             try { await ApplyEncoderChoiceAsync(choice, CancellationToken.None); Balloon("Encoder settings", "Applied: " + choice.Describe(), ToolTipIcon.Info); form.ShowApplyResult(choice, true, choice.Describe()); }
@@ -300,6 +301,107 @@ public sealed partial class TrayApp
             }
             if (flowing < 3) throw new InvalidOperationException($"The stream did not settle after restarting for multipass {choice.MultiPass} (no video for 90 seconds), so the sweep stopped. The best settings found so far are kept as the recommendation.");
         };
+    }
+
+    private static readonly TimeSpan StressDuration = TimeSpan.FromMinutes(10);
+    private const int StressSecondsBetweenChanges = 2, StressMultiPass2Every = 3;
+
+    /// <summary>
+    /// Temporary debug run for the GPU error that follows live encoder changes: random changes of rate control, preset and VBV on the real stream, with multipass
+    /// going to 2 and back every few changes. It stops at the first sign of trouble and writes what led up to it, so a failure can be sent for analysis.
+    /// </summary>
+    private async Task EncoderStressAsync(BenchmarkForm form, bool useScene)
+    {
+        var baseline = EncoderChoice.From(_preferences);
+        var plan = new EncoderStressPlan(Environment.TickCount, StressMultiPass2Every);
+        var started = DateTimeOffset.Now;
+        Directory.CreateDirectory(AppData.BenchmarksDirectory);
+        var logPath = Path.Combine(AppData.BenchmarksDirectory, $"encoder-stress-{started:yyyyMMdd-HHmmss}.log");
+        var history = new List<string>();
+        void Note(string line)
+        {
+            var text = $"{DateTime.Now:HH:mm:ss.fff} {line}";
+            history.Add(text);
+            try { File.AppendAllText(logPath, text + Environment.NewLine); } catch (IOException) { /* the status line still shows it */ }
+            TrayLog("Stress test: " + line);
+        }
+        using var cancel = _benchmarkCancel = new CancellationTokenSource();
+        form.SetRunning(true);
+        _statsService.BenchmarkActive = true;
+        Note($"Encoder stress test, seed {plan.Seed}: a change every {StressSecondsBetweenChanges} s for {StressDuration.TotalMinutes:0} minutes, every {StressMultiPass2Every}rd change moves multipass to 2 or back, starting from {baseline.Describe()}");
+        BenchmarkEnvironment? environment = null;
+        var failed = false;
+        string conclusion;
+        try
+        {
+            environment = await StartEnvironmentAsync(form, useScene, [], cancel.Token);
+            var first = await NextBenchmarkSampleAsync(cancel.Token);
+            var errorsAtStart = first.EncodeErrors;
+            started = DateTimeOffset.Now;
+            var driverLog = Path.Combine(_paths.SteamRoot, "logs", "driver_vrlink.txt");
+            var clock = Stopwatch.StartNew();
+            var current = baseline;
+            var silent = 0;
+            string? trouble = null;
+            while (trouble is null && clock.Elapsed < StressDuration)
+            {
+                var next = plan.Next(current);
+                var line = $"change {plan.Changes} ({plan.SinceMultiPassChange} since multipass changed): {current.Describe()} -> {next.Describe()}";
+                Note(line);
+                form.ShowStatus($"Stress test {clock.Elapsed:mm\\:ss} of {StressDuration:mm\\:ss}: {line}");
+                await ApplyEncoderChoiceAsync(next, cancel.Token);
+                current = next;
+                for (var second = 0; second < StressSecondsBetweenChanges && trouble is null; second++)
+                {
+                    var sample = await NextBenchmarkSampleAsync(cancel.Token);
+                    silent = sample.SteamVrRunning && sample.Mbps is > 1 ? 0 : silent + 1;
+                    if (sample.EncodeErrors > errorsAtStart) trouble = $"the encoder counted {sample.EncodeErrors - errorsAtStart} error(s)";
+                    else if (silent >= 4) trouble = "no video for 4 seconds" + (sample.SteamVrRunning ? "" : " (SteamVR is gone)");
+                }
+                if (trouble is null && EncoderStressSigns.GpuErrorsSince(started) is > 0 and var gpu) trouble = $"Windows logged {gpu} GPU error(s) (nvlddmkm 153)";
+                if (trouble is null && EncoderStressSigns.DriverFatalSince(driverLog, started) is { } fatal) trouble = "the Steam Link driver reported: " + fatal;
+            }
+            if (trouble is null) conclusion = $"Survived {plan.Changes} live changes in {clock.Elapsed.TotalMinutes:0.#} minutes without a sign of trouble.";
+            else
+            {
+                failed = true;
+                conclusion = $"Trouble after change {plan.Changes}: {trouble}.";
+                Note("TROUBLE: " + trouble);
+                Note("Last changes before it:");
+                foreach (var line in history.Where(h => h.Contains(" change ")).TakeLast(12).ToList()) Note("  " + line[13..]);
+            }
+        }
+        catch (OperationCanceledException) { conclusion = $"Stopped after {plan.Changes} changes."; }
+        catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException) { conclusion = "The run could not continue: " + error.Message; Note(conclusion); }
+        finally
+        {
+            if (environment is not null) await environment.DisposeAsync();
+            _statsService.BenchmarkActive = false;
+            _benchmarkCancel = null;
+            try
+            {
+                // A failed encoder is not touched again; the saved options are put back for the next start.
+                if (failed || _steamVrLaunchedByBenchmark || useScene)
+                {
+                    _preferences.HookRateControl = baseline.RateControl; _preferences.HookPreset = baseline.Preset; _preferences.HookVbvFrames = baseline.VbvFrames; _preferences.HookMultiPass = baseline.MultiPass;
+                    await SaveEncoderOptionsAsync();
+                }
+                else await ApplyEncoderChoiceAsync(baseline, CancellationToken.None);
+            }
+            catch (Exception error) when (error is not OperationCanceledException) { Balloon("Stress test", $"Your encoder options could not be put back ({baseline.Describe()}): {error.Message}", ToolTipIcon.Warning); }
+            // The hook's flight recorder (what the encoder was asked, call by call, around each change) goes next to the log.
+            try
+            {
+                var flight = Path.Combine(AppData.Root, "flight.log");
+                if (File.Exists(flight) && File.GetLastWriteTime(flight) >= started.LocalDateTime) File.Copy(flight, Path.ChangeExtension(logPath, null) + "-flight.log", overwrite: true);
+            }
+            catch (IOException) { /* the original stays where it is */ }
+            await CloseSteamVrAfterRunAsync(form, useScene);
+        }
+        Note(conclusion);
+        form.SetRunning(false);
+        form.ShowStatus(conclusion + " Log: " + logPath);
+        if (!_exiting) Balloon("Stress test", conclusion, failed ? ToolTipIcon.Warning : ToolTipIcon.Info);
     }
 
     private async Task EncoderSweepAsync(BenchmarkForm form, EncoderSweepSettings settings, bool useScene)
