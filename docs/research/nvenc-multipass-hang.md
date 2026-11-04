@@ -1,6 +1,6 @@
 # NVENC hang on a live multipass change (GPU error 153)
 
-Status: root cause found and worked around in the hook (commit fd27987). Verified with the native stress test; a real VR session run of the fixed build is still to be done.
+Status: root cause found and worked around in the hook (commit fd27987). Verified with the native stress test; the fixed build also survived the 10-minute tray stress test on a real VR session.
 
 ## Symptom
 
@@ -60,5 +60,5 @@ Verified natively: the sequences that hung (0 -> 1 -> 2, 2 -> 0 -> 1 -> 2, creat
 
 ## Still open
 
-- Run the tray stress test on a real VR session with the fixed build and driver reinstalled.
+
 - Whether newer drivers or GPUs behave differently. The rule above was found on the development PC's driver; if the flight log of a future fault shows another multipass step, extend the rule and add the sequence to the table.
