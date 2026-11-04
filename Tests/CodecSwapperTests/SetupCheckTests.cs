@@ -95,7 +95,7 @@ public sealed class SetupCheckTests : IDisposable
         _runner.Handler = (file, args, _) =>
         {
             if (file == "ssh-keyscan.exe") return new(1, "", "choose_kex: unsupported KEX method");
-            scratch = args.Single(a => a.StartsWith("UserKnownHostsFile=")).Substring("UserKnownHostsFile=".Length);
+            scratch = args.Single(a => a.StartsWith("UserKnownHostsFile=")).Substring("UserKnownHostsFile=".Length).Trim('"');
             File.WriteAllText(scratch, KeyScanLine("frame,10.35.78.1", "ssh-ed25519") + "\n");
             return new(255, "", "Permission denied (none).");
         };

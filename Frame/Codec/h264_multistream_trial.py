@@ -30,7 +30,7 @@ SCP = str(WINDOWS / 'System32/OpenSSH/scp.exe')
 OPTIONS = ['-i', os.environ.get('FRAME_SSH_KEY', str(LOCAL_DATA / 'steamos-devkit/devkit_rsa')),
            '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
            '-o', 'StrictHostKeyChecking=yes', '-o',
-           'UserKnownHostsFile=' + os.environ.get('FRAME_SSH_KNOWN_HOSTS', str(LOCAL_DATA / 'CodecSwapper/known_hosts')),
+           'UserKnownHostsFile="' + os.environ.get('FRAME_SSH_KNOWN_HOSTS', str(LOCAL_DATA / 'CodecSwapper/known_hosts')).replace('\\', '/') + '"',
            '-o', 'ConnectTimeout=3']
 PEER = 'steamos@10.35.78.1'
 

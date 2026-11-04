@@ -324,7 +324,7 @@ public sealed partial class SetupCheck
     }
 
     private static List<string> SshArguments(string host, string key, string knownHosts, string command) =>
-        ["-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts,
+        ["-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", FrameSsh.KnownHostsOption(knownHosts),
          "-o", "ConnectTimeout=5", "steamos@" + host, command];
 
     /// <summary>Connects with ssh to a throwaway known-hosts file and returns the host key the Frame presented. Nothing is trusted here; the user confirms it later.</summary>
@@ -333,7 +333,7 @@ public sealed partial class SetupCheck
         var scratch = Path.Combine(Path.GetTempPath(), "steamframe-hostkey-" + Guid.NewGuid().ToString("N"));
         try
         {
-            string[] arguments = ["-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=" + scratch, "-o", "HashKnownHosts=no", "-o", "CheckHostIP=no",
+            string[] arguments = ["-o", "StrictHostKeyChecking=accept-new", "-o", FrameSsh.KnownHostsOption(scratch), "-o", "HashKnownHosts=no", "-o", "CheckHostIP=no",
                 "-o", "BatchMode=yes", "-o", "PreferredAuthentications=none", "-o", "PubkeyAuthentication=no", "-o", "ConnectTimeout=5", "steamos@" + host, "true"];
             await _runner.RunAsync(Ssh, arguments, null, TimeSpan.FromSeconds(20), cancellationToken);
             return File.Exists(scratch) ? ParseKeyScan(host, File.ReadAllText(scratch)) : [];
@@ -376,7 +376,7 @@ public sealed partial class SetupCheck
         var line = $"{match.Groups[1].Value} {match.Groups[2].Value} steamframe-tray";
         var command = $"umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; grep -qxF '{line}' ~/.ssh/authorized_keys || echo '{line}' >> ~/.ssh/authorized_keys";
         string[] arguments = ["-o", "PreferredAuthentications=password", "-o", "PubkeyAuthentication=no", "-o", "NumberOfPasswordPrompts=1",
-            "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts, "-o", "ConnectTimeout=5", "steamos@" + host, command];
+            "-o", "StrictHostKeyChecking=yes", "-o", FrameSsh.KnownHostsOption(knownHosts), "-o", "ConnectTimeout=5", "steamos@" + host, command];
         // The password reaches ssh only through its askpass helper (this program) and an environment variable of that one process.
         var environment = new Dictionary<string, string>
         {

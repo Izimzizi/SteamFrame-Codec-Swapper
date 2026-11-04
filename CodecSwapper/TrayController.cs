@@ -243,6 +243,8 @@ public sealed class TrayController
             return;
         }
         if (!_preferences.KeepH264) { Publish(Map(status)); return; }
+        // Resuming goes through the same gate as arming: without the current SteamVR driver the supervisor would take its old path, which stops and relaunches SteamVR.
+        if (_driverInstalled is not null && !_driverInstalled()) { Publish(new(TrayState.Error, DriverNeeded, TargetMbps)); return; }
         if (!status.CanStart) { Publish(new(TrayState.Error, status.Message, TargetMbps)); return; }
         string? password;
         try { password = _vault.Load(); }

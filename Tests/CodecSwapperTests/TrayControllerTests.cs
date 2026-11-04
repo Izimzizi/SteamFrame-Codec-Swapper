@@ -363,6 +363,16 @@ public sealed class TrayControllerTests
     }
 
     [Fact]
+    public async Task Launch_does_not_resume_without_the_current_SteamVR_driver()
+    {
+        var rig = new Rig { Driver = false };
+        rig.Prefs.KeepH264 = true; rig.Vault.Stored = "pw"; rig.Codec.Status = CodecServiceStatus.NotStarted;
+        await rig.Controller.StartAsync();
+        Assert.Empty(rig.Codec.Switches); Assert.Equal(TrayState.Error, rig.Controller.Current.State);
+        Assert.Equal(TrayController.DriverNeeded, rig.Controller.Current.Message);
+    }
+
+    [Fact]
     public async Task Launch_does_nothing_when_it_was_not_armed_and_drops_the_wish_when_the_password_is_gone()
     {
         var idle = new Rig();

@@ -136,7 +136,7 @@ class Supervisor:
   windows=pathlib.Path(os.environ['SystemRoot'])/'System32'
   self.ssh=windows/'OpenSSH/ssh.exe';self.scp=windows/'OpenSSH/scp.exe'
   self.options=['-i',config['ssh_key'],'-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
-   '-o','UserKnownHostsFile='+config['ssh_known_hosts'],'-o','ConnectTimeout=3']
+   '-o','UserKnownHostsFile="'+config['ssh_known_hosts'].replace('\\','/')+'"','-o','ConnectTimeout=3']
   self.steam=pathlib.Path(config.get('steam_root',r'C:\Program Files (x86)\Steam')).resolve()
   self.vr=pathlib.Path(config.get('steamvr_root',str(self.steam/'steamapps/common/SteamVR'))).resolve()/'bin/win64'
   if not (self.steam/'steam.exe').is_file() or not (self.vr/'vrserver.exe').is_file():raise ValueError('SteamVR installation unavailable')

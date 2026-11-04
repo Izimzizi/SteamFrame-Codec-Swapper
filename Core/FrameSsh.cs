@@ -7,6 +7,9 @@ namespace SteamFrame.Core;
 
 internal static class FrameSsh
 {
+    /// <summary>The <c>UserKnownHostsFile</c> option for a path that may contain spaces (a profile like C:\Users\John Smith): ssh splits this option's value at spaces, so it is quoted, with forward slashes.</summary>
+    public static string KnownHostsOption(string path) => "UserKnownHostsFile=\"" + path.Replace('\\', '/') + "\"";
+
     public static async Task<string> ExecuteAsync(FramePreferences preferences, string script, CancellationToken token)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(8));
@@ -46,7 +49,7 @@ internal static class FrameSsh
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
         foreach (var argument in new[] { "-F", "NUL", "-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-            "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=\"" + preferences.SshKnownHosts.Replace('\\', '/') + "\"",
+            "-o", "StrictHostKeyChecking=yes", "-o", KnownHostsOption(preferences.SshKnownHosts),
             "-o", "GlobalKnownHostsFile=NUL", "-o", "ConnectTimeout=4", "-o", "ConnectionAttempts=1",
             "-o", "ServerAliveInterval=2", "-o", "ServerAliveCountMax=2", "-i", preferences.SshKey,
             "steamos@" + host }.Concat(remoteCommand)) info.ArgumentList.Add(argument);

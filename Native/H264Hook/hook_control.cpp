@@ -84,6 +84,17 @@ int wmain(int argc,wchar_t** argv){
    if(!remote)throw std::runtime_error("Trial DLL did not load");
   }
   const auto local=LoadLibraryExW(path.c_str(),nullptr,DONT_RESOLVE_DLL_REFERENCES);if(!local)throw std::runtime_error("Trial exports unavailable");
+  // The export addresses below are worked out from this file and applied to the copy loaded in SteamVR. If SteamVR still runs an older (or newer) build than this file,
+  // the offsets point at other code and the remote thread would run it inside SteamVR: compare the two images first.
+  {
+   const auto* localDos=reinterpret_cast<const IMAGE_DOS_HEADER*>(local);const auto* localNt=reinterpret_cast<const IMAGE_NT_HEADERS64*>(reinterpret_cast<const uint8_t*>(local)+localDos->e_lfanew);
+   IMAGE_DOS_HEADER remoteDos{};IMAGE_NT_HEADERS64 remoteNt{};SIZE_T got=0;
+   if(!ReadProcessMemory(process.value,remote,&remoteDos,sizeof(remoteDos),&got)||got!=sizeof(remoteDos)||remoteDos.e_magic!=IMAGE_DOS_SIGNATURE||
+      !ReadProcessMemory(process.value,reinterpret_cast<const uint8_t*>(remote)+remoteDos.e_lfanew,&remoteNt,sizeof(remoteNt),&got)||got!=sizeof(remoteNt)||remoteNt.Signature!=IMAGE_NT_SIGNATURE)
+    throw std::runtime_error("The hook loaded in SteamVR could not be read");
+   if(remoteNt.FileHeader.TimeDateStamp!=localNt->FileHeader.TimeDateStamp||remoteNt.OptionalHeader.SizeOfImage!=localNt->OptionalHeader.SizeOfImage||remoteNt.OptionalHeader.CheckSum!=localNt->OptionalHeader.CheckSum)
+    throw std::runtime_error("SteamVR is running a different build of the hook than the installed one; restart SteamVR to load the new driver");
+  }
   const char* name=action==L"width"?"HookStreamWidth":action==L"mode"?"HookSwitchMode":action==L"switch-info"?"HookReadSwitchInfo":action==L"install"?"HookInstallTrial":action==L"configure"?"HookReconfigure":action==L"stats"?"HookReadTrialStats":action==L"identity"?"HookReadTrialIdentity":"HookRemoveTrial";
   const auto symbol=GetProcAddress(local,name);if(!symbol)throw std::runtime_error("Required trial export missing");
   auto address=reinterpret_cast<uint8_t*>(remote)+(reinterpret_cast<uint8_t*>(symbol)-reinterpret_cast<uint8_t*>(local));
