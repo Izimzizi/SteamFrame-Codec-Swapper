@@ -65,7 +65,7 @@ internal sealed class DashboardWatch
     private void Snapshot(string when)
     {
         var text = new StringBuilder($"SNAPSHOT {when}: ");
-        text.Append(Processes()).Append(" || ").Append(Connected());
+        text.Append(Processes()).Append(" || ").Append(Connected()).Append(" || ").Append(Dashboard());
         Write(text.ToString());
     }
 
@@ -118,6 +118,68 @@ internal sealed class DashboardWatch
         var started = File.GetCreationTime(file).ToString("HH:mm:ss");
         return $"vrserver.txt (created {started}) connected: {(counts.Count == 0 ? "nobody" : string.Join(' ', apps))}"
             + (autoLaunch.Any() ? " | " + string.Join(" ; ", autoLaunch) : "");
+    }
+
+    /// <summary>
+    /// What the dashboard itself did in this SteamVR session: the window overlays its web UI created and destroyed (the desktop, the Steam window and any added
+    /// window), how many dashboard requests it routed to the headset and the last reason, and the desktop view's own log lines.
+    /// </summary>
+    private string Dashboard()
+    {
+        var result = new StringBuilder("dashboard:");
+        var ui = Path.Combine(_steamLogs, "vrwebhelper_systemui.txt");
+        if (File.Exists(ui))
+        {
+            var lines = ReadLines(ui);
+            var start = lines.FindLastIndex(l => l.Contains("startup with PID", StringComparison.Ordinal));
+            var session = start >= 0 ? lines.Skip(start).ToList() : lines;
+            var tally = new SortedDictionary<string, (int Created, int Destroyed)>(StringComparer.OrdinalIgnoreCase);
+            var requests = 0; var lastReason = "";
+            foreach (var line in session)
+            {
+                var created = line.Contains("[Overlays] Created: ", StringComparison.Ordinal);
+                var destroyed = line.Contains("[Overlays] Destroyed: ", StringComparison.Ordinal);
+                if (created || destroyed)
+                {
+                    var key = line[(line.IndexOf(": ", StringComparison.Ordinal) + 2)..].Trim();
+                    if (key.StartsWith("system.window.", StringComparison.Ordinal)) key = "system.window.*";
+                    if (key is "system.desktop.1" or "system.window.*" or "valve.steam.gamepadui.main" or "system.HeadsetView")
+                    {
+                        var (c, d) = tally.GetValueOrDefault(key);
+                        tally[key] = created ? (c + 1, d) : (c, d + 1);
+                    }
+                }
+                else if (line.Contains("[DashboardRequest] Send S->C", StringComparison.Ordinal))
+                {
+                    requests++;
+                    var at = line.IndexOf("\"reason\":\"", StringComparison.Ordinal);
+                    if (at >= 0) lastReason = line[(at + 10)..].Split('"')[0];
+                }
+            }
+            result.Append(" overlays ").Append(tally.Count == 0 ? "none seen" : string.Join(' ', tally.Select(t => $"{t.Key}+{t.Value.Created}/-{t.Value.Destroyed}")));
+            result.Append(" requests-to-headset ").Append(requests).Append(lastReason.Length > 0 ? " last " + lastReason : "");
+        }
+        else result.Append(" vrwebhelper_systemui.txt missing");
+        var board = Path.Combine(_steamLogs, "vrdashboard.txt");
+        if (File.Exists(board))
+        {
+            var lines = ReadLines(board);
+            var start = lines.FindLastIndex(l => l.Contains("vrdashboard 2.", StringComparison.Ordinal) && l.Contains("startup", StringComparison.Ordinal));
+            var interesting = lines.Skip(Math.Max(0, start)).Where(l => l.Contains("desktop view", StringComparison.OrdinalIgnoreCase) || l.Contains("duplication", StringComparison.OrdinalIgnoreCase)
+                || l.Contains("Destroying overlay for window", StringComparison.Ordinal)).ToList();
+            result.Append(" | vrdashboard: ").Append(interesting.Count).Append(" desktop/window events");
+            if (interesting.Count > 0) result.Append(", last: ").Append(interesting[^1].Length > 140 ? interesting[^1][..140] : interesting[^1]);
+        }
+        return result.ToString();
+    }
+
+    private static List<string> ReadLines(string file)
+    {
+        var lines = new List<string>();
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        for (string? line; (line = reader.ReadLine()) is not null;) lines.Add(line);
+        return lines;
     }
 
     private void Write(string what)
