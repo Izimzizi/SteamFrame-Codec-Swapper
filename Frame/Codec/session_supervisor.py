@@ -472,6 +472,9 @@ class Supervisor:
  def widen_after_hevc(self):
   try:self.hook_width('restore')
   except Exception as error:self.log('could not restore the stream width: '+str(error)[:200])
+ def switch_abandoned(self):
+  """True when SteamVR has gone away or the tray has exited, so a switch in progress must not start another stream."""
+  return (not self.server_alive()) or (getattr(self,'tray',None) is not None and self.tray_gone())
  def set_mode(self,mode,operation_id=''):
   """Switch the running SteamVR between H.264 and its own HEVC without restarting it: the stream stops, the hook and the Frame's
   client flip together, the stream starts again. On any failure the previous codec is put back."""
@@ -519,12 +522,25 @@ class Supervisor:
    if not self.stop_frame_stream():raise RuntimeError('The Frame did not accept the stream stop; try again in a moment.')
    time.sleep(.3);self.wait_decoder_idle()
    flip(mode)
+   # SteamVR closed (or the tray exited) while the stream was stopped: no stream is started, a Frame stream start would launch SteamVR again.
+   if self.switch_abandoned():raise RuntimeError('SteamVR closed during the switch.')
    self.phase='starting Frame stream';self.cef('start')
    self.phase='verifying hardware stream'
    if mode=='stock':self.verify_stock(fps)
    else:self.verify_stream(target,fps)
   except Exception as error:
    self.log('live switch to '+mode+' failed ('+self.phase+'): '+str(error)[:300])
+   if touched[0] and self.switch_abandoned():
+    # The user closed SteamVR or the tray is exiting: there is no session to put the previous codec back into, and starting a stream would start
+    # SteamVR again. The Frame goes back to its stock client (a mounted H.264 client is the only thing that has to be undone).
+    try:
+     if previous=='h264' and mode=='stock':pass   # the stock client is already mounted by the switch
+     else:self.action('rollback')
+    except Exception as restore:self.log('could not restore the stock client: '+str(restore)[:200])
+    self.stock_mode=True;self.frame_mounted=False
+    self.update(state='waiting',active_codec='Unknown',stream_pid=0,message='SteamVR closed during the switch; no stream was started.')
+    if mode=='stock':return
+    raise
    if not touched[0]:
     # Neither the hook nor the Frame's client changed: the stream is as it was.
     self.update(state='ready',active_codec='HEVC' if previous=='stock' else 'H.264',stream_pid=self.pid,

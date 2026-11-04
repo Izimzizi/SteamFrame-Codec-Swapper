@@ -562,6 +562,14 @@ class LiveModeTests(LiveRateTests):
   self.assertEqual(calls[:first+1],['cef stop','idle','frame rollback','hook stock','width restore','cef start'])
   self.assertEqual(calls[first+1:],['cef stop','idle','frame client-h264','hook h264','width h264','cef start'])
   self.assertEqual(update.call_args.kwargs['active_codec'],'H.264');self.assertFalse(instance.stock_mode)
+ def test_steamvr_closing_during_a_switch_to_stock_starts_no_stream_and_does_not_remount_h264(self):
+  instance=self.make();calls=[]
+  self.wire(instance,calls)
+  with patch.object(service.Supervisor,'server_alive',return_value=True),patch.object(instance,'switch_abandoned',return_value=True),patch.object(instance,'update') as update,patch.object(instance,'log'),patch.object(service.time,'sleep'):
+   instance.set_mode('stock','op')
+  self.assertNotIn('cef start',calls);self.assertNotIn('frame client-h264',calls);self.assertNotIn('verify stock',calls)
+  self.assertIn('frame rollback',calls);self.assertTrue(instance.stock_mode)
+  self.assertEqual(update.call_args.kwargs['state'],'waiting')
  def test_no_switch_without_a_hook_or_a_stock_encoder(self):
   hookless=self.make(live=False)
   with patch.object(service.Supervisor,'server_alive',return_value=True):
