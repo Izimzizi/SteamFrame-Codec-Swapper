@@ -54,7 +54,7 @@ internal static unsafe class DashboardNudge
         {
             using var window = new NudgeWindow();
             window.Show();
-            Pump(window, 1200);
+            Pump(window, 1500);
             var message = $"{{\"type\":\"request_spawn_window_view\",\"hwnd\":\"{window.Handle.ToInt64()}\"}}";
             int sent;
             fixed (byte* to = Ascii("desktopview")) fixed (byte* text = Ascii(message))
@@ -74,13 +74,17 @@ internal static unsafe class DashboardNudge
         while (Environment.TickCount64 < until) { Application.DoEvents(); Thread.Sleep(30); }
     }
 
-    /// <summary>A small window in the screen's lower right corner that does not take the focus from a running game.</summary>
+    /// <summary>A small ordinary window in the screen's lower right corner that does not take the focus from a running game.</summary>
     private sealed class NudgeWindow : Form
     {
         public NudgeWindow()
         {
             Text = "SteamFrame Codec Swapper";
-            FormBorderStyle = FormBorderStyle.FixedToolWindow;
+            // An ordinary window: SteamVR's desktop view lists windows like the taskbar does, and a tool window (small caption, no taskbar button) is left out,
+            // which is why the first version of this nudge ended with exit code 0 and no windows back. The manual test that worked used a normal window.
+            FormBorderStyle = FormBorderStyle.FixedSingle;
+            MaximizeBox = false;
+            ShowInTaskbar = true;
             StartPosition = FormStartPosition.Manual;
             var area = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
             Size = new Size(240, 70);
