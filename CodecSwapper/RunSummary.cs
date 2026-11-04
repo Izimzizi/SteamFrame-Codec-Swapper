@@ -69,7 +69,7 @@ public sealed class RunSummaryView : ScrollableControl
 
     private float Measure(Graphics g, string text, Font font) => g.MeasureString(text, font, 10000, Format).Width;
 
-    private void Text(Graphics g, string text, Font font, Color color, float x, float y)
+    private void DrawText(Graphics g, string text, Font font, Color color, float x, float y)
     {
         using var brush = new SolidBrush(color);
         g.DrawString(text, font, brush, x, y, Format);
@@ -91,8 +91,8 @@ public sealed class RunSummaryView : ScrollableControl
     private void Heading(Graphics g, string title, string? sub, float y, float width)
     {
         using var bold = new Font(Font, FontStyle.Bold);
-        Text(g, title, bold, ForeColor, 6, y);
-        if (sub is not null) Text(g, sub, Font, Color.FromArgb(140, ForeColor), 6 + Measure(g, title, bold) + 10, y);
+        DrawText(g, title, bold, ForeColor, 6, y);
+        if (sub is not null) DrawText(g, sub, Font, Color.FromArgb(140, ForeColor), 6 + Measure(g, title, bold) + 10, y);
     }
 
     private static Color VerdictColor(SweepVerdict verdict) => verdict switch { SweepVerdict.Clean => Good, SweepVerdict.Marginal => Warn, _ => Bad };
@@ -122,7 +122,7 @@ public sealed class RunSummaryView : ScrollableControl
         var columns = new[] { "Clean up to", "Delivered", "Held-back ms/min", "Encode ms", "PC drops/min", "Verdict" };
         var colWidth = Math.Max(96f, (width - nameWidth - 12) / columns.Length);
         for (var c = 0; c < columns.Length; c++)
-            if (at is not null || c == 0) Text(g, columns[c], Font, Color.FromArgb(140, ForeColor), 6 + nameWidth + c * colWidth, y);
+            if (at is not null || c == 0) DrawText(g, columns[c], Font, Color.FromArgb(140, ForeColor), 6 + nameWidth + c * colWidth, y);
         y += Font.Height + 4;
         using (var line = new Pen(Color.FromArgb(50, ForeColor))) g.DrawLine(line, 6, y, width, y);
         y += 4;
@@ -143,7 +143,7 @@ public sealed class RunSummaryView : ScrollableControl
             var step = StepAt(run);
             var refStep = StepAt(reference);
             using (var swatch = new SolidBrush(color)) g.FillRectangle(swatch, 6, y + 4, 5, rowHeight - 8);
-            Text(g, Fit(g, name, i == 0 ? bold : Font, nameWidth - 20), i == 0 ? bold : Font, ForeColor, 16, y + (rowHeight - Font.Height) / 2);
+            DrawText(g, Fit(g, name, i == 0 ? bold : Font, nameWidth - 20), i == 0 ? bold : Font, ForeColor, 16, y + (rowHeight - Font.Height) / 2);
             _hits.Add((new RectangleF(6, y, nameWidth, rowHeight), name + (i == 0 ? "\n(the reference run)" : "")));
 
             var x = 6 + nameWidth;
@@ -165,7 +165,7 @@ public sealed class RunSummaryView : ScrollableControl
                 var chip = step.Verdict.ToString();
                 var chipWidth = Measure(g, chip, Font) + 14;
                 using (var fill = new SolidBrush(Color.FromArgb(40, VerdictColor(step.Verdict)))) g.FillRectangle(fill, x, y + 4, chipWidth, Font.Height + 4);
-                Text(g, chip, Font, VerdictColor(step.Verdict), x + 7, y + 6);
+                DrawText(g, chip, Font, VerdictColor(step.Verdict), x + 7, y + 6);
                 _hits.Add((new RectangleF(x, y, chipWidth, rowHeight), $"{name}\n{at} Mbps: {step.Verdict}" + (step.Reason.Length > 0 ? "\n" + step.Reason : "")));
             }
             y += rowHeight;
@@ -183,15 +183,15 @@ public sealed class RunSummaryView : ScrollableControl
         for (var i = 0; i < targets.Count; i++)
         {
             var label = F(targets[i]);
-            Text(g, label, Font, Color.FromArgb(140, ForeColor), 6 + labelWidth + i * cell + (cell - Measure(g, label, Font)) / 2, y);
+            DrawText(g, label, Font, Color.FromArgb(140, ForeColor), 6 + labelWidth + i * cell + (cell - Measure(g, label, Font)) / 2, y);
         }
-        Text(g, "target Mbps", Font, Color.FromArgb(140, ForeColor), 6, y);
+        DrawText(g, "target Mbps", Font, Color.FromArgb(140, ForeColor), 6, y);
         y += Font.Height + 4;
         var ribbonRow = Font.Height + 16f;
         foreach (var (name, color, run) in runs)
         {
             using (var swatch = new SolidBrush(color)) g.FillRectangle(swatch, 6, y + 4, 5, ribbonRow - 8);
-            Text(g, Fit(g, name, Font, labelWidth - 22), Font, ForeColor, 16, y + (ribbonRow - Font.Height) / 2);
+            DrawText(g, Fit(g, name, Font, labelWidth - 22), Font, ForeColor, 16, y + (ribbonRow - Font.Height) / 2);
             _hits.Add((new RectangleF(6, y, labelWidth, ribbonRow), name));
             var lastClean = -1;
             for (var i = 0; i < targets.Count; i++)
@@ -202,7 +202,7 @@ public sealed class RunSummaryView : ScrollableControl
                 var fill = step.Verdict switch { SweepVerdict.Clean => Color.FromArgb(60, 160, 90), SweepVerdict.Marginal => Color.FromArgb(224, 165, 0), _ => Color.FromArgb(200, 60, 60) };
                 using (var path = Rounded(rect, 4)) using (var brush = new SolidBrush(fill)) g.FillPath(brush, path);
                 var share = step.MeanMbps is double mbps && step.TargetMbps > 0 ? Math.Round(mbps / step.TargetMbps * 100).ToString("0", CultureInfo.InvariantCulture) + "%" : "—";
-                using (var bold2 = new Font(Font, FontStyle.Bold)) Text(g, share, bold2, Color.White, rect.X + (rect.Width - Measure(g, share, bold2)) / 2, rect.Y + (rect.Height - Font.Height) / 2);
+                using (var bold2 = new Font(Font, FontStyle.Bold)) DrawText(g, share, bold2, Color.White, rect.X + (rect.Width - Measure(g, share, bold2)) / 2, rect.Y + (rect.Height - Font.Height) / 2);
                 _hits.Add((rect, $"{name}\n{step.TargetMbps} Mbps: {step.Verdict}\ndelivered {(step.MeanMbps is double m ? F(m) : "—")} Mbps, held back {F(step.HeldMsPerMinute)} ms/min, resets {step.StreamResets}, encode {(step.EncodeAverageMs is double en ? F(en, "0.0") : "—")} ms" + (step.Reason.Length > 0 ? "\n" + step.Reason : "")));
                 if (step.Verdict == SweepVerdict.Clean && lastClean == i - 1) lastClean = i;
             }
@@ -222,8 +222,8 @@ public sealed class RunSummaryView : ScrollableControl
     {
         var font = best ? bold : Font;
         var left = x + shift;
-        Text(g, value, font, ForeColor, left, y + 5);
-        if (delta is { } d) Text(g, d.Text, Font, d.Color, left, y + 7 + Font.Height);
+        DrawText(g, value, font, ForeColor, left, y + 5);
+        if (delta is { } d) DrawText(g, d.Text, Font, d.Color, left, y + 7 + Font.Height);
     }
 
     private static (string, Color)? Delta(double difference, double epsilon, bool lowerIsBetter, string unit, string format)
@@ -256,7 +256,7 @@ public sealed class RunSummaryView : ScrollableControl
             if (entry.Run is not EncoderSweepRun sweep || sweep.Trials.Count == 0) continue;
             if (shown++ >= 2) { Note(g, "Only the first two ticked sweeps are shown here.", 6, y, width); y += Font.Height + 8; break; }
             using (var swatch = new SolidBrush(entry.Color)) g.FillRectangle(swatch, 6, y + 2, 5, Font.Height + 2);
-            using (var bold = new Font(Font, FontStyle.Bold)) Text(g, Fit(g, entry.Name, bold, width - 30), bold, ForeColor, 16, y);
+            using (var bold = new Font(Font, FontStyle.Bold)) DrawText(g, Fit(g, entry.Name, bold, width - 30), bold, ForeColor, 16, y);
             y += Font.Height + 10;
             y = sweep.Goal == EncoderGoal.Current ? DrawCurrent(g, sweep, y, width) : DrawBoard(g, sweep, y, width);
             if (sweep.Goal != EncoderGoal.Current) y = DrawBeforeAfter(g, sweep, y, width);
@@ -303,12 +303,12 @@ public sealed class RunSummaryView : ScrollableControl
             var rowHeight = Math.Max(Font.Height + 12f, noteHeight + 10f);
             if (best) { using var back = new SolidBrush(Color.FromArgb(34, 0, 114, 178)); g.FillRectangle(back, 2, y, width - 4, rowHeight); }
             var font = best ? bold : Font;
-            Text(g, Fit(g, trial.Choice.Describe(), font, labelWidth - 10), font, ForeColor, 8, y + 5);
+            DrawText(g, Fit(g, trial.Choice.Describe(), font, labelWidth - 10), font, ForeColor, 8, y + 5);
             var color = VerdictColor(trial.Step.Verdict);
             var w = (float)(Math.Min(trial.Step.HeldMsPerMinute, scaleMax) / scaleMax * (barWidth - 40));
             using (var fill = new SolidBrush(color)) g.FillRectangle(fill, 8 + labelWidth, y + rowHeight / 2 - 6, Math.Max(3, w), 12);
             var valueText = F(trial.Step.HeldMsPerMinute);
-            Text(g, valueText, Font, ForeColor, 8 + labelWidth + Math.Max(3, w) + 4, y + 5);
+            DrawText(g, valueText, Font, ForeColor, 8 + labelWidth + Math.Max(3, w) + 4, y + 5);
             var tickX = 8 + labelWidth + (float)EncoderRanking.Reach(trial.Step) * barWidth;
             using (var tick = new Pen(Color.FromArgb(200, ForeColor), 2)) g.DrawLine(tick, tickX, y + 3, tickX, y + rowHeight - 3);
             using (var noteBrush = new SolidBrush(best ? ForeColor : Color.FromArgb(150, ForeColor))) g.DrawString(trial.Decision, best ? bold : Font, noteBrush, new RectangleF(8 + labelWidth + barWidth + 14, y + 5, noteWidth, rowHeight));
@@ -352,16 +352,16 @@ public sealed class RunSummaryView : ScrollableControl
         var track = Math.Max(120f, width - labelWidth - right - 30);
         // Legend
         using (var ring = new Pen(Color.Gray, 2)) g.DrawEllipse(ring, 8 + labelWidth, y + 2, 10, 10);
-        Text(g, "your settings", Font, Color.FromArgb(140, ForeColor), 8 + labelWidth + 14, y);
+        DrawText(g, "your settings", Font, Color.FromArgb(140, ForeColor), 8 + labelWidth + 14, y);
         using (var dot = new SolidBrush(ForeColor)) g.FillEllipse(dot, 8 + labelWidth + 120, y + 2, 10, 10);
-        Text(g, "recommended", Font, Color.FromArgb(140, ForeColor), 8 + labelWidth + 134, y);
+        DrawText(g, "recommended", Font, Color.FromArgb(140, ForeColor), 8 + labelWidth + 134, y);
         y += Font.Height + 8;
         foreach (var item in items)
         {
             var max = Math.Max(Math.Max(item.From, item.To) * 1.1, 0.0001);
             float X(double v) => 8 + labelWidth + (float)(v / max) * track;
             var cy = y + 14;
-            Text(g, item.Name, Font, ForeColor, 8, cy - Font.Height / 2f);
+            DrawText(g, item.Name, Font, ForeColor, 8, cy - Font.Height / 2f);
             using (var rail = new Pen(Color.FromArgb(40, ForeColor), 6) { StartCap = LineCap.Round, EndCap = LineCap.Round }) g.DrawLine(rail, X(0), cy, X(max), cy);
             var better = Math.Abs(item.To - item.From) < 0.0001 ? (bool?)null : item.LowerIsBetter ? item.To < item.From : item.To > item.From;
             var color = better is null ? Color.Gray : better.Value ? Good : Bad;
@@ -371,7 +371,7 @@ public sealed class RunSummaryView : ScrollableControl
             using (var dot = new SolidBrush(ForeColor)) g.FillEllipse(dot, X(item.To) - 6, cy - 6, 12, 12);
             var change = item.From > 0.0001 ? (Math.Abs(item.To - item.From) / item.From < 0.005 ? "  (same)" : $"  ({(item.To - item.From) / item.From * 100:+0;−0}%)") : "";
             using var bold = new Font(Font, FontStyle.Bold);
-            Text(g, $"{F(item.From, item.Format)} → {F(item.To, item.Format)} {item.Unit}{change}", bold, color, 8 + labelWidth + track + 16, cy - Font.Height / 2f);
+            DrawText(g, $"{F(item.From, item.Format)} → {F(item.To, item.Format)} {item.Unit}{change}", bold, color, 8 + labelWidth + track + 16, cy - Font.Height / 2f);
             y += 30;
         }
         return y + 4;

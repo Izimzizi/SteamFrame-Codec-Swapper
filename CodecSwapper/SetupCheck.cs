@@ -231,7 +231,7 @@ public sealed partial class SetupCheck
             else steps.Add(login.ExitCode == 0 ? Ok("login", "Login to the Frame", "The key is accepted.") : ClassifyLoginFailure(login));
         }
 
-        // Frame password (needed once to get administrator rights for the temporary client swap).
+        // Frame password (needed once to get administrator rights for the temporary client swap). Reaching the else means the login step passed, which needs a key.
         if (!steps[^1].IsOk) steps.Add(Skipped("password", "Frame password"));
         else
         {
@@ -241,7 +241,7 @@ public sealed partial class SetupCheck
                 steps.Add(Fail("password", "Frame password", "That password cannot be used here (too long, or it contains a line break)."));
             else
             {
-                var sudo = await _runner.RunAsync(Ssh, SshArguments(host, key, knownHosts, "sudo -k -S -p '' true"), password + "\n", TimeSpan.FromSeconds(20), cancellationToken);
+                var sudo = await _runner.RunAsync(Ssh, SshArguments(host, key!, knownHosts, "sudo -k -S -p '' true"), password + "\n", TimeSpan.FromSeconds(20), cancellationToken);
                 if (sudo.ExitCode == 0)
                 {
                     if (!string.IsNullOrEmpty(typedPassword)) _vault.Save(typedPassword);
