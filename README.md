@@ -1,12 +1,12 @@
 # SteamFrame Codec Swapper
 
-**Get a sharper, higher-quality picture from your PC on the Steam Frame.**
+**Live H.264/HEVC switching, up to 500 Mbps, NVENC tuning, stream monitor and in-VR HUD.**
 
-When you play PC VR games on the Steam Frame, your PC compresses the picture and sends it over Wi-Fi (or the dongle). Out of the box, SteamVR sends at most 232 Mbps and only uses one compression method (HEVC). This small Windows app removes those limits:
+Out of the box, SteamVR sends at most 232 Mbps and only uses one compression method (HEVC). This small Windows app removes those limits:
 
-- **Send up to 500 Mbps** instead of the 232 Mbps SteamVR streams at most, so the picture has more detail to work with.
-- **Switch to H.264**, an alternative way of compressing the picture, and back to the normal one (HEVC) at any time. SteamVR keeps running; only the Frame's stream restarts for a few seconds.
-- **See what your stream is doing** in a small window or in a little panel on your controller inside VR.
+- **Up to 500 Mbps** instead of the 232 Mbps SteamVR streams at most.
+- **Switch to H.264**, and back to the normal one (HEVC) at any time. SteamVR keeps running; only the Frame's stream restarts for a few seconds.
+- **See what your stream is doing** on a small window on desktop or on a VR HUD attached to your controller.
 
 It sits in your Windows system tray. Exiting it puts the stock HEVC stream back.
 
@@ -14,7 +14,7 @@ It sits in your Windows system tray. Exiting it puts the stock HEVC stream back.
 
 ## What you need
 
-- Windows with the optional **OpenSSH Client** feature (Settings → Optional features; the app uses it to talk to your Frame)
+- Windows built-in **OpenSSH Client** (the app uses it to talk to your Frame)
 - An NVIDIA graphics card
 - SteamVR, set up to stream to your Steam Frame
 - Your Steam Frame in **Developer Mode** with a user password set
@@ -24,9 +24,9 @@ It sits in your Windows system tray. Exiting it puts the stock HEVC stream back.
 1. **On the Frame:** turn on Developer Mode and set a user password (Developer → Set User Password).
 2. **Download** `CodecSwapper.zip` from the [Releases page](https://github.com/Izimzizi/SteamFrame-Codec-Swapper/releases) and unzip the **whole** zip somewhere. `CodecSwapper.exe` needs the `CodecLab` and `Native` folders beside it.
 3. **Run `CodecSwapper.exe`.** The app is not signed, so Windows may warn: click *More info → Run anyway*.
-4. **Follow the setup window.** Enter `frame` (Wi-Fi) or `10.35.78.1` (dongle). The app shows the Frame's fingerprint to trust once, creates its own SSH key and asks for the Frame password once. The password goes to Windows Credential Manager only after the Frame accepts it; it is never written to a file.
-5. **Right-click the tray icon → SteamVR driver → Install.** Required for H.264. (If you pick H.264 first, the app offers to install it. SteamVR is never restarted by the app.)
-6. **Pick H.264** from the tray menu. Start SteamVR and put your headset on. The app never starts SteamVR itself; with SteamVR closed, your choice is remembered and applied when it starts.
+4. **Follow the setup window.** The app shows the Frame's fingerprint to trust once, creates its own SSH key and asks for the Frame password once. The password goes to Windows Credential Manager only after the Frame accepts it; it is never written to a file.
+5. **Right-click the tray icon → SteamVR driver → Install.** Required for H.264 and Encoder settings. (If you pick H.264 first, the app offers to install it. SteamVR is never restarted by the app.)
+6. **Pick H.264** or stay on Default (HEVC) from the tray menu. Start SteamVR and put your headset on. The app never starts SteamVR itself; with SteamVR closed, your choice is remembered and applied when it starts.
 
 To go back to normal, choose **Default (HEVC)** or exit the app.
 
@@ -35,7 +35,7 @@ To go back to normal, choose **Default (HEVC)** or exit the app.
 SteamVR's own driver never streams more than 232 Mbps, and its slider stops at 350. This app's slider goes up to 500, but anything above 232 only takes effect with the bitrate patch.
 
 1. Close SteamVR.
-2. Tray menu → **Bitrate limit patch → Install**. If Steam is installed under Program Files, choose *Restart as administrator* once.
+2. Tray menu → **Bitrate limit patch → Install**.  If access is denied for patching a driver in a protected folder, choose *Restart as administrator* once.
 3. Set the bitrate you want. The app asks for the patch when you go above 350.
 
 The patch keeps one backup of the original file. A SteamVR update overwrites the patch, so install it again after each update.
@@ -48,12 +48,9 @@ The patch keeps one backup of the original file. A SteamVR update overwrites the
 | The app can't reach the Frame | Check the address (`frame` on Wi-Fi, `10.35.78.1` with the dongle), that Developer Mode is on and the password is set. Your codec choice is applied when the Frame comes back. |
 | H.264 is refused | The Frame's client changed in a way the app doesn't recognise. Default (HEVC) keeps working; look for a new version on the Releases page. |
 | After a SteamVR update H.264 or the high bitrate stops working | Install the SteamVR driver and the bitrate patch again, or choose Default (HEVC). |
-| The Frame's dashboard has no desktop or Steam windows after a switch | The app notices after about 10 seconds and re-adds them by itself. If a notice says it didn't work, press **+** in the dashboard once. |
-| The picture is narrower with H.264 | Expected: H.264 is limited to 1024 px width. Your own width comes back when you switch to HEVC. |
-| The stream drops when changing the width | A screen recorder on the Frame is probably open. The app restarts the stream for you. |
-| The Steam UI on the Frame is stuck | Restart the Steam UI on the Frame. |
+| The streaming width doesn't affect H.264 | Expected: H.264 is limited to 1024 px width. HEVC can be set up to 2048 px. |
 
-Logs are in `%LOCALAPPDATA%\CodecSwapper` (tray menu → **Open logs folder**). Attach `tray.log` when you report a problem.
+Logs are in `%LOCALAPPDATA%\CodecSwapper` (tray menu → **Open logs folder**). Attach `tray.log` when you report an issue.
 
 ## Learn more
 
