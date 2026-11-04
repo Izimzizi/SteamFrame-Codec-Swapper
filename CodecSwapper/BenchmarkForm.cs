@@ -1,3 +1,5 @@
+using System.Text;
+using System.ComponentModel;
 using System.Globalization;
 using SteamFrame.Core;
 
@@ -29,7 +31,6 @@ public sealed class BenchmarkForm : Form
     private readonly Button _go = new() { Text = "Start", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Button _apply = new() { Text = "Apply best settings", AutoSize = true, MinimumSize = new Size(170, 34), Visible = false, Font = new Font(SystemFonts.MessageBoxFont!, FontStyle.Bold) };
     private readonly Label _best = new() { AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(10, 8, 0, 0), Font = new Font(SystemFonts.MessageBoxFont!, FontStyle.Bold), Visible = false };
-    private readonly Button _delete = new() { Text = "Delete selected run", Dock = DockStyle.Fill, MinimumSize = new Size(90, 28) };
     private readonly Label _detail = new() { AutoSize = true, MaximumSize = new Size(420, 0), Margin = new Padding(4, 6, 4, 4) };
     private readonly Button _openFolder = new() { Text = "Open results folder", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Label _estimate = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
@@ -38,7 +39,7 @@ public sealed class BenchmarkForm : Form
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly ListView _table = new() { View = View.Details, FullRowSelect = true, GridLines = true, Dock = DockStyle.Fill, HideSelection = false };
     private readonly RunChart _chart = new() { Dock = DockStyle.Fill };
-    private readonly CheckedListBox _compare = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
+    private readonly RunList _compare = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
     private readonly TextBox _conclusion = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Height = 120, BackColor = SystemColors.Window };
 
     private List<BenchmarkRun> _history = [];
@@ -96,13 +97,11 @@ public sealed class BenchmarkForm : Form
         var tablePage = new TabPage("Results") { Padding = new Padding(4) };
         tablePage.Controls.Add(_table);
         var chartPage = new TabPage("Charts") { Padding = new Padding(4) };
-        var side = new TableLayoutPanel { Dock = DockStyle.Right, Width = 440, ColumnCount = 1, RowCount = 4 };
-        side.RowStyles.Add(new RowStyle(SizeType.AutoSize)); side.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); side.RowStyles.Add(new RowStyle(SizeType.AutoSize)); side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        side.Controls.Add(new Label { Text = "Tick the runs to draw on the charts. The first entry is the run on screen. Click one to read its full name and best settings.", AutoSize = true, MaximumSize = new Size(430, 0), Margin = new Padding(4, 4, 4, 6) }, 0, 0);
-        _compare.HorizontalScrollbar = true;
+        var side = new TableLayoutPanel { Dock = DockStyle.Right, Width = 440, ColumnCount = 1, RowCount = 3 };
+        side.RowStyles.Add(new RowStyle(SizeType.AutoSize)); side.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        side.Controls.Add(new Label { Text = "Tick the runs to draw on the charts. The first entry is the run on screen. Click one to read its full name and best settings; the trash can at the end of a line deletes that run and its saved files.", AutoSize = true, MaximumSize = new Size(430, 0), Margin = new Padding(4, 4, 4, 6) }, 0, 0);
         side.Controls.Add(_compare, 0, 1);
         side.Controls.Add(_detail, 0, 2);
-        side.Controls.Add(_delete, 0, 3);
         chartPage.Controls.Add(_chart);
         chartPage.Controls.Add(side);
         _tabs.TabPages.AddRange([tablePage, chartPage]);
@@ -131,7 +130,20 @@ public sealed class BenchmarkForm : Form
             _apply.Enabled = false; _apply.Text = "Applying…";
             ApplyRequested?.Invoke(choice);
         };
-        _delete.Click += (_, _) => DeleteSelected();
+        _compare.TrashClicked += index => { if (!_running && index < _compare.Items.Count && _compare.Items[index] is ListEntry entry) DeleteEntry(entry); };
+        // Hovering a row of the results shows what happened in full: a long reason does not fit its column.
+        var rowTip = new ToolTip { AutoPopDelay = 60000, InitialDelay = 200, ReshowDelay = 100 };
+        ListViewItem? tipped = null;
+        _table.ShowItemToolTips = false;
+        _table.MouseMove += (_, e) =>
+        {
+            var item = _table.GetItemAt(e.X, e.Y);
+            if (item == tipped) return;
+            tipped = item;
+            if (item is null || item.SubItems.Count < 2) { rowTip.Hide(_table); return; }
+            rowTip.Show(WrapText(item.Text + Environment.NewLine + item.SubItems[^1].Text, 90), _table, e.X + 16, e.Y + 20, 60000);
+        };
+        _table.MouseLeave += (_, _) => { tipped = null; rowTip.Hide(_table); };
         _compare.SelectedIndexChanged += (_, _) => ShowSelectedDetail();
         _openFolder.Click += (_, _) => { try { Directory.CreateDirectory(AppData.BenchmarksDirectory); System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppData.BenchmarksDirectory) { UseShellExecute = true }); } catch (Exception) { } };
         foreach (var control in new Control[] { _start, _ceiling, _step, _probe, _measure }) { if (control is NumericUpDown n) n.ValueChanged += (_, _) => UpdateEstimate(); else ((ComboBox)control).SelectedIndexChanged += (_, _) => UpdateEstimate(); }
@@ -223,7 +235,8 @@ public sealed class BenchmarkForm : Form
         _running = running;
         _go.Text = running ? "Stop" : "Start";
         foreach (var control in new Control[] { _mode, _start, _ceiling, _step, _probe, _measure, _stopOnFailure, _scene }) control.Enabled = !running && (control != _scene || BenchmarkScene.Available);
-        _delete.Enabled = !running;
+        _compare.TrashEnabled = !running;
+        _compare.Invalidate();
         _phase.ForeColor = SystemColors.ControlText;
         if (!running) UpdateBest(SweepMode ? _shownSweep : _shown);
         if (running)
@@ -412,10 +425,28 @@ public sealed class BenchmarkForm : Form
         if (!_running) UpdateBest(entry.Run);
     }
 
-    private void DeleteSelected()
+    /// <summary>Wraps a long line at word boundaries so a tooltip stays readable.</summary>
+    private static string WrapText(string text, int width)
     {
-        if (_running || _compare.SelectedItem is not ListEntry entry) return;
-        if (MessageBox.Show(this, "Delete this run and its saved files?" + Environment.NewLine + Environment.NewLine + entry.Text, "Delete run", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        var result = new StringBuilder();
+        foreach (var paragraph in text.Split('\n'))
+        {
+            var line = 0;
+            foreach (var word in paragraph.TrimEnd('\r').Split(' '))
+            {
+                if (line > 0 && line + word.Length + 1 > width) { result.AppendLine(); line = 0; }
+                if (line > 0) { result.Append(' '); line++; }
+                result.Append(word); line += word.Length;
+            }
+            result.AppendLine();
+        }
+        return result.ToString().TrimEnd();
+    }
+
+    /// <summary>One click on a run's trash can: the run and its saved files are removed.</summary>
+    private void DeleteEntry(ListEntry entry)
+    {
+        if (_running) return;
         DeleteRequested?.Invoke(entry.Run);
         switch (entry.Run)
         {
@@ -486,5 +517,45 @@ public sealed class BenchmarkForm : Form
         // Two bitrate runs ticked: say in words which one is better, target by target.
         if (!_running && !SweepMode && picked.Count == 2 && picked[0].Run is BenchmarkRun a && picked[1].Run is BenchmarkRun b)
             _conclusion.Text = (a.Conclusion.Length > 0 ? a.Conclusion + Environment.NewLine + Environment.NewLine : "") + BenchmarkReport.Compare(a, b);
+    }
+}
+
+/// <summary>A list of ticked runs with a trash can at the end of every line that deletes that run in one click.</summary>
+internal sealed class RunList : CheckedListBox
+{
+    private const int TrashWidth = 28;
+    private static readonly Font TrashFont = new("Segoe UI Symbol", 10f);
+    public event Action<int>? TrashClicked;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool TrashEnabled { get; set; } = true;
+
+    private bool InTrash(Point point) => point.X >= ClientSize.Width - TrashWidth;
+
+    protected override void OnDrawItem(DrawItemEventArgs e)
+    {
+        if (e.Index < 0) return;
+        var selected = (e.State & DrawItemState.Selected) != 0;
+        e.Graphics.FillRectangle(selected ? SystemBrushes.Highlight : SystemBrushes.Window, e.Bounds);
+        var ink = selected ? SystemColors.HighlightText : SystemColors.WindowText;
+        var box = new Rectangle(e.Bounds.X + 3, e.Bounds.Y + (e.Bounds.Height - 13) / 2, 13, 13);
+        ControlPaint.DrawCheckBox(e.Graphics, box, GetItemChecked(e.Index) ? ButtonState.Checked : ButtonState.Normal);
+        var text = new Rectangle(box.Right + 4, e.Bounds.Y, Math.Max(10, e.Bounds.Width - box.Right - 4 - TrashWidth), e.Bounds.Height);
+        TextRenderer.DrawText(e.Graphics, GetItemText(Items[e.Index]), Font, text, ink, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        var trash = new Rectangle(e.Bounds.Right - TrashWidth, e.Bounds.Y, TrashWidth, e.Bounds.Height);
+        var color = !TrashEnabled ? SystemColors.GrayText : selected ? SystemColors.HighlightText : Color.FromArgb(190, 40, 40);
+        TextRenderer.DrawText(e.Graphics, "\U0001F5D1", TrashFont, trash, color, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        var index = IndexFromPoint(e.Location);
+        if (index >= 0 && InTrash(e.Location)) { if (TrashEnabled) TrashClicked?.Invoke(index); return; }
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        Cursor = IndexFromPoint(e.Location) >= 0 && InTrash(e.Location) && TrashEnabled ? Cursors.Hand : Cursors.Default;
+        base.OnMouseMove(e);
     }
 }
