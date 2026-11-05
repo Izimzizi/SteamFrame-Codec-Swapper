@@ -63,7 +63,9 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private enum Over { None, Icon, Panel }
     private readonly List<OverlayEvent> _ownIcon = [], _ownPanel = [];
     private Over _over = Over.None;
-    private bool _ownDown;
+    private bool _ownDown, _engaged;
+    private DateTime _awayAt = DateTime.MinValue;
+    private static readonly TimeSpan RejoinAfterAway = TimeSpan.FromSeconds(2);
     private DateTime _nativeAt = DateTime.MinValue;
     private static readonly TimeSpan NativeLaserHold = TimeSpan.FromMilliseconds(1500);
 
@@ -151,7 +153,18 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (pointer == IOverlayApi.NoDevice) { OwnLaserNote("the pointing controller is not seen"); EndOwnLaser(); return; }
         // Away from the HUD the input system is not touched at all: every UpdateActionState call keeps this helper an active input application, which can hold on to the game's controller.
         // The controller's own pose (no input needed) tells roughly whether it points at the HUD; only then are the aim and click actions read.
-        if (_over == Over.None && !PointsNearHud(pointer, carrierPose)) { EndOwnLaser(); return; }
+        if (_over == Over.None && !PointsNearHud(pointer, carrierPose))
+        {
+            EndOwnLaser();
+            if (_engaged)
+            {
+                // The HUD held the input while it was aimed at. Hand it back at once, and if SteamVR keeps the game cut off anyway, leave and rejoin SteamVR (which always gives it back) after a short while away.
+                if (_awayAt == DateTime.MinValue) { _awayAt = at; api.ReleaseInput(); }
+                else if (at - _awayAt > RejoinAfterAway) { _engaged = false; _awayAt = DateTime.MinValue; _rejoin = true; log?.Invoke("HUD: rejoining SteamVR to give the controller back to the game"); }
+            }
+            return;
+        }
+        _engaged = true; _awayAt = DateTime.MinValue;
         if (!api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { OwnLaserNote("no aim from the pointing hand"); EndOwnLaser(); return; }
 
         AimHit? best = null;

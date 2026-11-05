@@ -267,6 +267,15 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
         if (_inputErrors.Add(error)) log?.Invoke($"HUD input: {call} returned error {error}");
     }
 
+    public void ReleaseInput()
+    {
+        if (!_inputReady) return;
+        var sets = stackalloc byte[64];
+        new Span<byte>(sets, 64).Clear();
+        *(ulong*)sets = _aimSet; *(ulong*)(sets + 32) = _clickSet;
+        ((delegate* unmanaged<nint, byte*, uint, uint, int>)Slot(_input, InputUpdateSlot))(_input, sets, 32, 2);
+    }
+
     public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed)
     {
         tip = Pose.Identity; pressed = false;
