@@ -183,6 +183,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_panelVisible)
             Consider(Over.Panel, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters, HudPanel.Width, HudPanel.Height);
 
+        if (best is null && _over == Over.None) api.ReleaseInput();   // near, but the real aim misses (or meets the back): give the input back at once
         if (best is null)
         {
             // Not near anything: say how far off the ray is, so a wrongly tilted tip shows in the log.
@@ -226,18 +227,24 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         log?.Invoke("HUD laser: " + what);
     }
 
-    // A generous test on the controller body (the real tip is tilted from it): does its ray pass within reach of the panel or the watch icon?
+    // A rough test on the controller body (the real tip is tilted from it): does its ray meet the front of the panel or the watch icon, within a hand's width of the edge?
     private bool PointsNearHud(uint pointer, Pose carrierPose)
     {
         if (!api.TryDevicePose(pointer, out var body)) return false;
         var aim = body.Rotate(-Vector3.UnitZ);
-        bool Near(Pose local)
+        bool Near(Pose local, float width, float aspect)
         {
-            var to = carrierPose.Then(local).T - body.T;
-            var along = Vector3.Dot(to, aim);
-            return along > -.1f && along < 2f && (to - aim * along).Length() < .5f;
+            var world = carrierPose.Then(local);
+            var normal = world.Rotate(Vector3.UnitZ);
+            var facing = Vector3.Dot(aim, normal);
+            if (facing >= -1e-4f) return false;   // parallel, or looking at the back
+            var distance = Vector3.Dot(world.T - body.T, normal) / facing;
+            if (distance <= 0 || distance > 2f) return false;
+            var offset = body.T + aim * distance - world.T;
+            const float slack = .12f;
+            return MathF.Abs(Vector3.Dot(offset, world.Rotate(Vector3.UnitX))) < width / 2 + slack && MathF.Abs(Vector3.Dot(offset, world.Rotate(Vector3.UnitY))) < width * aspect / 2 + slack;
         }
-        return (_panelVisible && Near(settings.Pose)) || (settings.Watch && _icon != 0 && Near(settings.IconPose));
+        return (_panelVisible && Near(settings.Pose, settings.WidthMeters, (float)HudPanel.Height / HudPanel.Width)) || (settings.Watch && _icon != 0 && Near(settings.IconPose, settings.IconWidthMeters, 1f));
     }
 
     private void EndOwnLaser()
