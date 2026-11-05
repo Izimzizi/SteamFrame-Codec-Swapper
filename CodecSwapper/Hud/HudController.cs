@@ -53,7 +53,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private int _guideStep = -2;             // -2 not decided yet, -1 finished or skipped, 0 the bubble at the watch, 1.. the steps on the panel
     private ulong _bubble;                 // the overlay that points at the watch during step 0
     private string? _slidingSetting;       // "slide:angle" or "slide:dist" while a fade-out slider is held
-    private bool _rejoin;
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _slidingWidth, _committedWidth;   // the same for the stream width slider
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
@@ -64,8 +63,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private readonly List<OverlayEvent> _ownIcon = [], _ownPanel = [];
     private Over _over = Over.None;
     private bool _ownDown, _engaged;
-    private DateTime _awayAt = DateTime.MinValue;
-    private static readonly TimeSpan RejoinAfterAway = TimeSpan.FromSeconds(2);
     private DateTime _nativeAt = DateTime.MinValue;
     private static readonly TimeSpan NativeLaserHold = TimeSpan.FromMilliseconds(1500);
 
@@ -82,7 +79,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var at = now ?? DateTime.UtcNow;
         _clock = at;
         if (!settings.Enabled || !steamVrRunning()) { Teardown(); return; }
-        if (_rejoin) { _rejoin = false; Teardown(); _nextConnect = at; return; }   // done here, not inside the button press, so no half-handled event is left behind
         if (!settings.Received) return;   // the tray's settings (first-run guide done, placement) have not arrived yet
         if (!api.Connected)
         {
@@ -143,7 +139,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void TickOwnLaser(uint carrier, DateTime at)
     {
         _ownIcon.Clear(); _ownPanel.Clear();
-        if (!settings.OwnLaser || !api.InputAvailable) { EndOwnLaser(); return; }
+        if (!api.InputAvailable) { EndOwnLaser(); return; }
         // SteamVR's own laser is in use when it sends this HUD mouse events. (The PC reports the dashboard as open all the time on a Steam Link
         // session, so the dashboard flag cannot decide this.)
         if (at - _nativeAt < NativeLaserHold) { OwnLaserNote("SteamVR's laser is on the HUD"); EndOwnLaser(); return; }
@@ -156,15 +152,10 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_over == Over.None && !PointsNearHud(pointer, carrierPose))
         {
             EndOwnLaser();
-            if (_engaged)
-            {
-                // The HUD held the input while it was aimed at. Hand it back at once, and if SteamVR keeps the game cut off anyway, leave and rejoin SteamVR (which always gives it back) after a short while away.
-                if (_awayAt == DateTime.MinValue) { _awayAt = at; api.ReleaseInput(); }
-                else if (at - _awayAt > RejoinAfterAway) { _engaged = false; _awayAt = DateTime.MinValue; _rejoin = true; log?.Invoke("HUD: rejoining SteamVR to give the controller back to the game"); }
-            }
+            if (_engaged) { _engaged = false; api.ReleaseInput(); }   // the HUD held the input while it was aimed at: hand it back to the game at once
             return;
         }
-        _engaged = true; _awayAt = DateTime.MinValue;
+        _engaged = true;
         if (!api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { OwnLaserNote("no aim from the pointing hand"); EndOwnLaser(); return; }
 
         AimHit? best = null;
@@ -466,7 +457,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm, Guide = _guideStep >= 1 && !_repositioning ? _guideStep : 0, OwnLaser = settings.OwnLaser };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm, Guide = _guideStep >= 1 && !_repositioning ? _guideStep : 0 };
         if (_slidingWidth is { } heldWidth) view = view with { WidthPx = heldWidth };
         else if (_committedWidth is { } chosenWidth && view.WidthPx != chosenWidth && _clock - _committedAt < CommitHold) view = view with { WidthPx = chosenWidth };
         if (_sliding is { } held) return view with { TargetMbps = held };
@@ -493,7 +484,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.OwnLaser != now.OwnLaser || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps || was.WidthPx != now.WidthPx
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps || was.WidthPx != now.WidthPx
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames || was.MultiPass != now.MultiPass || was.Guide != now.Guide;
 
     private void Handle(OverlayEvent e)
@@ -566,12 +557,6 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
                 else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
-                else if (parts[1] == "ownlaser")
-                {
-                    settings.OwnLaser = parts[2] == "on";
-                    // The input manifest is registered when joining SteamVR (and cannot be withdrawn), so rejoin with or without it.
-                    if (settings.OwnLaser != api.InputAvailable) { _rejoin = true; log?.Invoke("HUD: rejoining SteamVR " + (settings.OwnLaser ? "with" : "without") + " the laser input"); }
-                }
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;

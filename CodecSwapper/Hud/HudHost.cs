@@ -26,7 +26,7 @@ public static class HudHost
             if (Environment.TickCount64 - checkedAt >= 1000) { checkedAt = Environment.TickCount64; running = OpenVrOverlayApi.IsVrServerRunning(); }
             return running;
         }
-        var hud = new HudController(new OpenVrOverlayApi(SteamPaths.Current.SteamVrRoot, Log, Path.Combine(AppData.Root, "HudInput"), () => settings.OwnLaser), settings, () => { lock (gate) return view; }, actions,
+        var hud = new HudController(new OpenVrOverlayApi(SteamPaths.Current.SteamVrRoot, Log, Path.Combine(AppData.Root, "HudInput")), settings, () => { lock (gate) return view; }, actions,
             () => Send(new() { Type = "settings", Settings = settings }), PcVrRunning, Log);
 
         var reader = new Thread(() =>
@@ -43,7 +43,7 @@ public static class HudHost
                     {
                         settings.Received = true;
                         settings.Enabled = message.Settings.Enabled; settings.Hand = message.Settings.Hand; settings.FlipLaserY = message.Settings.FlipLaserY;
-                        settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover; settings.Watch = message.Settings.Watch; settings.FadeAngle = message.Settings.FadeAngle; settings.FadeDistanceCm = message.Settings.FadeDistanceCm; settings.GuideDone = message.Settings.GuideDone; settings.OwnLaser = message.Settings.OwnLaser;
+                        settings.AutoShow = message.Settings.AutoShow; settings.ExpandOnHover = message.Settings.ExpandOnHover; settings.Watch = message.Settings.Watch; settings.FadeAngle = message.Settings.FadeAngle; settings.FadeDistanceCm = message.Settings.FadeDistanceCm; settings.GuideDone = message.Settings.GuideDone;
                         // The helper owns the placement while the user is moving the HUD.
                         if (!hud.Repositioning) { settings.Placement = message.Settings.Placement; settings.WidthMeters = message.Settings.WidthMeters; settings.IconPlacement = message.Settings.IconPlacement; settings.IconWidthMeters = message.Settings.IconWidthMeters; }
                     }

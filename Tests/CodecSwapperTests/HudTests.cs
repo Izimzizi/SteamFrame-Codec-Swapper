@@ -375,13 +375,11 @@ public sealed class HudControllerTests
     }
 
     [Fact]
-    public void The_own_laser_is_off_without_input_or_when_switched_off()
+    public void The_own_laser_is_off_without_input()
     {
         var rig = OwnLaserRig();
         rig.Api.Tip = AimAt(rig, "codec:h264");
-        rig.Settings.OwnLaser = false; rig.Tick();
-        Assert.DoesNotContain("show", rig.Api.Laser);
-        rig.Settings.OwnLaser = true; rig.Api.InputOn = false; rig.Tick();
+        rig.Api.InputOn = false; rig.Tick();
         Assert.DoesNotContain("show", rig.Api.Laser);
     }
 
