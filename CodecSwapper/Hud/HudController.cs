@@ -174,7 +174,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             // A held press keeps following its target even when the laser slips off the edge, so a slider can be dragged.
             var margin = _ownDown && _over == target ? 2f : HudAim.NearMargin;
             if (_ownDown && _over != target) return;
-            if (!HudAim.TryHit(tip, world, width, pixelsWide, pixelsHigh, margin, out var x, out var y, out var distance, out var inside, out var point)) return;
+            if (!HudAim.TryHit(tip, world, width, pixelsWide, pixelsHigh, margin, out var x, out var y, out var distance, out var inside, out var point, _ownDown && _over == target)) return;
             var hit = new AimHit(target, x, y, distance, inside || (_ownDown && _over == target), point, world);
             if (best is not { } current || (hit.Inside && !current.Inside) || (hit.Inside == current.Inside && hit.Distance < current.Distance)) best = hit;
         }

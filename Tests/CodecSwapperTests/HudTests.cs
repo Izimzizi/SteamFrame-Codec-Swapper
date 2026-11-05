@@ -68,6 +68,8 @@ public sealed class HudMathTests
         Assert.True(HudAim.TryHit(facing, Pose.Identity, .2f, 100, 50, HudAim.NearMargin, out var x, out _, out _, out var inside, out _));
         Assert.False(inside); Assert.Equal(100f, x, 2);   // clamped to the picture
         var behind = new Pose(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(0, 0, -1));   // looks away from the overlay
+        Assert.False(HudAim.TryHit(new(-Vector3.UnitX, Vector3.UnitY, -Vector3.UnitZ, new(0, 0, -1)), Pose.Identity, .2f, 100, 50, 0, out _, out _, out _, out _, out _), "the back of the HUD");
+        Assert.True(HudAim.TryHit(new(-Vector3.UnitX, Vector3.UnitY, -Vector3.UnitZ, new(0, 0, -1)), Pose.Identity, .2f, 100, 50, 0, out _, out _, out _, out _, out _, true));
         Assert.False(HudAim.TryHit(behind, Pose.Identity, .2f, 100, 50, HudAim.NearMargin, out _, out _, out _, out _, out _));
     }
 
