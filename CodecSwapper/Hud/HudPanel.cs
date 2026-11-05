@@ -10,7 +10,7 @@ public sealed record HudView(
     bool Connected, string Codec, bool CodecVerified, double? Mbps, double? Fps, int TargetMbps, bool H264Selected, bool Busy, string Status,
     string RateControl, int Preset, int VbvFrames, bool Repositioning, string Hand, string History = "",
     string Average = "", string Encoder = "", string Health = "", string Note = "", string OpenMenu = "", bool Interactive = true, string Notice = "", bool NoticeIsError = false, string Latency = "",
-    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0, int MultiPass = 0, int Guide = 0)
+    string Page = "", bool AutoShow = true, bool ExpandOnHover = false, bool Watch = false, string Target = "panel", int FadeAngle = 0, int FadeDistance = 0, int WidthPx = 0, int MultiPass = 0, int Guide = 0, bool OwnLaser = true)
 {
     public static HudView Empty { get; } = new(false, "—", false, null, null, 0, false, false, "", "vbr", 2, 2, false, "left");
 
@@ -25,7 +25,7 @@ public sealed record HudButton(string Id, Rectangle Bounds, string Text, bool Ac
 
 /// <summary>
 /// The HUD's picture and its buttons. Button ids: codec:h264, codec:hevc, slider, wslider (stream width), menu:rc, menu:preset, menu:vbv, menu:mp, menu:close, rc:vbr, rc:cbr, preset:N, vbv:N, mp:N,
-/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, slide:angle, slide:dist (the fade-out sliders), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
+/// page:settings, page:close, set:autoshow:on|off, set:style:panel|watch, set:expand:dashboard|hover, set:ownlaser:on|off, slide:angle, slide:dist (the fade-out sliders), reposition, counters, hide (settings page), save, cancel, default, size:-, size:+. "grab" is the panel body.
 /// </summary>
 public static class HudPanel
 {
@@ -138,6 +138,7 @@ public static class HudPanel
             buttons.Add(new("slide:angle", FadeAngleArea, "", false, true));
             buttons.Add(new("slide:dist", FadeDistanceArea, "", false, true));
             Row(430, 44, [("reposition", "Reposition HUD", false, true), ("hide", "Hide HUD", false, true)]);
+            Row(612, 40, [("set:ownlaser:on", "On", view.OwnLaser, true), ("set:ownlaser:off", "Off", !view.OwnLaser, true)]);
             Row(486, 40, [("guide:replay", "Show the guide again", false, true)]);
             return buttons;
         }
@@ -210,6 +211,7 @@ public static class HudPanel
             g.DrawString("HUD style (Watch & HUD: a round watch on the controller opens it)", normal, white, 22, 130);
             if (view.Watch) g.DrawString("The opened panel is always fully active. The controls only follow\nthe laser or the dashboard in the HUD only style.", small, grey, 22, 204);
             else g.DrawString("Show the controls when", normal, white, 22, 206);
+            g.DrawString("HUD laser when the dashboard is closed (turn Off if it steals a game's laser)", small, white, 22, 586);
             g.DrawString("Hide HUD takes the HUD away until SteamVR starts again. Turn it back on in the\ntray menu: VR HUD > Show HUD on a controller.", small, grey, 22, 540);
         }
         else

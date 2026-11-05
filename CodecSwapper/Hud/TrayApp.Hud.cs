@@ -89,6 +89,7 @@ public sealed partial class TrayApp
                 _hudSettings.AutoShow = message.Settings.AutoShow;
                 _hudSettings.ExpandOnHover = message.Settings.ExpandOnHover;
                 _hudSettings.Watch = message.Settings.Watch;
+                _hudSettings.OwnLaser = message.Settings.OwnLaser;
                 _hudSettings.FadeAngle = message.Settings.FadeAngle;
                 _hudSettings.FadeDistanceCm = message.Settings.FadeDistanceCm;
                 _hudSettings.GuideDone = message.Settings.GuideDone;

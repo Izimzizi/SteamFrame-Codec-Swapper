@@ -427,7 +427,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private HudView View()
     {
         var view = readView() with { Repositioning = _repositioning, Hand = settings.IsLeft ? "left" : "right", OpenMenu = _menu, Interactive = _dashboard,
-            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm, Guide = _guideStep >= 1 && !_repositioning ? _guideStep : 0 };
+            Page = _page, AutoShow = settings.AutoShow, ExpandOnHover = settings.ExpandOnHover, Watch = settings.Watch, Target = _resizeIcon ? "icon" : "panel", FadeAngle = settings.FadeAngle, FadeDistance = settings.FadeDistanceCm, Guide = _guideStep >= 1 && !_repositioning ? _guideStep : 0, OwnLaser = settings.OwnLaser };
         if (_slidingWidth is { } heldWidth) view = view with { WidthPx = heldWidth };
         else if (_committedWidth is { } chosenWidth && view.WidthPx != chosenWidth && _clock - _committedAt < CommitHold) view = view with { WidthPx = chosenWidth };
         if (_sliding is { } held) return view with { TargetMbps = held };
@@ -454,7 +454,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     }
 
     private static bool ControlsChanged(HudView was, HudView now) =>
-        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps || was.WidthPx != now.WidthPx
+        was.OpenMenu != now.OpenMenu || was.Page != now.Page || was.AutoShow != now.AutoShow || was.ExpandOnHover != now.ExpandOnHover || was.OwnLaser != now.OwnLaser || was.Watch != now.Watch || was.Target != now.Target || was.FadeAngle != now.FadeAngle || was.FadeDistance != now.FadeDistance || was.Interactive != now.Interactive || was.Repositioning != now.Repositioning || was.TargetMbps != now.TargetMbps || was.WidthPx != now.WidthPx
         || was.Notice != now.Notice || was.H264Selected != now.H264Selected || was.Busy != now.Busy || was.RateControl != now.RateControl || was.Preset != now.Preset || was.VbvFrames != now.VbvFrames || was.MultiPass != now.MultiPass || was.Guide != now.Guide;
 
     private void Handle(OverlayEvent e)
@@ -527,6 +527,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
                 else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
+                else if (parts[1] == "ownlaser") settings.OwnLaser = parts[2] == "on";
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;
