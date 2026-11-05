@@ -53,6 +53,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private int _guideStep = -2;             // -2 not decided yet, -1 finished or skipped, 0 the bubble at the watch, 1.. the steps on the panel
     private ulong _bubble;                 // the overlay that points at the watch during step 0
     private string? _slidingSetting;       // "slide:angle" or "slide:dist" while a fade-out slider is held
+    private bool _rejoin;
     private int? _sliding;                 // the bitrate under the laser while the slider is held
     private int? _slidingWidth, _committedWidth;   // the same for the stream width slider
     private int? _committed;               // the bitrate just chosen, shown until the tray reports it
@@ -79,6 +80,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var at = now ?? DateTime.UtcNow;
         _clock = at;
         if (!settings.Enabled || !steamVrRunning()) { Teardown(); return; }
+        if (_rejoin) { _rejoin = false; Teardown(); _nextConnect = at; return; }   // done here, not inside the button press, so no half-handled event is left behind
         if (!settings.Received) return;   // the tray's settings (first-run guide done, placement) have not arrived yet
         if (!api.Connected)
         {
@@ -531,7 +533,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
                 {
                     settings.OwnLaser = parts[2] == "on";
                     // The input manifest is registered when joining SteamVR (and cannot be withdrawn), so rejoin with or without it.
-                    if (settings.OwnLaser != api.InputAvailable) { Teardown(); log?.Invoke("HUD: rejoining SteamVR " + (settings.OwnLaser ? "with" : "without") + " the laser input"); }
+                    if (settings.OwnLaser != api.InputAvailable) { _rejoin = true; log?.Invoke("HUD: rejoining SteamVR " + (settings.OwnLaser ? "with" : "without") + " the laser input"); }
                 }
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
