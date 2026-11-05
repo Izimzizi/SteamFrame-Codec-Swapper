@@ -1,0 +1,42 @@
+name: Release
+
+# After the Tests workflow succeeds on a push to main (a merged pull request), builds the package and publishes it as a GitHub release.
+# The tag is v<Version from CodecSwapper.csproj>-build.<run number>; the notes list the merged pull requests and commits since the previous release.
+# Raise <Version> in CodecSwapper/CodecSwapper.csproj to start a new version line.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Assemble the Python runtime
+        shell: pwsh
+        run: ./Tools/Prepare-CodecLab.ps1 -OutputDirectory "$PWD/../codeclab"
+      - name: Build the hook and package the tray
+        shell: pwsh
+        run: ./Package-CodecSwapper.ps1 -CodecLabSource "$PWD/../codeclab" -OutputDirectory "$PWD/../out/CodecSwapper" -BuildBackend
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = ([xml](Get-Content CodecSwapper/CodecSwapper.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          $tag = "v$version-build.${{ github.run_number }}"
+          $sha = git rev-parse HEAD
+          Set-Content -Path "$env:RUNNER_TEMP/intro.md" -Value "Extract the whole zip and run CodecSwapper.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.`n"
+          gh release create $tag "$PWD/../out/CodecSwapper.zip" --repo "${{ github.repository }}" --target $sha --title $tag --generate-notes --notes-file "$env:RUNNER_TEMP/intro.md"
