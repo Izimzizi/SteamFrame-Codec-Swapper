@@ -163,7 +163,9 @@ class KeepModeTests(unittest.TestCase):
  def test_a_new_session_ignores_request_files_left_by_an_earlier_one(self):
   with tempfile.TemporaryDirectory() as directory:
    key=pathlib.Path(directory)/'key';hosts=pathlib.Path(directory)/'hosts';key.write_text('k');hosts.write_text('h')
-   base={'protocol_version':1,'ssh_host':'10.35.78.1','target_mbps':100,'ssh_key':str(key),'ssh_known_hosts':str(hosts)}
+   steam=pathlib.Path(directory)/'steam';vr=pathlib.Path(directory)/'steamvr';(vr/'bin/win64').mkdir(parents=True);steam.mkdir()  # stand-ins: CI has no Steam or SteamVR installed
+   (steam/'steam.exe').write_text('');(vr/'bin/win64/vrserver.exe').write_text('')
+   base={'protocol_version':1,'ssh_host':'10.35.78.1','target_mbps':100,'ssh_key':str(key),'ssh_known_hosts':str(hosts),'steam_root':str(steam),'steamvr_root':str(vr)}
    requests=pathlib.Path(directory)/'requests';requests.mkdir()
    stale=requests/'request-11111111-1111-1111-1111-111111111111.json'
    stale.write_text('{"protocol_version":1,"id":"11111111-1111-1111-1111-111111111111","action":"close"}')
