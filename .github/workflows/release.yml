@@ -1,8 +1,8 @@
 name: Release
 
 # After the Tests workflow succeeds on a push to main (a merged pull request), builds the package and publishes it as a GitHub release.
-# The tag is v<Version from CodecSwapper.csproj>-build.<run number>; the notes list the merged pull requests and commits since the previous release.
-# Raise <Version> in CodecSwapper/CodecSwapper.csproj to start a new version line.
+# The tag is v<major>.<minor>.<run number>: major and minor come from <Version> in CodecSwapper/CodecSwapper.csproj (1.0.0 gives v1.0.57), the last number counts the releases.
+# Raise major or minor in the csproj by hand for a bigger step. The notes list the merged pull requests and commits since the previous release.
 on:
   workflow_run:
     workflows: [Tests]
@@ -36,7 +36,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = ([xml](Get-Content CodecSwapper/CodecSwapper.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-          $tag = "v$version-build.${{ github.run_number }}"
+          $parts = $version.Split('.')
+          $tag = "v$($parts[0]).$($parts[1]).${{ github.run_number }}"
           $sha = git rev-parse HEAD
           Set-Content -Path "$env:RUNNER_TEMP/intro.md" -Value "Extract the whole zip and run CodecSwapper.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.`n"
           gh release create $tag "$PWD/../out/CodecSwapper.zip" --repo "${{ github.repository }}" --target $sha --title $tag --generate-notes --notes-file "$env:RUNNER_TEMP/intro.md"
