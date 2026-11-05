@@ -24,20 +24,27 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content CodecSwapper/CodecSwapper.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          $parts = $version.Split('.')
+          $number = "$($parts[0]).$($parts[1]).${{ github.run_number }}"
+          "number=$number" >> $env:GITHUB_OUTPUT
+          "tag=v$number" >> $env:GITHUB_OUTPUT
       - name: Assemble the Python runtime
         shell: pwsh
         run: ./Tools/Prepare-CodecLab.ps1 -OutputDirectory "$PWD/../codeclab"
       - name: Build the hook and package the tray
         shell: pwsh
-        run: ./Package-CodecSwapper.ps1 -CodecLabSource "$PWD/../codeclab" -OutputDirectory "$PWD/../out/CodecSwapper" -BuildBackend
+        run: ./Package-CodecSwapper.ps1 -CodecLabSource "$PWD/../codeclab" -OutputDirectory "$PWD/../out/CodecSwapper" -BuildBackend -Version "${{ steps.version.outputs.number }}"
       - name: Publish the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = ([xml](Get-Content CodecSwapper/CodecSwapper.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-          $parts = $version.Split('.')
-          $tag = "v$($parts[0]).$($parts[1]).${{ github.run_number }}"
+          $tag = "${{ steps.version.outputs.tag }}"
           $sha = git rev-parse HEAD
           Set-Content -Path "$env:RUNNER_TEMP/intro.md" -Value "Extract the whole zip and run CodecSwapper.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.`n"
           gh release create $tag "$PWD/../out/CodecSwapper.zip" --repo "${{ github.repository }}" --target $sha --title $tag --generate-notes --notes-file "$env:RUNNER_TEMP/intro.md"
