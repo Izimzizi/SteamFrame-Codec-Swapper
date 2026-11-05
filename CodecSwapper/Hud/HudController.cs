@@ -62,7 +62,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private enum Over { None, Icon, Panel }
     private readonly List<OverlayEvent> _ownIcon = [], _ownPanel = [];
     private Over _over = Over.None;
-    private bool _ownDown;
+    private bool _ownDown, _engaged;
     private DateTime _nativeAt = DateTime.MinValue;
     private static readonly TimeSpan NativeLaserHold = TimeSpan.FromMilliseconds(1500);
 
@@ -139,7 +139,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
     private void TickOwnLaser(uint carrier, DateTime at)
     {
         _ownIcon.Clear(); _ownPanel.Clear();
-        if (!settings.OwnLaser || !api.InputAvailable) { EndOwnLaser(); return; }
+        if (!api.InputAvailable) { EndOwnLaser(); return; }
         // SteamVR's own laser is in use when it sends this HUD mouse events. (The PC reports the dashboard as open all the time on a Steam Link
         // session, so the dashboard flag cannot decide this.)
         if (at - _nativeAt < NativeLaserHold) { OwnLaserNote("SteamVR's laser is on the HUD"); EndOwnLaser(); return; }
@@ -147,6 +147,15 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var left = !settings.IsLeft;
         var pointer = api.ControllerIndex(left);
         if (pointer == IOverlayApi.NoDevice) { OwnLaserNote("the pointing controller is not seen"); EndOwnLaser(); return; }
+        // Away from the HUD the input system is not touched at all: every UpdateActionState call keeps this helper an active input application, which can hold on to the game's controller.
+        // The controller's own pose (no input needed) tells roughly whether it points at the HUD; only then are the aim and click actions read.
+        if (_over == Over.None && !PointsNearHud(pointer, carrierPose))
+        {
+            EndOwnLaser();
+            if (_engaged) { _engaged = false; api.ReleaseInput(); }   // the HUD held the input while it was aimed at: hand it back to the game at once
+            return;
+        }
+        _engaged = true;
         if (!api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { OwnLaserNote("no aim from the pointing hand"); EndOwnLaser(); return; }
 
         AimHit? best = null;
@@ -156,7 +165,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             // A held press keeps following its target even when the laser slips off the edge, so a slider can be dragged.
             var margin = _ownDown && _over == target ? 2f : HudAim.NearMargin;
             if (_ownDown && _over != target) return;
-            if (!HudAim.TryHit(tip, world, width, pixelsWide, pixelsHigh, margin, out var x, out var y, out var distance, out var inside, out var point)) return;
+            if (!HudAim.TryHit(tip, world, width, pixelsWide, pixelsHigh, margin, out var x, out var y, out var distance, out var inside, out var point, _ownDown && _over == target)) return;
             var hit = new AimHit(target, x, y, distance, inside || (_ownDown && _over == target), point, world);
             if (best is not { } current || (hit.Inside && !current.Inside) || (hit.Inside == current.Inside && hit.Distance < current.Distance)) best = hit;
         }
@@ -165,6 +174,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (_panelVisible)
             Consider(Over.Panel, _repositioning ? _draftPose : settings.Pose, _repositioning ? _draftWidth : settings.WidthMeters, HudPanel.Width, HudPanel.Height);
 
+        if (best is null && _over == Over.None) api.ReleaseInput();   // near, but the real aim misses (or meets the back): give the input back at once
         if (best is null)
         {
             // Not near anything: say how far off the ray is, so a wrongly tilted tip shows in the log.
@@ -206,6 +216,26 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (kind == _ownNote || _clock - _ownNoteAt < TimeSpan.FromSeconds(1)) return;
         _ownNote = kind; _ownNoteAt = _clock;
         log?.Invoke("HUD laser: " + what);
+    }
+
+    // A rough test on the controller body (the real tip is tilted from it): does its ray meet the front of the panel or the watch icon, within a margin that grows with the distance?
+    private bool PointsNearHud(uint pointer, Pose carrierPose)
+    {
+        if (!api.TryDevicePose(pointer, out var body)) return false;
+        var aim = body.Rotate(-Vector3.UnitZ);
+        bool Near(Pose local, float width, float aspect)
+        {
+            var world = carrierPose.Then(local);
+            var normal = world.Rotate(Vector3.UnitZ);
+            var facing = Vector3.Dot(aim, normal);
+            if (facing >= -1e-4f) return false;   // parallel, or looking at the back
+            var distance = Vector3.Dot(world.T - body.T, normal) / facing;
+            if (distance <= 0 || distance > 2f) return false;
+            var offset = body.T + aim * distance - world.T;
+            var slack = .08f + distance * .5f;   // the tip is tilted from the body, so the error grows with the distance
+            return MathF.Abs(Vector3.Dot(offset, world.Rotate(Vector3.UnitX))) < width / 2 + slack && MathF.Abs(Vector3.Dot(offset, world.Rotate(Vector3.UnitY))) < width * aspect / 2 + slack;
+        }
+        return (_panelVisible && Near(settings.Pose, settings.WidthMeters, (float)HudPanel.Height / HudPanel.Width)) || (settings.Watch && _icon != 0 && Near(settings.IconPose, settings.IconWidthMeters, 1f));
     }
 
     private void EndOwnLaser()

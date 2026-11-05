@@ -43,4 +43,6 @@ public interface IOverlayApi : IDisposable
     /// <summary>Draws the laser: a line pose (Y along it, <paramref name="length"/> long) and a dot on the surface it hits.</summary>
     void ShowLaser(Pose line, float length, Pose dot) { }
     void HideLaser() { }
+    /// <summary>Tells SteamVR the HUD no longer wants any input (both action sets at the lowest priority), so a game that lost its controller to the HUD gets it back.</summary>
+    void ReleaseInput() { }
 }

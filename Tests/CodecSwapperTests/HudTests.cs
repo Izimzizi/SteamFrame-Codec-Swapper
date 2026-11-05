@@ -68,6 +68,8 @@ public sealed class HudMathTests
         Assert.True(HudAim.TryHit(facing, Pose.Identity, .2f, 100, 50, HudAim.NearMargin, out var x, out _, out _, out var inside, out _));
         Assert.False(inside); Assert.Equal(100f, x, 2);   // clamped to the picture
         var behind = new Pose(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(0, 0, -1));   // looks away from the overlay
+        Assert.False(HudAim.TryHit(new(-Vector3.UnitX, Vector3.UnitY, -Vector3.UnitZ, new(0, 0, -1)), Pose.Identity, .2f, 100, 50, 0, out _, out _, out _, out _, out _), "the back of the HUD");
+        Assert.True(HudAim.TryHit(new(-Vector3.UnitX, Vector3.UnitY, -Vector3.UnitZ, new(0, 0, -1)), Pose.Identity, .2f, 100, 50, 0, out _, out _, out _, out _, out _, true));
         Assert.False(HudAim.TryHit(behind, Pose.Identity, .2f, 100, 50, HudAim.NearMargin, out _, out _, out _, out _, out _));
     }
 
@@ -261,14 +263,14 @@ public sealed class HudControllerTests
         public void SetVisible(ulong overlay, bool visible) { Calls.Add(visible ? "show" : "hide"); Visible[overlay] = visible; }
         public uint ControllerIndex(bool left) => left ? Left : Right;
         public void AttachToDevice(ulong overlay, uint device, Pose relative) { LastDevice = device; LastRelative = relative; }
-        public bool TryDevicePose(uint device, out Pose pose) => Poses.TryGetValue(device, out pose);
+        public bool TryDevicePose(uint device, out Pose pose) { if (Poses.TryGetValue(device, out pose)) return true; pose = Tip; return device == Right && InputOn; }   // the pointing hand's body points where its tip does
         public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay) { var queue = overlay == 7 ? Events : IconEvents; var list = queue.ToList(); queue.Clear(); return list; }
         public bool DashboardVisible() => Dashboard;
-        public bool InputOn, AimOk = true, Trigger, LastClaim;
+        public bool InputOn, AimOk = true, Trigger, LastClaim; public int AimCalls;
         public Pose Tip = Pose.Identity;
         public readonly List<string> Laser = [];
         public bool InputAvailable => InputOn;
-        public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { tip = Tip; LastClaim = claimClick; pressed = claimClick && Trigger; return AimOk; }
+        public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { AimCalls++; tip = Tip; LastClaim = claimClick; pressed = claimClick && Trigger; return AimOk; }
         public void ShowLaser(Pose line, float length, Pose dot) => Laser.Add("show");
         public void HideLaser() => Laser.Add("hide");
         public void Dispose() { }
@@ -329,6 +331,17 @@ public sealed class HudControllerTests
     }
 
     [Fact]
+    public void The_input_system_is_left_alone_while_the_pointing_hand_is_nowhere_near_the_hud()
+    {
+        var rig = OwnLaserRig();
+        rig.Api.Tip = new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(5, 5, 5));
+        rig.Tick(); rig.Tick();
+        Assert.Equal(0, rig.Api.AimCalls);
+        rig.Api.Tip = AimAt(rig, "codec:h264"); rig.Tick();
+        Assert.True(rig.Api.AimCalls > 0);
+    }
+
+    [Fact]
     public void With_the_dashboard_closed_the_own_laser_hovers_and_the_trigger_presses_a_button()
     {
         var rig = OwnLaserRig();
@@ -362,13 +375,11 @@ public sealed class HudControllerTests
     }
 
     [Fact]
-    public void The_own_laser_is_off_without_input_or_when_switched_off()
+    public void The_own_laser_is_off_without_input()
     {
         var rig = OwnLaserRig();
         rig.Api.Tip = AimAt(rig, "codec:h264");
-        rig.Settings.OwnLaser = false; rig.Tick();
-        Assert.DoesNotContain("show", rig.Api.Laser);
-        rig.Settings.OwnLaser = true; rig.Api.InputOn = false; rig.Tick();
+        rig.Api.InputOn = false; rig.Tick();
         Assert.DoesNotContain("show", rig.Api.Laser);
     }
 

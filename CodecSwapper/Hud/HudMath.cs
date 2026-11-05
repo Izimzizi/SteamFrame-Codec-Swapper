@@ -78,7 +78,7 @@ public static class HudAim
     /// <paramref name="widthMeters"/> wide with the aspect of its picture. x and y are picture pixels with the origin bottom-left (the way SteamVR reports laser events).
     /// False when the ray is parallel, behind, too far, or outside the edge by more than <paramref name="marginMeters"/>; x and y are clamped to the picture.
     /// </summary>
-    public static bool TryHit(Pose tip, Pose overlay, float widthMeters, int pixelsWide, int pixelsHigh, float marginMeters, out float x, out float y, out float distance, out bool inside, out Vector3 point)
+    public static bool TryHit(Pose tip, Pose overlay, float widthMeters, int pixelsWide, int pixelsHigh, float marginMeters, out float x, out float y, out float distance, out bool inside, out Vector3 point, bool allowBack = false)
     {
         x = y = distance = 0; inside = false; point = default;
         if (widthMeters <= 0 || pixelsWide <= 0 || pixelsHigh <= 0) return false;
@@ -86,6 +86,7 @@ public static class HudAim
         var normal = overlay.Rotate(Vector3.UnitZ);
         var facing = Vector3.Dot(direction, normal);
         if (MathF.Abs(facing) < 1e-4f) return false;
+        if (facing > 0 && !allowBack) return false;   // the ray runs along the normal: it meets the back of the HUD, which does not count
         distance = Vector3.Dot(overlay.T - tip.T, normal) / facing;
         if (distance <= 0 || distance > 2f) return false;
         point = tip.T + direction * distance;
