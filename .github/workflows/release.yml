@@ -1,0 +1,50 @@
+name: Release
+
+# After the Tests workflow succeeds on a push to main (a merged pull request), builds the package and publishes it as a GitHub release.
+# The tag is v<major>.<minor>.<run number>: major and minor come from <Version> in CodecSwapper/CodecSwapper.csproj (1.0.0 gives v1.0.57), the last number counts the releases.
+# Raise major or minor in the csproj by hand for a bigger step. The notes list the merged pull requests and commits since the previous release.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content CodecSwapper/CodecSwapper.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          $parts = $version.Split('.')
+          $number = "$($parts[0]).$($parts[1]).${{ github.run_number }}"
+          "number=$number" >> $env:GITHUB_OUTPUT
+          "tag=v$number" >> $env:GITHUB_OUTPUT
+      - name: Assemble the Python runtime
+        shell: pwsh
+        run: ./Tools/Prepare-CodecLab.ps1 -OutputDirectory "$PWD/../codeclab"
+      - name: Build the hook and package the tray
+        shell: pwsh
+        run: ./Package-CodecSwapper.ps1 -CodecLabSource "$PWD/../codeclab" -OutputDirectory "$PWD/../out/CodecSwapper" -BuildBackend -Version "${{ steps.version.outputs.number }}"
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $sha = git rev-parse HEAD
+          Set-Content -Path "$env:RUNNER_TEMP/intro.md" -Value "Extract the whole zip and run CodecSwapper.exe (unsigned; SmartScreen - More info - Run anyway). CodecLab and Native must stay beside the exe.`n"
+          gh release create $tag "$PWD/../out/CodecSwapper.zip" --repo "${{ github.repository }}" --target $sha --title $tag --generate-notes --notes-file "$env:RUNNER_TEMP/intro.md"

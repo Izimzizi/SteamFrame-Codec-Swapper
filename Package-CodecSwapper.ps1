@@ -9,7 +9,9 @@ param(
     # Bundle the .NET runtime so users need nothing installed (larger download). Pass -SelfContained:$false for a small build.
     [bool]$SelfContained = $true,
     # Also write CodecSwapper.zip next to the output folder.
-    [bool]$Zip = $true
+    [bool]$Zip = $true,
+    # Overrides the version in CodecSwapper.csproj (the release workflow passes the release tag's number, so the exe and the tag match).
+    [string]$Version = ''
 )
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
@@ -41,7 +43,7 @@ try {
 
     # CodecLabSource is pointed at nothing so publish does not copy a second, partial CodecLab.
     # Single-file keeps the .NET runtime inside CodecSwapper.exe, so the package root is just the exe, CodecLab and Native.
-    & dotnet publish (Join-Path $PSScriptRoot 'CodecSwapper\CodecSwapper.csproj') -c Release -r win-x64 --self-contained $($SelfContained.ToString().ToLower()) "-p:CodecLabSource=$(Join-Path $out '_none_')" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:DebugType=none -o $out --nologo
+    & dotnet publish (Join-Path $PSScriptRoot 'CodecSwapper\CodecSwapper.csproj') -c Release -r win-x64 --self-contained $($SelfContained.ToString().ToLower()) "-p:CodecLabSource=$(Join-Path $out '_none_')" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:DebugType=none $(if ($Version) { "-p:Version=$Version" }) -o $out --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 
     # Single-file publish bundles the probe DLL into the exe; the tray needs it as a real file under Native\.
