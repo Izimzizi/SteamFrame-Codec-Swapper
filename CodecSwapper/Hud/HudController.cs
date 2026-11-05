@@ -149,6 +149,9 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         var left = !settings.IsLeft;
         var pointer = api.ControllerIndex(left);
         if (pointer == IOverlayApi.NoDevice) { OwnLaserNote("the pointing controller is not seen"); EndOwnLaser(); return; }
+        // Away from the HUD the input system is not touched at all: every UpdateActionState call keeps this helper an active input application, which can hold on to the game's controller.
+        // The controller's own pose (no input needed) tells roughly whether it points at the HUD; only then are the aim and click actions read.
+        if (_over == Over.None && !PointsNearHud(pointer, carrierPose)) { EndOwnLaser(); return; }
         if (!api.TryAim(left, _over != Over.None, out var tip, out var pressed)) { OwnLaserNote("no aim from the pointing hand"); EndOwnLaser(); return; }
 
         AimHit? best = null;
@@ -208,6 +211,20 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         if (kind == _ownNote || _clock - _ownNoteAt < TimeSpan.FromSeconds(1)) return;
         _ownNote = kind; _ownNoteAt = _clock;
         log?.Invoke("HUD laser: " + what);
+    }
+
+    // A generous test on the controller body (the real tip is tilted from it): does its ray pass within reach of the panel or the watch icon?
+    private bool PointsNearHud(uint pointer, Pose carrierPose)
+    {
+        if (!api.TryDevicePose(pointer, out var body)) return false;
+        var aim = body.Rotate(-Vector3.UnitZ);
+        bool Near(Pose local)
+        {
+            var to = carrierPose.Then(local).T - body.T;
+            var along = Vector3.Dot(to, aim);
+            return along > -.1f && along < 2f && (to - aim * along).Length() < .5f;
+        }
+        return (_panelVisible && Near(settings.Pose)) || (settings.Watch && _icon != 0 && Near(settings.IconPose));
     }
 
     private void EndOwnLaser()

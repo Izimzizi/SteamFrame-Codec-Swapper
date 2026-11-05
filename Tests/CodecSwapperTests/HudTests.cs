@@ -261,14 +261,14 @@ public sealed class HudControllerTests
         public void SetVisible(ulong overlay, bool visible) { Calls.Add(visible ? "show" : "hide"); Visible[overlay] = visible; }
         public uint ControllerIndex(bool left) => left ? Left : Right;
         public void AttachToDevice(ulong overlay, uint device, Pose relative) { LastDevice = device; LastRelative = relative; }
-        public bool TryDevicePose(uint device, out Pose pose) => Poses.TryGetValue(device, out pose);
+        public bool TryDevicePose(uint device, out Pose pose) { if (Poses.TryGetValue(device, out pose)) return true; pose = Tip; return device == Right && InputOn; }   // the pointing hand's body points where its tip does
         public IReadOnlyList<OverlayEvent> PollEvents(ulong overlay) { var queue = overlay == 7 ? Events : IconEvents; var list = queue.ToList(); queue.Clear(); return list; }
         public bool DashboardVisible() => Dashboard;
-        public bool InputOn, AimOk = true, Trigger, LastClaim;
+        public bool InputOn, AimOk = true, Trigger, LastClaim; public int AimCalls;
         public Pose Tip = Pose.Identity;
         public readonly List<string> Laser = [];
         public bool InputAvailable => InputOn;
-        public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { tip = Tip; LastClaim = claimClick; pressed = claimClick && Trigger; return AimOk; }
+        public bool TryAim(bool left, bool claimClick, out Pose tip, out bool pressed) { AimCalls++; tip = Tip; LastClaim = claimClick; pressed = claimClick && Trigger; return AimOk; }
         public void ShowLaser(Pose line, float length, Pose dot) => Laser.Add("show");
         public void HideLaser() => Laser.Add("hide");
         public void Dispose() { }
@@ -326,6 +326,17 @@ public sealed class HudControllerTests
         rig.Api.Poses[3] = Pose.Identity; rig.Api.Poses[0] = new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(0, 0, .6f));
         rig.Tick();
         return rig;
+    }
+
+    [Fact]
+    public void The_input_system_is_left_alone_while_the_pointing_hand_is_nowhere_near_the_hud()
+    {
+        var rig = OwnLaserRig();
+        rig.Api.Tip = new(Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, new(5, 5, 5));
+        rig.Tick(); rig.Tick();
+        Assert.Equal(0, rig.Api.AimCalls);
+        rig.Api.Tip = AimAt(rig, "codec:h264"); rig.Tick();
+        Assert.True(rig.Api.AimCalls > 0);
     }
 
     [Fact]
