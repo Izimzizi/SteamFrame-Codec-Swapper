@@ -227,7 +227,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
         log?.Invoke("HUD laser: " + what);
     }
 
-    // A rough test on the controller body (the real tip is tilted from it): does its ray meet the front of the panel or the watch icon, within a hand's width of the edge?
+    // A rough test on the controller body (the real tip is tilted from it): does its ray meet the front of the panel or the watch icon, within a margin that grows with the distance?
     private bool PointsNearHud(uint pointer, Pose carrierPose)
     {
         if (!api.TryDevicePose(pointer, out var body)) return false;
@@ -241,7 +241,7 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             var distance = Vector3.Dot(world.T - body.T, normal) / facing;
             if (distance <= 0 || distance > 2f) return false;
             var offset = body.T + aim * distance - world.T;
-            const float slack = .12f;
+            var slack = .08f + distance * .5f;   // the tip is tilted from the body, so the error grows with the distance
             return MathF.Abs(Vector3.Dot(offset, world.Rotate(Vector3.UnitX))) < width / 2 + slack && MathF.Abs(Vector3.Dot(offset, world.Rotate(Vector3.UnitY))) < width * aspect / 2 + slack;
         }
         return (_panelVisible && Near(settings.Pose, settings.WidthMeters, (float)HudPanel.Height / HudPanel.Width)) || (settings.Watch && _icon != 0 && Near(settings.IconPose, settings.IconWidthMeters, 1f));
