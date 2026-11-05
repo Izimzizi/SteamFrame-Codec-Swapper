@@ -26,7 +26,7 @@ public static class HudHost
             if (Environment.TickCount64 - checkedAt >= 1000) { checkedAt = Environment.TickCount64; running = OpenVrOverlayApi.IsVrServerRunning(); }
             return running;
         }
-        var hud = new HudController(new OpenVrOverlayApi(SteamPaths.Current.SteamVrRoot, Log, Path.Combine(AppData.Root, "HudInput")), settings, () => { lock (gate) return view; }, actions,
+        var hud = new HudController(new OpenVrOverlayApi(SteamPaths.Current.SteamVrRoot, Log, Path.Combine(AppData.Root, "HudInput"), () => settings.OwnLaser), settings, () => { lock (gate) return view; }, actions,
             () => Send(new() { Type = "settings", Settings = settings }), PcVrRunning, Log);
 
         var reader = new Thread(() =>

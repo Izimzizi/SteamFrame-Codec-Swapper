@@ -527,7 +527,12 @@ public sealed class HudController(IOverlayApi api, HudSettings settings, Func<Hu
             case "set":
                 if (parts[1] == "autoshow") settings.AutoShow = parts[2] == "on";
                 else if (parts[1] == "expand") settings.ExpandOnHover = parts[2] == "hover";
-                else if (parts[1] == "ownlaser") settings.OwnLaser = parts[2] == "on";
+                else if (parts[1] == "ownlaser")
+                {
+                    settings.OwnLaser = parts[2] == "on";
+                    // The input manifest is registered when joining SteamVR (and cannot be withdrawn), so rejoin with or without it.
+                    if (settings.OwnLaser != api.InputAvailable) { Teardown(); log?.Invoke("HUD: rejoining SteamVR " + (settings.OwnLaser ? "with" : "without") + " the laser input"); }
+                }
                 else if (parts[1] == "style") { settings.Watch = parts[2] == "watch"; settings.PanelOpen = settings.Watch; }
                 Persist(); _drawn = null;
                 break;

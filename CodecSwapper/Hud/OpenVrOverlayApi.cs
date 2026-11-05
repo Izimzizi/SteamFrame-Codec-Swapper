@@ -8,7 +8,7 @@ namespace CodecSwapper;
 /// vtables; the slot numbers are the declaration order in openvr.h for IVROverlay_028 and IVRSystem_026, and connecting checks them by
 /// asking the overlay interface for a known error name before anything else is called.
 /// </summary>
-public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? log = null, string? inputDirectory = null) : IOverlayApi
+public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? log = null, string? inputDirectory = null, Func<bool>? inputWanted = null) : IOverlayApi
 {
     private const string OverlayVersion = "IVROverlay_028", SystemVersion = "IVRSystem_026";
     private const int ApplicationOverlay = 2, StandingUniverse = 1, MouseInput = 1, MaxDevices = 64, EventSize = 64;
@@ -226,7 +226,8 @@ public sealed unsafe class OpenVrOverlayApi(string steamVrRoot, Action<string>? 
     private void InitInput()
     {
         _inputReady = false;
-        if (inputDirectory is null) return;
+        // With the laser switched off no manifest is registered at all: an input application makes SteamVR route the controllers to it, which can take them from a game.
+        if (inputDirectory is null || inputWanted?.Invoke() == false) return;
         try
         {
             _input = Interface(InputVersion, out var code);
