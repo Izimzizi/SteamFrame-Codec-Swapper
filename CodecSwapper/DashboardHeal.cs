@@ -4,13 +4,13 @@ namespace CodecSwapper;
 
 /// <summary>
 /// After a codec switch the Frame's dashboard sometimes has the stream but none of the PC's windows (the desktop and the Steam window reach it as frames
-/// from the PC, and the PC does not always send them after the new stream starts). A second after a switch finishes the Frame is asked what its dashboard
-/// holds (again every second until it has a stream); when it has a stream without any PC frame, and still has none a second later, the windows are brought back the way the dashboard's + does it (see <see cref="DashboardNudge"/>; a stream
+/// from the PC, and the PC does not always send them after the new stream starts). As soon as a switch finishes the Frame is asked what its dashboard
+/// holds (again every half second until it has a stream); when it has a stream without any PC frame, and still has none 0.4 s later, the windows are brought back the way the dashboard's + does it (see <see cref="DashboardNudge"/>; a stream
 /// restart and a Frame client restart were tried and do not help), then it is checked again. Every decision is written to the dashboard watch log.
 /// </summary>
 public sealed class DashboardHeal(Func<string, Task<string>> evaluate, Func<Task<int>> nudge, Action failed, Action<string> log, Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
-    public static readonly TimeSpan First = TimeSpan.FromSeconds(1), Poll = TimeSpan.FromSeconds(1), Settle = TimeSpan.FromSeconds(1), Recheck = TimeSpan.FromSeconds(3), GiveUp = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan First = TimeSpan.Zero, Poll = TimeSpan.FromMilliseconds(500), Settle = TimeSpan.FromMilliseconds(400), Recheck = TimeSpan.FromMilliseconds(1500), GiveUp = TimeSpan.FromSeconds(15);
     private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? ((time, token) => Task.Delay(time, token));
 
     /// <summary>The number of running streams and of dashboard frames that come from the PC, from the Frame's reply; null when it cannot be read.</summary>

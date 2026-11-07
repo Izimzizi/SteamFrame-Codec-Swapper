@@ -42,11 +42,11 @@ public sealed class DashboardHealTests
     [Fact]
     public async Task No_stream_means_nothing_to_report()
     {
-        var rig = new Rig(); for (var i = 0; i < 20; i++) rig.Replies.Enqueue(Reply(0, 0));
+        var rig = new Rig(); for (var i = 0; i < 40; i++) rig.Replies.Enqueue(Reply(0, 0));
         await rig.Heal.RunAsync(CancellationToken.None);
         Assert.All(rig.Calls, call => Assert.Equal("ask", call));
         Assert.DoesNotContain("nudge", rig.Calls);
-        Assert.InRange(rig.Calls.Count, 2, 20);   // it keeps looking for a stream for a while, then gives up
+        Assert.InRange(rig.Calls.Count, 2, 40);   // it keeps looking for a stream for a while, then gives up
     }
 
     [Fact]
