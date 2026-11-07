@@ -18,6 +18,8 @@ public static class AdaptivePatchScanner
     // writes into a stack structure addressed from rbp and the level is stored straight into the embedded configuration (hevcConfig.level at +0xA8).
     private const string PresetEmbedded = "FF 96 A0 9B 00 00 48 8B 8E 70 02 00 00 48 8D 55 F8 41 B8 00 0E 00 00 E8 ?? ?? ?? ?? 0F 28 B4 24 00 15 00 00 45 33 E4";
     private const string LevelEmbedded = "C7 86 D4 09 00 00 01 00 00 00 48 8B 88 98 03 00 00 B8 B7 00 00 00 F3 0F 10 81 C8 00 00 00 F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C C8 48 0F AF CA BA BA 00 00 00 49 0F AF C8 48 81 F9 00 00 80 7F 0F 4F C2 8B 96 B0 01 00 00 89 86 D0 09 00 00";
+    // SteamVR 2.19.2: same stores and default level (B7 at +18), but the compiler reordered the scaling math (limit in r10d / ecx, cmovg on edx).
+    private const string LevelEmbedded2 = "C7 86 D4 09 00 00 01 00 00 00 48 8B 88 98 03 00 00 B8 B7 00 00 00 F3 0F 10 81 C8 00 00 00 B9 00 00 80 7F F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C D0 49 0F AF D0 49 0F AF D1 48 3B D1 8B 96 B0 01 00 00 89 96 ?? ?? 00 00 41 0F 4F C2 89 86 D0 09 00 00";
     private const string PresetVersionsEmbedded = "C7 45 F0 0B 00 04 F1 C7 45 F8 0B 00 07 F1";
     private const string Api = "C7 85 ?? ?? ?? ?? 0B 00 02 71 41 B8 F4 09 00 00";
     private const string PresetVersions = "C7 85 10 03 00 00 0B 00 04 F1 C7 85 18 03 00 00 0B 00 07 F1";
@@ -31,7 +33,7 @@ public static class AdaptivePatchScanner
         var stable = cap.Variant == 1;
         var presets = stable ? new[] { StablePreset } : new[] { Preset, PresetEmbedded };
         var preset = pe.Unique("HEVC preset copy", presets);
-        var level = pe.Unique("HEVC level configuration", stable ? new[] { StableLevel } : new[] { Level, LevelEmbedded });
+        var level = pe.Unique("HEVC level configuration", stable ? new[] { StableLevel } : new[] { Level, LevelEmbedded, LevelEmbedded2 });
         var api = pe.Unique("NVENC API initialization", Api);
         pe.FunctionContaining(api.Offset, api.Length);
         var presetFunction = pe.FunctionContaining(preset.Offset, preset.Length);
