@@ -9,6 +9,8 @@ namespace SteamFrame.Core;
 public static class AdaptivePatchScanner
 {
     private const string Caps = "F3 44 0F 10 15 ?? ?? ?? ?? F3 0F 11 8F 40 01 00 00 49 8B 8E 88 01 00 00 48 8B 01 FF 90 88 00 00 00 84 C0 74 09 F3 44 0F 10 15 ?? ?? ?? ??";
+    // SteamVR beta of Nov 2026: the encoder object grew, every member offset moved (+8) and the NVENC vtable slot is 0x9BA8.
+    private const string Caps2 = "F3 44 0F 10 15 ?? ?? ?? ?? F3 0F 11 8F 48 01 00 00 49 8B 8E 88 01 00 00 48 8B 01 FF 90 88 00 00 00 84 C0 74 09 F3 44 0F 10 15 ?? ?? ?? ??";
     private const string StableCaps = "F3 44 0F 10 0D ?? ?? ?? ?? F3 0F 11 8F 3C 01 00 00 49 8B 8E 88 01 00 00 48 8B 01 FF 90 88 00 00 00 84 C0 74 09 F3 44 0F 10 0D ?? ?? ?? ??";
     private const string Preset = "FF 96 A0 9B 00 00 48 8B 8E 70 02 00 00 48 8D 95 18 03 00 00 41 B8 00 0E 00 00 E8 ?? ?? ?? ?? 66 0F 6F 05 ?? ?? ?? ?? F3 0F 7F 44 24 30 C7 44 24 40 1B 00 00 00";
     private const string StablePreset = "FF 96 38 9B 00 00 48 8B 8E 08 02 00 00 48 8D 95 18 03 00 00 41 B8 00 0E 00 00 E8 ?? ?? ?? ?? 66 0F 6F 05 ?? ?? ?? ?? F3 0F 7F 44 24 30 C7 44 24 40 1B 00 00 00";
@@ -20,6 +22,8 @@ public static class AdaptivePatchScanner
     private const string LevelEmbedded = "C7 86 D4 09 00 00 01 00 00 00 48 8B 88 98 03 00 00 B8 B7 00 00 00 F3 0F 10 81 C8 00 00 00 F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C C8 48 0F AF CA BA BA 00 00 00 49 0F AF C8 48 81 F9 00 00 80 7F 0F 4F C2 8B 96 B0 01 00 00 89 86 D0 09 00 00";
     // SteamVR 2.19.2: same stores and default level (B7 at +18), but the compiler reordered the scaling math (limit in r10d / ecx, cmovg on edx).
     private const string LevelEmbedded2 = "C7 86 D4 09 00 00 01 00 00 00 48 8B 88 98 03 00 00 B8 B7 00 00 00 F3 0F 10 81 C8 00 00 00 B9 00 00 80 7F F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C D0 49 0F AF D0 49 0F AF D1 48 3B D1 8B 96 B0 01 00 00 89 96 ?? ?? 00 00 41 0F 4F C2 89 86 D0 09 00 00";
+    private const string PresetEmbedded2 = "FF 96 A8 9B 00 00 48 8B 8E 78 02 00 00 48 8D 55 F8 41 B8 00 0E 00 00 E8 ?? ?? ?? ?? 0F 28 B4 24 00 15 00 00 45 33 E4";
+    private const string LevelEmbedded3 = "C7 86 DC 09 00 00 01 00 00 00 48 8B 88 98 03 00 00 B8 B7 00 00 00 F3 0F 10 81 C8 00 00 00 B9 00 00 80 7F F3 0F 58 05 ?? ?? ?? ?? F3 48 0F 2C D0 49 0F AF D0 49 0F AF D1 48 3B D1 8B 96 B8 01 00 00 89 96 ?? ?? 00 00 41 0F 4F C2 89 86 D8 09 00 00";
     private const string PresetVersionsEmbedded = "C7 45 F0 0B 00 04 F1 C7 45 F8 0B 00 07 F1";
     private const string Api = "C7 85 ?? ?? ?? ?? 0B 00 02 71 41 B8 F4 09 00 00";
     private const string PresetVersions = "C7 85 10 03 00 00 0B 00 04 F1 C7 85 18 03 00 00 0B 00 07 F1";
@@ -29,18 +33,18 @@ public static class AdaptivePatchScanner
         var pe = new Image(source);
         // Stable and beta use different private encoder layouts. Select a complete
         // verified family; do not wildcard member offsets or mix their contexts.
-        var cap = pe.Unique("Bitrate cap selector", Caps, StableCaps);
+        var cap = pe.Unique("Bitrate cap selector", Caps, StableCaps, Caps2);
         var stable = cap.Variant == 1;
-        var presets = stable ? new[] { StablePreset } : new[] { Preset, PresetEmbedded };
+        var presets = stable ? new[] { StablePreset } : new[] { Preset, PresetEmbedded, PresetEmbedded2 };
         var preset = pe.Unique("HEVC preset copy", presets);
-        var level = pe.Unique("HEVC level configuration", stable ? new[] { StableLevel } : new[] { Level, LevelEmbedded, LevelEmbedded2 });
+        var level = pe.Unique("HEVC level configuration", stable ? new[] { StableLevel } : new[] { Level, LevelEmbedded, LevelEmbedded2, LevelEmbedded3 });
         var api = pe.Unique("NVENC API initialization", Api);
         pe.FunctionContaining(api.Offset, api.Length);
         var presetFunction = pe.FunctionContaining(preset.Offset, preset.Length);
         pe.FunctionContaining(cap.Offset, cap.Length);
         var levelFunction = pe.FunctionContaining(level.Offset, level.Length);
         Require(levelFunction.Begin != presetFunction.Begin, "Preset and reconfiguration signatures are not distinct functions.");
-        Require(CountMatches(source, pe.Offset(presetFunction.Begin), checked((int)(presetFunction.End - presetFunction.Begin)), Pattern(!stable && preset.Variant == 1 ? PresetVersionsEmbedded : PresetVersions)) == 1,
+        Require(CountMatches(source, pe.Offset(presetFunction.Begin), checked((int)(presetFunction.End - presetFunction.Begin)), Pattern(!stable && preset.Variant >= 1 ? PresetVersionsEmbedded : PresetVersions)) == 1,
             "The NVENC preset structure version/layout changed.");
         // These loads are the general and wireless-adapter-present ceiling selectors.
         var generalRva = pe.Relative(cap.Offset + 5, cap.Offset + 9);
