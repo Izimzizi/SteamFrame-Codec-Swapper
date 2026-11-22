@@ -57,6 +57,7 @@ public sealed partial class TrayApp : ApplicationContext
 
     public TrayApp(bool autostart)
     {
+        SteamFrame.Core.AdaptivePatchScanner.LayoutLearned += TrayLog;
         _codec = new CodecController(sessionDirectory: AppData.SessionDirectory, steamPaths: _paths);
         _patch = new DriverPatch(new BitratePatcher(), _paths.Driver);
         _liveBitrate = new LiveBitrate(_paths);
