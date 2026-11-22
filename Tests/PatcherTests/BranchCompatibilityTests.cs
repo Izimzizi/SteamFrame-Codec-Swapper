@@ -166,4 +166,29 @@ public sealed class BranchCompatibilityTests
 
     private static BitratePatcher NewPatcher(bool running = false) => new(PatchManifest.LoadSupported(), () => running);
     private static string Hash(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+
+    // Needs SLVR_PATCHER_EMBEDDED_FIXTURE (2.19.x layout) and/or SLVR_PATCHER_CURRENT_FIXTURE (any later recompiled-beta layout); each is optional.
+    [Theory]
+    [InlineData("SLVR_PATCHER_EMBEDDED_FIXTURE")]
+    [InlineData("SLVR_PATCHER_CURRENT_FIXTURE")]
+    public void The_learned_layout_reproduces_the_exact_plan_and_refuses_inconsistent_offsets(string variable)
+    {
+        var fixture = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(fixture) || !File.Exists(fixture)) Assert.Skip($"Set {variable} to test the learned layout.");
+        var original = File.ReadAllBytes(fixture);
+        PatchManifest exact;
+        try { exact = AdaptivePatchScanner.Discover(original); }
+        catch (InvalidDataException) { Assert.Skip("This driver has no exact signature; nothing to compare with."); return; }
+        var learned = AdaptivePatchScanner.DiscoverLearned(original);
+        Assert.Equal(exact.PatchedSha256, learned.PatchedSha256);
+        Assert.Equal(exact.Changes.Select(c => (c.FileOffset, c.PatchedHex)), learned.Changes.Select(c => (c.FileOffset, c.PatchedHex)));
+
+        // Move one member offset (the preset object) on its own: the layout is no longer consistent and must be refused.
+        var broken = (byte[])original.Clone();
+        var shape = new byte[] { 0xFF, 0x96 };
+        for (int i = 0; i < broken.Length - 40; i++)
+            if (broken[i] == 0xFF && broken[i + 1] == 0x96 && broken[i + 6] == 0x48 && broken[i + 7] == 0x8B && broken[i + 8] == 0x8E && broken[i + 11] == 0 && broken[i + 12] == 0 && broken[i + 13] == 0x48 && broken[i + 14] == 0x8D && broken[i + 15] == 0x55)
+            { broken[i + 9] += 4; break; }
+        Assert.Throws<InvalidDataException>(() => AdaptivePatchScanner.DiscoverLearned(broken));
+    }
 }

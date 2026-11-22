@@ -4,6 +4,8 @@
 
 First release of the fork: a tray app that streams H.264 up to 500 Mbps to the Steam Frame, switches live between H.264 and the stock HEVC stream, sets rate control, NVENC preset, VBV buffer and multipass for both codecs, shows the stream in a monitor window (including encode time) and on an in-VR HUD with a settings page. The Frame's client patch is found automatically, so Frame updates that keep the client layout need no new release. The entries below this one are the upstream project's history.
 
+- Bitrate limit patch: a SteamVR driver update that only moves the encoder object's member offsets is now recognised without a new release. The offsets are learned from the driver, must agree with each other and with every fixed anchor, and are written to tray.log; anything else is still refused.
+- Bitrate limit patch: the SteamVR beta of November 2026 (encoder object layout moved) is recognised again.
 - Bitrate limit patch: SteamVR 2.19.2 (recompiled encoder code) is recognised again.
 - The dashboard windows check now looks the moment a switch finishes and acts within about a second when the windows are missing (it did nothing but wait 2-4 s before); with the windows present it only reads.
 - The HUD's own laser (dashboard closed) no longer takes a game's controller: it only uses SteamVR's input while the pointing hand aims at the front of the HUD, and hands it back at once when it leaves or meets the back.
